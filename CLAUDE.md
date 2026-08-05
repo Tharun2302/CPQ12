@@ -1,7 +1,7 @@
 # CPQ12 — GStack Configuration & Project Standards
 
-**Last Updated:** July 6, 2026  
-**Version:** 1.0  
+**Last Updated:** August 6, 2026  
+**Version:** 1.1  
 **Team:** CloudFuze Engineering  
 
 ---
@@ -27,60 +27,90 @@
 ## 🛠️ Tech Stack
 
 ### Frontend
-- **Framework:** React 18 + Vite
-- **Styling:** TailwindCSS
-- **State Management:** React Context API + Hooks
-- **Form Handling:** React Hook Form
-- **Testing:** Vitest + React Testing Library (Jest-compatible API; run with `npm test`)
+- **Framework:** React 18 + Vite 7
+- **Language:** **TypeScript 5.5** — `src/` is 71 `.tsx` + 68 `.ts` files and contains **zero** `.jsx`/`.js` files. Write `.tsx`/`.ts`, never `.jsx`/`.js`
+- **Types:** shared interfaces live in `src/types/` (e.g. `src/types/pricing.ts`). Do **not** use `prop-types` — it is not a dependency
+- **Styling:** TailwindCSS 3.4
+- **State Management:** React Context API + Hooks (`src/contexts/`)
+- **Routing:** React Router 7 (`react-router-dom`)
+- **Form Handling:** hand-rolled. **React Hook Form is NOT a dependency** — do not import it
+- **Testing:** Vitest 4 + React Testing Library (Jest-compatible API; run with `npm test`)
 - **Port:** 5173
 
 ### Backend
-- **Framework:** Node.js 20 LTS + Express.js (Vite 7 requires Node ≥20.19)
-- **Language:** JavaScript
-- **Database:** 
-  - MongoDB (primary data)
-  - PostgreSQL (signatures, audit logs)
-- **ORM:** Mongoose (MongoDB), Sequelize (PostgreSQL)
-- **Auth:** JWT (Bearer tokens)
-- **API Style:** RESTful
-- **Port:** 3000
+- **Framework:** Node.js 20 LTS + **Express 5.1** (Vite 7 requires Node ≥20.19). Express 5 changes async error propagation vs Express 4 — write handlers accordingly
+- **Language:** JavaScript, CommonJS (`.cjs`). The backend is **not** TypeScript, unlike `src/`
+- **Shape:** **single-file monolith** — `server.cjs` (~12,300 lines) plus `server-utils.cjs`, both at repo root. There is no `server/` directory; new backend work extends these files
+- **Database:** **MongoDB only**
+- **DB access:** Mongoose 8 **and** the native `mongodb` 6 driver are both in use. Match whichever the surrounding code uses — do not introduce a third pattern
+- **Auth:** JWT Bearer tokens (`jsonwebtoken`, expiry set) + `bcryptjs` for hashing; Azure MSAL on the frontend
+- **API Style:** RESTful and **unversioned** — all 133 routes are `/api/...`. There is no `/api/v1/...`; do not introduce one without a migration plan
+- **Port:** **3001** (`server.cjs` default; Vite dev-proxies `/api` → `localhost:3001`)
 
 ### Deployment
-- **Containerization:** Docker + Docker Compose
-- **CI/CD:** GitHub Actions
-- **Environments:** Development, Staging, Production
-- **Monitoring:** Health checks, Logging
+- **Containerization:** Docker Compose for support services only — this repo's `docker-compose.yml` runs Gotenberg (`3004`) and an optional OnlyOffice profile (`3003` + `cpq-postgres`, which backs OnlyOffice, not the app). The app itself runs on the host via `node server.cjs`. **There is no root `Dockerfile`** — only `Dockerfile.libreoffice`
+- **CI/CD:** GitHub Actions — `ci.yml` (PR quality gates) and `deploy-dev.yml` (push to `main` → dev server). See Deployment Standards below for the authoritative behaviour
+- **Environments:** Development (`159.89.175.168:3001`) and Production (`zenop.ai`). **There is no staging environment**
+- **Monitoring:** `GET /api/health` only. No metrics, alerting, or log aggregation — **known gap**
 
 ---
 
 ## 📂 Directory Structure
 
+This is the **actual** layout. There is no `server/` directory and no `src/styles/` — do not create files in paths that are not listed here.
+
 ```
 (repo root)
-├── src/
-│   ├── components/          (React components)
+├── src/                     (frontend — TypeScript, .tsx/.ts only)
+│   ├── components/          (React components, PascalCase .tsx)
 │   ├── pages/               (Page components)
-│   ├── hooks/               (Custom React hooks)
-│   ├── contexts/            (React Context)
+│   ├── hooks/               (Custom React hooks, .ts)
+│   ├── contexts/            (React Context — global state)
 │   ├── services/            (API calls, business logic)
-│   ├── utils/               (Utilities, helpers)
-│   ├── styles/              (Global styles)
-│   └── App.jsx
-├── server/                  (Backend Express app)
-│   ├── routes/              (API routes)
-│   ├── controllers/         (Route handlers)
-│   ├── models/              (Database models)
-│   ├── middleware/          (Express middleware)
-│   ├── services/            (Business logic)
-│   └── server.js
-├── tests/                   (Test files)
-├── scripts/                 (Deployment scripts)
-├── .github/workflows/       (GitHub Actions)
-├── Dockerfile
-├── docker-compose.yml
+│   ├── utils/               (Utilities, helpers — incl. pricing.ts, tierScenario.ts)
+│   ├── types/               (Shared TypeScript interfaces — pricing.ts etc.)
+│   ├── config/              (App configuration)
+│   ├── data/                (Static/seed data — blockLibrary.ts)
+│   ├── analytics/           (Analytics)
+│   ├── assets/              (Static assets)
+│   ├── index.css            (Global styles — there is NO src/styles/ directory)
+│   ├── main.tsx             (Entry point)
+│   ├── App.tsx              (Root component)
+│   └── AppNew.tsx           (Second root component — legacy/parallel, verify before editing)
+│
+├── server.cjs               (ENTIRE backend — ~12,300 lines, CommonJS. No server/ dir exists)
+├── server-utils.cjs         (Backend helpers)
+├── server-backup.cjs        (DEAD — do not edit)
+├── server-mongodb-fixed.cjs (DEAD — do not edit)
+├── pricing-logic.js         (DEAD — imported nowhere. Live pricing is src/utils/pricing.ts)
+│
+├── tests/
+│   ├── setup.ts             (Vitest setup)
+│   └── unit/                (5 unit test files — no integration/E2E tests)
+│
+├── scripts/                 (~50 ONE-OFF data/template mutation scripts — these write to
+│                             MongoDB and rewrite .docx templates. PRODUCTION DATA RISK.
+│                             Contains NO deployment scripts. Also: qa-smoke.cjs, a
+│                             Puppeteer UI smoke harness)
+├── backend-templates/       (.docx quote/agreement templates)
+├── backend-exhibits/        (360 exhibit .docx files, ~351 migration combinations)
+│
+├── .github/workflows/
+│   ├── ci.yml               (PR-only quality gates)
+│   └── deploy-dev.yml       (push to main → DEV server deploy)
+│
+├── docker-compose.yml       (SUPPORT SERVICES ONLY — Gotenberg + optional OnlyOffice.
+│                             The app itself runs on the host via `node server.cjs`)
+├── Dockerfile.libreoffice   (There is NO root Dockerfile)
+├── vite.config.ts           (Vite config + dev proxy to :3001)
+├── vitest.config.ts         (Test config + per-file coverage thresholds)
 ├── package.json
 └── CLAUDE.md (this file)
 ```
+
+**Production deployment lives outside this repo** — a separate Docker stack in the
+`deploymentgigitaldocker` folder on each server (nginx + `cpq-application`). See
+`.claude/agents/devops-engineer.md` for the authoritative deployment layout.
 
 ---
 
@@ -89,11 +119,12 @@
 ### Naming Conventions
 
 **Files & Folders:**
-- React components: `PascalCase` (e.g., `PricingCalculator.jsx`)
-- Hooks: `camelCase` with `use` prefix (e.g., `useQuoteData.js`)
-- Utils/helpers: `camelCase` (e.g., `formatPrice.js`)
-- Services: `camelCase` (e.g., `quoteService.js`)
-- Database models: `PascalCase` (e.g., `Quote.js`)
+- React components: `PascalCase` **`.tsx`** (e.g., `PricingCalculator.tsx`)
+- Hooks: `camelCase` with `use` prefix, **`.ts`** (e.g., `useQuoteData.ts`)
+- Utils/helpers: `camelCase` **`.ts`** (e.g., `formatPrice.ts`)
+- Services: `camelCase` **`.ts`** (e.g., `quoteService.ts`)
+- Shared types: `camelCase` **`.ts`** in `src/types/` (e.g., `pricing.ts`)
+- Backend: no per-model files — backend code lives in `server.cjs` / `server-utils.cjs` (CommonJS `.cjs`)
 
 **Variables & Functions:**
 - Constants: `UPPER_SNAKE_CASE` (e.g., `MAX_RETRY_ATTEMPTS`)
@@ -102,22 +133,26 @@
 - Classes: `PascalCase` (e.g., `QuoteManager`)
 
 **Database:**
-- Table names: `lowercase_with_underscores` (e.g., `quote_items`)
-- Column names: `lowercase_with_underscores` (e.g., `created_at`)
 - MongoDB collections: `camelCase` (e.g., `quoteItems`)
+- There is no SQL database in the application — ignore table/column naming conventions
 
 ### Code Style
 
-**React Components:**
-```javascript
+**React Components** (TypeScript — props typed via an interface, no `prop-types`):
+```tsx
 // ✅ Functional components with hooks
-function PricingCalculator({ items, onChange }) {
+interface PricingCalculatorProps {
+  items: Array<{ price: number }>;
+  onChange?: (total: number) => void;
+}
+
+function PricingCalculator({ items, onChange }: PricingCalculatorProps) {
   const [total, setTotal] = useState(0);
-  
+
   useEffect(() => {
     setTotal(items.reduce((sum, item) => sum + item.price, 0));
   }, [items]);
-  
+
   return (
     <div className="pricing-container">
       {/* JSX here */}
@@ -186,40 +221,52 @@ const taxed = total * 1.1;
 
 ## 🔐 Security Standards
 
+**Legend:** ✅ = verified present in the codebase · 🚧 = **KNOWN GAP**, does not exist today · 🎯 = required standard for *new* code, not yet true repo-wide.
+
+Treat 🚧 items as pre-existing gaps, **not** as regressions introduced by the change under review. Do not report them as new findings on unrelated work; do not assume the protection exists when reasoning about risk.
+
 ### Authentication
-- ✅ JWT tokens for API authentication
-- ✅ Tokens include userId, role, expiration
-- ✅ Refresh tokens for long-lived sessions
-- ✅ No credentials in code or logs
+- ✅ JWT tokens for API authentication (`jsonwebtoken`, expiry set)
+- ✅ Passwords hashed with `bcryptjs`
+- 🎯 Tokens include userId, role, expiration
+- 🚧 **Refresh tokens — not implemented** (no `refreshToken` anywhere in `server.cjs`)
+- 🎯 No credentials in code or logs
 
 ### Input Validation
-- ✅ Validate all user inputs on backend
-- ✅ Sanitize inputs before database queries
-- ✅ Check file uploads (type, size)
-- ✅ Enforce rate limiting on sensitive endpoints
+- 🎯 Validate all user inputs on backend
+- 🎯 Sanitize inputs before database queries
+- 🎯 Check file uploads (type, size)
+- 🚧 **Rate limiting on sensitive endpoints — not implemented**
 
 ### Data Protection
-- ✅ Never log sensitive data (passwords, tokens, credit cards)
-- ✅ HTTPS only in production
-- ✅ Encrypt sensitive data at rest
-- ✅ CORS configured properly
-- ✅ CSRF protection for forms
+- 🎯 Never log sensitive data (passwords, tokens, credit cards)
+- ✅ HTTPS in production (nginx TLS termination on the prod stack)
+- ✅ CORS configured (`cors` middleware in `server.cjs`)
+- ✅ CSP headers — hand-rolled in `server.cjs`, **not** in nginx. Any CSP change belongs in `server.cjs`
+- 🎯 Encrypt sensitive data at rest
+- 🚧 **CSRF protection — not implemented** (no `csurf`/`csrf` dependency or usage)
 
 ### API Security
-- ✅ Rate limiting: 100 requests/minute per IP
-- ✅ API versioning (e.g., `/api/v1/quotes`)
-- ✅ Error messages don't leak system info
-- ✅ Audit logging for sensitive operations
+- 🚧 **Rate limiting — not implemented.** `express-rate-limit` is not a dependency; the "100 requests/minute per IP" figure was never in force
+- 🚧 **API versioning — not implemented.** 0 of 133 routes are versioned
+- 🚧 **`helmet` — not installed.** Security headers are hand-rolled in `server.cjs`
+- ✅ Audit logging present for some operations (MongoDB-backed, not PostgreSQL)
+- 🎯 Error messages don't leak system info
 
 ---
 
 ## 🧪 Testing Standards
 
 ### Coverage Targets
-- ✅ Unit tests: 80%+ coverage
-- ✅ Critical business logic: 100% coverage
-- ✅ API endpoints: Integration tests required
-- ✅ Components: At least Happy path + 1 error case
+
+**Current reality:** `tests/unit/` holds 5 test files (`pricing`, `tierScenario`, `configDuration`, `helpers`, `approvalWorkflowDelete`). There are **no integration tests and no E2E tests** in the suite. `vitest.config.ts` enforces thresholds on **three files only** (`src/utils/pricing.ts`, `configDuration.ts`, `tierScenario.ts`) and explicitly defers the global 80% gate.
+
+- 🎯 Unit tests: 80%+ coverage — **aspiration, not enforced.** Do not report untested pre-existing modules as new findings
+- 🎯 Critical business logic: 100% coverage
+- ✅ Enforced today: per-file thresholds on the three modules listed in `vitest.config.ts`
+- 🚧 **API endpoint integration tests — none exist.** Required for *new* endpoints; absent for all 133 existing ones
+- 🚧 **E2E suite — none.** A working browser smoke harness exists at `scripts/qa-smoke.cjs` (Puppeteer; screenshots each step, writes `tmp-e2e/qa-report.html`) but is not wired into `npm test`
+- 🎯 Components: At least happy path + 1 error case
 
 ### Test Structure
 ```javascript
@@ -293,7 +340,11 @@ docs: Update API documentation
 - ✅ Code reviewed (at least 1 approval)
 - ✅ No security issues
 - ✅ Documentation updated
-- ✅ Merged to `develop` first, then `main`
+- ✅ Merged from the working branch **directly into `main`**
+
+**There is no `develop` branch** — it does not exist locally or on origin. The flow is
+`feature/*` → `main`. (`.github/workflows/ci.yml` still lists `develop` as a PR target;
+that half of the trigger is dead and is tracked separately.)
 
 ---
 
@@ -305,7 +356,7 @@ docs: Update API documentation
 ```
 NODE_ENV=development
 MONGODB_URI=mongodb://localhost:27017/cpq12
-POSTGRES_URI=postgresql://cpq12:cpq12pass@localhost:5432/cpq12
+PORT=3001
 JWT_SECRET=dev-secret-key
 ```
 
@@ -313,31 +364,43 @@ JWT_SECRET=dev-secret-key
 ```
 NODE_ENV=production
 MONGODB_URI=<production-mongodb-uri>
-POSTGRES_URI=<production-postgres-uri>
 JWT_SECRET=<production-secret-key>
 AZURE_CLIENT_ID=<your-azure-id>
 AZURE_CLIENT_SECRET=<your-azure-secret>
 ```
 
-### Deployment Process
-1. All tests must pass
-2. Code review approved
-3. Merge to `main` branch
-4. GitHub Actions triggers
-5. Docker image built
-6. Deployed to staging first
-7. Health checks pass
-8. Manual approval for production
-9. Deployed to production
-10. Monitoring alerts configured
+`POSTGRES_URI` is **not** used by the application — the app is MongoDB-only. The
+`cpq-postgres` container in `docker-compose.yml` backs OnlyOffice, not CPQ12.
+
+### 🔴 Deployment Process — ACTUAL BEHAVIOUR
+
+There are exactly two paths. Read this before answering any deploy question.
+
+**Path 1 — DEV (automated).** `.github/workflows/deploy-dev.yml` triggers on **push to
+`main`** (and manual `workflow_dispatch`). It SSHes to the dev server, pulls `main`,
+runs `docker compose up -d --build` in `deploymentgigitaldocker/`, prunes images, and
+polls `http://159.89.175.168:3001/api/health`.
+
+> **Any push or merge to `main` automatically deploys to the DEV server.** There is no
+> merge-to-`main`-without-deploying-to-dev path. `main` is not an inert integration branch.
+
+**Path 2 — PRODUCTION (manual).** `zenop.ai` / `167.71.227.231` has **no pipeline**.
+Deploying to production is a deliberate manual SSH procedure — see
+`.claude/agents/devops-engineer.md`. Nothing about merging to `main` deploys to
+production.
+
+There is **no staging environment**, no image registry, and no `docker push` step.
 
 ### Rollback Procedure
-```bash
-# Emergency rollback
-bash scripts/rollback.sh production
 
-# This reverts to previous version in ~30 seconds
-```
+`scripts/rollback.sh` does not exist. The real procedure is a manual sequence on the
+target server — backup (Mongo) → stop containers → `git reset --hard <good-commit>` →
+rebuild → health check. It is documented in `.claude/agents/devops-engineer.md` and in
+the rollback play under `.claude/workflows/`.
+
+> **Rollback does not move the branch tip.** After rolling back a server, the branch
+> still points at the bad commit, so the next unrelated push re-deploys it and silently
+> undoes the rollback. Either revert the commit on the branch or track it as an open risk.
 
 ---
 
@@ -347,15 +410,15 @@ bash scripts/rollback.sh production
 - [ ] No hardcoded secrets
 - [ ] Input validation on all endpoints
 - [ ] Authentication/authorization checks
-- [ ] No SQL injection risk
+- [ ] No **NoSQL** injection risk (MongoDB operator injection — there is no SQL database)
 - [ ] No XSS vulnerabilities
 
 **Quality:**
 - [ ] Code is readable and well-named
-- [ ] Functions under 50 lines
+- [ ] Functions under 50 lines (**new code only** — `server.cjs` is a ~12,300-line monolith)
 - [ ] No code duplication (DRY)
 - [ ] Follows project conventions
-- [ ] Tests included (80%+ coverage)
+- [ ] Tests included for new logic (the global 80% gate is deferred — see Testing Standards)
 
 **Performance:**
 - [ ] No N+1 queries
@@ -375,17 +438,29 @@ bash scripts/rollback.sh production
 
 ## 📚 Hard Rules (Non-Negotiable)
 
+These apply to **new and modified code**. The repo has pre-existing violations of rules 2, 5 and 10 at scale — see "Pre-existing violations" below. Do not report those as findings on unrelated work.
+
 ### 🔴 NEVER:
 1. ❌ Commit secrets, API keys, or credentials
 2. ❌ Use `any` type without justification (TypeScript)
 3. ❌ Skip error handling in async functions
 4. ❌ Deploy without running tests
-5. ❌ Use `console.log` in production code
+5. ❌ Add `console.log` in code you write or modify
 6. ❌ Trust user input without validation
 7. ❌ Store passwords in plaintext
 8. ❌ Skip database migrations
 9. ❌ Force push to `main` branch
 10. ❌ Commit commented-out code
+
+### 📊 Pre-existing violations (do NOT report as new findings)
+
+| Rule | Existing count | Notes |
+|---|---|---|
+| `console.log` | **271** in `server.cjs`, **2,093** in `src/` | Remove only from lines you touch. A codebase-wide cleanup is a separate, tracked task |
+| ESLint | **1,267 errors** as of 2026-07-09 | `npm run lint` is deliberately **not** gated in `ci.yml` for this reason |
+| Function/component length | `server.cjs` is ~12,300 lines | Apply the 50-line / 300-line guidance to new code; do not demand refactors of untouched code |
+
+Scope reviews to the diff. Flagging pre-existing debt on every task buries the findings that matter.
 
 ### ✅ ALWAYS:
 1. ✅ Write tests for new features
@@ -438,7 +513,10 @@ All agents follow these standards automatically!
 ### Always (regardless of flow):
 - Borderline case? Ask the user which flow to use before starting
 - Ask for explicit user confirmation before any commit, merge, or deploy. The commit gate is two steps: first ask WHETHER to commit; then ask WHICH BRANCH to commit to — current, another existing, or a new branch (never assume the current one). The deploy gate is three steps: first ask WHETHER to deploy at all; if yes, ask WHICH BRANCH to deploy from; then ask the target — dev or production. If no deploy, stop after the commit
-- Choosing **production** = merging the working branch into `main`. Once a CI/CD pipeline is configured on `main`, any push to `main` auto-triggers the production deploy, so merge-to-main and production-deploy are ONE action — never merge to `main` without an explicit production approval at the target gate. (NOTE: `main` has no CI/CD pipeline yet; adding one is a separate, team-approved change. The PR-only quality-gate workflow in `.github/workflows/ci.yml` — tests + build on pull requests, no push trigger, no deploy jobs — is NOT that pipeline and does not change this rule)
+- **Deploy targets map as follows — this is the corrected mapping, read it carefully:**
+  - **dev** = merge/push the working branch into `main`. `deploy-dev.yml` then auto-deploys `main` to the DEV server (159.89.175.168:3001). **Merging to `main` IS the dev deploy** — the two are one action, so never merge to `main` without dev-deploy approval at the target gate. Pushing a feature branch on its own deploys nothing
+  - **production** = a deliberate **manual SSH deploy** to `zenop.ai`. It is NOT triggered by any branch operation, and merging to `main` does not cause it
+- Adding a production deploy pipeline to `main` is a separate, team-approved change. If one is ever added, merge-to-`main` becomes a production deploy too and this rule must be rewritten before that lands
 - State which flow was used when reporting the completed work
 
 ---
@@ -494,9 +572,10 @@ All agents follow these standards automatically!
 |------|--------|--------|
 | 2026-07-06 | Initial CLAUDE.md creation | CloudFuze |
 | 2026-07-07 | Added Workflow Selection rule (GStack vs Direct) | CloudFuze |
+| 2026-08-06 | AI SDLC Phase 1 — corrected tech stack (TypeScript, no PostgreSQL, port 3001), replaced fictional `server/` tree with actual layout, corrected CI/CD facts (`main` auto-deploys to DEV; production is manual), restated unimplemented security/testing claims as known gaps | CloudFuze |
 
 ---
 
-**Version:** 1.0  
-**Last Updated:** July 6, 2026  
+**Version:** 1.1  
+**Last Updated:** August 6, 2026  
 **Ready for GStack!** ✅
