@@ -1,7 +1,8 @@
 # Deployment Workflow
 
 ## Description
-Pipeline for deploying code to staging and production environments.
+Runbook for deploying to the dev and production environments. This is **not** a mode —
+it is the procedure invoked by the deploy gate after a mode's work is complete.
 
 ## Pre-Deployment Checklist
 
@@ -17,96 +18,133 @@ Pipeline for deploying code to staging and production environments.
 
 ## Phases
 
-### Phase 1: Build
+> There is **no staging environment**. The two real targets are DEV
+> (`159.89.175.168:3001`, automated) and PRODUCTION (`zenop.ai`, manual). See CLAUDE.md
+> → Deployment Process for the authoritative behaviour.
 
-- Build Docker image
-- Run tests in Docker
-- Verify build succeeds
-- Tag image with version
+### Phase 1: Pre-flight
 
-### Phase 2: Staging Deployment
+- `npm test` passes
+- `npm run build` succeeds
+- Confirm which target was approved at the deploy gate (dev or production)
+- Confirm the branch to deploy from
 
-- Deploy to staging environment
-- Run smoke tests
-- Verify all services running
-- Check database migrations
-- Test critical workflows
-- Monitor error logs
+### Phase 2: DEV deployment (automated)
 
-### Phase 3: Staging Verification
+- Merging/pushing the working branch to `main` triggers `.github/workflows/deploy-dev.yml`
+- CI SSHes to the dev server, pulls `main`, runs `docker compose up -d --build` in
+  `deploymentgigitaldocker/`, prunes old images, then polls
+  `http://159.89.175.168:3001/api/health`
+- If the health check fails after 5 attempts, the job fails — investigate before retrying
 
-- Perform manual testing
-- Verify features working
-- Check performance metrics
-- Verify integrations working
-- Verify no regressions
+### Phase 3: PRODUCTION deployment (manual)
 
-### Phase 4: Production Deployment
-
-- Create backup of production database
-- Deploy to production
-- Run health checks
-- Verify services started
+- Back up MongoDB first
+- Manual SSH procedure on the production host — see `.claude/agents/devops-engineer.md`
+  for the authoritative steps
+- Run health checks; verify services started
 - Monitor for errors
 
-### Phase 5: Post-Deployment Verification
+### Phase 4: Post-Deployment Verification
 
-- Smoke test production
+- Smoke test the deployed environment: `node scripts/qa-smoke.cjs --base-url=<target>`
+- Check `GET /api/health`
+- Verify the specific feature or fix that was deployed
 - Monitor error logs
-- Check performance metrics
-- Verify critical features
-- Monitor for 1 hour minimum
 
-### Phase 6: Rollback (if needed)
+## Rollback Play
 
-- Identify issue
-- Rollback to previous version
-- Verify rollback successful
-- Investigate root cause
-- Plan fix
+*(Moved here from the retired `bug-fix.yaml`. Applies both as an alternative to fixing
+forward, and as the response to a bad deploy.)*
+
+Rollback is not a substitute for fixing the bug — it stops user impact immediately while
+the real fix is developed separately.
+
+**Consider rollback when:**
+- [ ] The bug was introduced by a recent deploy and a known-good prior commit exists
+- [ ] Severity is Critical or High and a proper fix will take longer than acceptable downtime
+- [ ] It matches the "Rollback if" criteria below (broken critical feature, DB corruption,
+      severe perf hit, security issue, high error volume)
+
+**Do NOT roll back when:**
+- [ ] The bug has always existed — there is no good prior commit to return to
+- [ ] It matches "Do NOT rollback for" below (minor UI issue, non-critical bug, single log
+      entry) — fix forward instead
+
+**If rollback is chosen:**
+
+1. **Gate** — ask the user to confirm the rollback, and to which commit and environment
+   (same gate pattern as any other deploy: whether → which branch → which target)
+2. DevOps Engineer executes: back up MongoDB → stop containers →
+   `git reset --hard <target-commit>` → rebuild → start → health check
+3. Verify: health check passes, feature/data confirmed restored, no data loss (rollback
+   never touches DB volumes; only a backup-restore does)
+4. Report the deployed commit and health status
+5. **Follow-up required:** the branch tip still points at the buggy commit — the next
+   unrelated push will redeploy it and silently undo the rollback. Either revert the buggy
+   commit on the branch (gates apply) or track it as an open risk until the fix lands
+6. Return to `investigation.yaml` if the permanent fix is still outstanding — rollback buys
+   time, it does not close the bug
+
+## Critical Bug Hotfix
+
+If a critical bug is live in production:
+
+1. Fix immediately — some reviews may be deferred
+2. Deploy to the affected environment
+3. Complete the deferred reviews **post-deployment**, not never
+4. Monitor closely
 
 ## Deployment Environments
 
-### Staging
-- For testing before production
-- Uses same config as production
-- Same data structure as production
-- No real user data
+### Development — `159.89.175.168:3001`
+- DigitalOcean droplet, `~/CPQ12` clone with `deploymentgigitaldocker/` inside
+- Single `app` service → container `cpq-application` on port 3001, exposed directly
+  (no nginx, no TLS)
+- Mongo runs as a separate container (`cpq12-mongo-1`, different compose project)
+- Deployed automatically on every push to `main`
+- Health: `http://159.89.175.168:3001/api/health`
 
-### Production
-- Live environment
-- Real user data
-- Monitored 24/7
-- Backup before deployment
+### Production — `zenop.ai` / `167.71.227.231`
+- Live environment, real user data
+- Same folder layout as dev, plus an nginx container for TLS termination
+- **No pipeline.** Deployed by manual SSH only
+- Back up MongoDB before deploying
+- CSP headers are set in `server.cjs`, **not** in the nginx config
 
 ## Deployment Commands
 
+There is no root `Dockerfile`, no image registry, and none of the `deploy-*.sh` /
+`rollback-*.sh` scripts that earlier versions of this file referenced. The real commands are:
+
 ```bash
-# Build image
-docker build -t cpq12:v1.0.0 .
+# Pre-flight (local)
+npm test
+npm run build
 
-# Test locally
-docker-compose up
+# DEV deploy — merging to main is the deploy. CI does the rest.
+git checkout main && git merge <working-branch> && git push origin main
+curl -s http://159.89.175.168:3001/api/health
 
-# Push to registry
-docker push cpq12:v1.0.0
+# DEV deploy, manual re-run without a new commit
+gh workflow run deploy-dev.yml
 
-# Deploy to staging
-./scripts/deploy-staging.sh v1.0.0
+# PRODUCTION deploy — manual, on the production host
+# (see .claude/agents/devops-engineer.md for the authoritative procedure)
+cd ~/CPQ12 && git fetch && git checkout main && git pull
+cd deploymentgigitaldocker && docker compose up -d --build
+docker image prune -f
 
-# Deploy to production
-./scripts/deploy-production.sh v1.0.0
-
-# Rollback production
-./scripts/rollback-production.sh
+# Rollback — on the target host, after backing up MongoDB
+git reset --hard <known-good-commit>
+cd deploymentgigitaldocker && docker compose up -d --build
 ```
 
 ## Timeline
 
-- Staging deployment: 15-30 minutes
-- Staging verification: 30 minutes - 1 hour
-- Production deployment: 15-30 minutes
-- Post-deployment monitoring: 1+ hour
+- Dev deploy (automated, incl. health check): ~2-5 minutes
+- Production deploy (manual): 15-30 minutes
+- Post-deployment verification: 30 minutes+
 
 ## Monitoring After Deployment
 
@@ -172,8 +210,8 @@ Do NOT rollback for:
 - [ ] Team notified
 
 ### During Deployment
-- [ ] Staging tests passing
-- [ ] Production build successful
+- [ ] `npm test` and `npm run build` passing
+- [ ] Container build successful
 - [ ] Services starting correctly
 - [ ] Health checks passing
 - [ ] Database migrations running

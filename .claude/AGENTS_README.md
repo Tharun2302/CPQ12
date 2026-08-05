@@ -24,9 +24,11 @@ CPQ12 now uses GStack - a specialized AI agent team where each agent has one foc
 │   └── devops-engineer.md   ← Handles deployment
 │
 ├── workflows/               ← Workflow definitions
-│   ├── new-feature.yaml     ← For new features
-│   ├── bug-fix.yaml         ← For bug fixes
-│   └── deployment.yaml      ← For deployments
+│   ├── direct.yaml          ← Direct mode (fix already known)
+│   ├── investigation.yaml   ← Investigation mode (cause unknown)
+│   ├── new-feature.yaml     ← Feature mode (new functionality)
+│   ├── deployment.yaml      ← Deploy runbook + rollback play (not a mode)
+│   └── bug-fix.yaml         ← RETIRED stub
 │
 ├── GSTACK-GUIDE.md         ← How to use GStack
 └── AGENTS_README.md        ← This file
@@ -195,19 +197,24 @@ Pipeline for deploying to production:
 
 ## How to Use GStack
 
-### Step 1: Choose Your Workflow
-- New feature? → Use `new-feature.yaml`
-- Bug fix? → Use `bug-fix.yaml`
-- Ready to deploy? → Use `deployment.yaml`
+### Step 1: Let the Router pick the mode
+The **AI SDLC Router** in `CLAUDE.md` selects the mode from what you already know:
+- You know the fix → **Direct** (`direct.yaml`)
+- You know the symptom but not the cause → **Investigation** (`investigation.yaml`)
+- It doesn't exist yet → **Feature** (`new-feature.yaml`)
+
+It also sets the **High Risk flag** from the paths touched, which adds Security review
+without changing the mode. `deployment.yaml` is the deploy runbook, invoked by the deploy
+gate — not a mode.
 
 ### Step 2: Invoke the First Agent
-For new feature:
+For Feature mode:
 ```
 gstack-architect "Design [feature name]. 
            Context: [requirements]"
 ```
 
-For bug fix:
+For Direct mode (fix already known):
 ```
 You: "Bug: [description]. 
       Fix: [solution approach]"

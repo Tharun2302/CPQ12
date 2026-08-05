@@ -30,7 +30,8 @@ Each agent has specialized instructions and expertise for their role.
 
 ### ❌ Don't Use GStack When:
 
-- Fixing a quick bug (use bug-fix.yaml instead)
+- The fix is already known (Direct mode — `direct.yaml`)
+- The cause is not yet known (Investigation mode — `investigation.yaml`)
 - Making a simple UI tweak
 - Need something done in 30 minutes
 - Low-risk, low-complexity change
@@ -113,10 +114,16 @@ Workflows are defined in `.claude/workflows/`:
 
 ```
 .claude/workflows/
-├── new-feature.yaml   ← For new features (full pipeline)
-├── bug-fix.yaml       ← For bug fixes (skip design)
-└── deployment.yaml    ← For production deployment
+├── direct.yaml        ← Direct mode — the fix is already known
+├── investigation.yaml ← Investigation mode — symptom known, cause unknown
+├── new-feature.yaml   ← Feature mode — full pipeline for new functionality
+├── deployment.yaml    ← Deploy runbook + rollback play (not a mode)
+└── bug-fix.yaml       ← RETIRED — stub pointing at the modes above
 ```
+
+Mode selection is performed by the **AI SDLC Router** in `CLAUDE.md`. It picks one mode
+based on what the user already knows, and sets a **High Risk flag** based on which paths
+the change touches. The flag adds verification; it never changes the mode.
 
 ### New Feature Workflow (new-feature.yaml)
 
@@ -472,7 +479,7 @@ const deploy = await agent("DevOps", allChanges);
 3. You review the design thoroughly
 4. If design is correct, invoke Backend Agent
 5. If design is wrong, loop back to step 2
-6. Follow the new-feature.yaml workflow
+6. Follow `new-feature.yaml` (Feature mode)
 7. Monitor each phase's output
 
 ### To Gradually Adopt GStack:
