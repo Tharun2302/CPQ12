@@ -491,33 +491,89 @@ All agents follow these standards automatically!
 
 ---
 
-## 🔀 Workflow Selection (GStack vs Direct)
+## 🔀 AI SDLC Router (Mode Selection)
 
-**Default rule:** the size and risk of a task decides which flow Claude uses.
+**Every request that modifies a file goes through the Router.** Read-only work — questions,
+code reading, explanation, investigation with no change — does not.
 
-### Use a GStack workflow (`.claude/workflows/`) by default for:
-- New features (any size) → `new-feature` workflow
-- Bug fixes → `bug-fix` workflow
-- Deployments → `deployment` workflow
-- Any change touching pricing logic, API endpoints, database models, auth, or CI/CD
+The Router does exactly two things:
 
-### Direct (normal) flow is allowed by default for:
-- Trivial single-file cosmetic edits (UI text, styling tweaks, removing static elements)
-- Documentation typos and comment fixes
-- Answering questions / investigations with no code change
+1. Select a **mode** — what kind of work is this?
+2. Set the **High Risk flag** — what does it touch?
 
-### User overrides (always win over the defaults):
-- Prefix a request with **"use gstack"** → run the full GStack workflow regardless of size
-- Prefix a request with **"quick fix"** or **"direct"** → skip the workflow and edit directly
+Nothing else. No scoring, no confidence model, no weighting.
 
-### Always (regardless of flow):
-- Borderline case? Ask the user which flow to use before starting
+### Step 1 — Select the mode
+
+One question: **what does the user already know?**
+
+| The user gives you… | Mode | Workflow file |
+|---|---|---|
+| The fix — "add a null check in `src/utils/pricing.ts`" | **Direct** | `.claude/workflows/direct.yaml` |
+| A symptom only — "login isn't working" | **Investigation** | `.claude/workflows/investigation.yaml` |
+| Something that doesn't exist yet — "build a payment module" | **Feature** | `.claude/workflows/new-feature.yaml` |
+
+- **Investigation ends in a proposal, not a fix.** When the user approves the proposal,
+  select the mode **again** — Direct if the fix is local and known, Feature if it needs
+  design. Mode is therefore chosen at intake, and once more after Investigation
+- Borderline? Ask which mode before starting
+- Multiple requests in one message? Route each separately — do not average them
+
+**Overrides (always win over the table above):**
+- **"use gstack"** → force **Feature**
+- **"quick fix"** / **"direct"** → force **Direct**
+- Overrides may skip design and requirements. They may **not** skip verification or the gates
+
+### Step 2 — Set the High Risk flag
+
+Set the flag if the change touches any of these:
+
+| High Risk path | Why |
+|---|---|
+| `src/utils/pricing.ts`, `src/utils/tierScenario.ts`, `src/types/pricing.ts` | Pricing logic |
+| JWT / login handlers in `server.cjs`; MSAL config in `src/config/` | Authentication |
+| API route handlers in `server.cjs` | API surface — 133 routes, all unversioned |
+| Any MongoDB write | Production data |
+| `.github/workflows/**`, deployment configuration | CI/CD |
+| `scripts/**` | One-off production data / template mutation |
+| `backend-templates/**`, `backend-exhibits/**` | Production document data |
+
+**Flag semantics:**
+- **It adds verification. It never changes the mode.** A high-risk one-line fix is still Direct
+- Evaluate at intake, then **re-evaluate once the touched files are actually known** —
+  after Investigation, or after Feature's design phase
+- **Ratchet-only:** the flag can turn ON, never off
+
+### Step 3 — Invoke the agents the mode names
+
+| Mode | Agents invoked |
+|---|---|
+| **Direct** | Backend and/or Frontend → QA (functional) → Code Review |
+| **Direct + High Risk** | as above, **plus Security Reviewer** |
+| **Investigation** | **none** — the main session diagnoses and proposes |
+| **Feature** | Architect → Backend/Frontend → QA → Code Review → Security → Documentation → DevOps |
+| **Feature + High Risk** | as above; Security is mandatory, not optional |
+
+Agent names are prefixed `gstack-` (e.g. `gstack-architect`). Agent responsibilities are
+defined in `.claude/agents/` and are **not** changed by the Router — the Router decides
+*which* agents run, never *what* they do.
+
+### Step 4 — Announce the decision in one line, then start
+
+State: mode · High Risk yes/no · what was skipped and why · which gates remain. The user
+can reply "longer" or "shorter" to change it.
+
+```
+Direct · not high risk · skipped design (no new contract) · verify: functional + review · commit gate at end
+```
+
+### Always (regardless of mode):
 - Ask for explicit user confirmation before any commit, merge, or deploy. The commit gate is two steps: first ask WHETHER to commit; then ask WHICH BRANCH to commit to — current, another existing, or a new branch (never assume the current one). The deploy gate is three steps: first ask WHETHER to deploy at all; if yes, ask WHICH BRANCH to deploy from; then ask the target — dev or production. If no deploy, stop after the commit
 - **Deploy targets map as follows — this is the corrected mapping, read it carefully:**
   - **dev** = merge/push the working branch into `main`. `deploy-dev.yml` then auto-deploys `main` to the DEV server (159.89.175.168:3001). **Merging to `main` IS the dev deploy** — the two are one action, so never merge to `main` without dev-deploy approval at the target gate. Pushing a feature branch on its own deploys nothing
   - **production** = a deliberate **manual SSH deploy** to `zenop.ai`. It is NOT triggered by any branch operation, and merging to `main` does not cause it
 - Adding a production deploy pipeline to `main` is a separate, team-approved change. If one is ever added, merge-to-`main` becomes a production deploy too and this rule must be rewritten before that lands
-- State which flow was used when reporting the completed work
+- State which **mode** was used, and whether the **High Risk flag** was set, when reporting completed work
 
 ---
 
