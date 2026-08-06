@@ -1,11 +1,24 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { FileText, Loader2, Check, Clock, XCircle, Eye, PenLine, Download, MoreVertical, ThumbsUp, Calendar, Bell, CalendarClock, Send, MailCheck, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, Forward, ChevronRight, ChevronDown, Lock, Search, Upload, Copy } from 'lucide-react';
+import { FileText, Loader2, Check, Clock, XCircle, Eye, PenLine, Download, MoreVertical, ThumbsUp, Calendar, Bell, CalendarClock, Send, MailCheck, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, Forward, ChevronRight, ChevronDown, Lock, Search, Upload, Copy, FileArchive, Users } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
 import Navigation from './Navigation';
 import EditDatesModal from './EditDatesModal';
+import {
+  buildCreatorIndex,
+  filterCreators,
+  creatorSelectionState,
+  toggleCreatorSelection,
+  type CreatorEntry,
+} from '../utils/esignCreatorSelection';
+
+function getAuthHeaders(): Record<string, string> {
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cpq_token') : null;
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+}
 
 interface RecipientStatus {
   id: string;
@@ -254,6 +267,12 @@ const EsignAgreementStatusDashboard: React.FC = () => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDownloading, setBulkDownloading] = useState(false);
+  const [bulkNotice, setBulkNotice] = useState<string | null>(null);
+  const [creatorPickerOpen, setCreatorPickerOpen] = useState(false);
+  const [creatorPickerPos, setCreatorPickerPos] = useState<{ top: number; left: number } | null>(null);
+  const [creatorQuery, setCreatorQuery] = useState('');
 
   const closeActionsMenu = useCallback(() => {
     setOpenActionsId(null);
@@ -422,6 +441,81 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  /** Selection is scoped to what is on screen, so filters/tabs can never widen a bulk download. */
+  const selectedVisibleIds = filteredAgreements.filter((ag) => selectedIds.has(ag.id)).map((ag) => ag.id);
+  const allVisibleSelected = filteredAgreements.length > 0 && selectedVisibleIds.length === filteredAgreements.length;
+
+  const toggleRowSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        filteredAgreements.forEach((ag) => next.delete(ag.id));
+      } else {
+        filteredAgreements.forEach((ag) => next.add(ag.id));
+      }
+      return next;
+    });
+  };
+
+  // Built from the visible list, so creator counts always match what the tab/date/search filters show.
+  const creatorsInView = buildCreatorIndex(filteredAgreements);
+  const visibleCreators = filterCreators(creatorsInView, creatorQuery);
+
+  const closeCreatorPicker = () => {
+    setCreatorPickerOpen(false);
+    setCreatorPickerPos(null);
+    setCreatorQuery('');
+  };
+
+  const handleBulkDownload = async (ids: string[]) => {
+    if (bulkDownloading || ids.length === 0) return;
+    setBulkDownloading(true);
+    setBulkNotice(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/bulk-download`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || `Bulk download failed (${res.status})`);
+        return;
+      }
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const stamp = new Date().toISOString().slice(0, 10);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = `esign-agreements-${stamp}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(objectUrl);
+
+      const included = Number(res.headers.get('X-Bulk-Included') || ids.length);
+      const skipped = Number(res.headers.get('X-Bulk-Skipped') || 0);
+      setBulkNotice(
+        skipped > 0
+          ? `Downloaded ${included} file${included === 1 ? '' : 's'}. ${skipped} had no file in storage — see MISSING-FILES.txt inside the zip.`
+          : `Downloaded ${included} file${included === 1 ? '' : 's'} as a zip.`
+      );
+      window.setTimeout(() => setBulkNotice(null), 8000);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Bulk download failed.');
+    } finally {
+      setBulkDownloading(false);
+    }
   };
 
   /** Fetch doc + recipients + activity for a given agreement. Used by open + auto-poll. */
@@ -746,7 +840,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
 
             {!loading && !error && agreementsSentOrBeyond.length > 0 && (
               <>
-                <div className="border-b border-slate-200 px-6">
+                <div className="border-b border-slate-200 px-6 flex flex-wrap items-center justify-between gap-3">
                   <nav className="flex gap-1" aria-label="Status filter">
                     {([
                       { id: 'all' as const, label: 'All' },
@@ -769,7 +863,144 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                       </button>
                     ))}
                   </nav>
+                  {userIsApprovalAdmin && filteredAgreements.length > 0 && (
+                    <div className="flex items-center gap-2 py-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          if (creatorPickerOpen) {
+                            closeCreatorPicker();
+                          } else {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setCreatorPickerPos({ top: rect.bottom + 6, left: Math.max(8, rect.left) });
+                            setCreatorPickerOpen(true);
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-400"
+                        aria-expanded={creatorPickerOpen}
+                        title="Pick creators and select all of their agreements"
+                      >
+                        <Users className="h-4 w-4" />
+                        Select by creator
+                        <ChevronDown className="h-4 w-4 text-slate-400" />
+                      </button>
+                      {selectedVisibleIds.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedIds(new Set())}
+                          className="text-sm font-medium text-slate-500 hover:text-slate-700"
+                        >
+                          Clear ({selectedVisibleIds.length})
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleBulkDownload(
+                          selectedVisibleIds.length > 0 ? selectedVisibleIds : filteredAgreements.map((ag) => ag.id)
+                        )}
+                        disabled={bulkDownloading}
+                        className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                        title={selectedVisibleIds.length > 0
+                          ? `Download ${selectedVisibleIds.length} selected agreement${selectedVisibleIds.length === 1 ? '' : 's'} as a zip`
+                          : `Download all ${filteredAgreements.length} agreements in this view as a zip`}
+                      >
+                        {bulkDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileArchive className="h-4 w-4" />}
+                        {bulkDownloading
+                          ? 'Zipping…'
+                          : selectedVisibleIds.length > 0
+                            ? `Download selected (${selectedVisibleIds.length})`
+                            : `Download all (${filteredAgreements.length})`}
+                      </button>
+                    </div>
+                  )}
                 </div>
+                {bulkNotice && (
+                  <div className="mx-6 mt-4 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm text-indigo-800">
+                    {bulkNotice}
+                  </div>
+                )}
+                {creatorPickerOpen && creatorPickerPos && createPortal(
+                  <>
+                    <div className="fixed inset-0 z-40" aria-hidden onClick={closeCreatorPicker} />
+                    <div
+                      className="fixed z-50 w-[26rem] max-w-[calc(100vw-1rem)] rounded-xl border border-slate-200 bg-white shadow-xl"
+                      style={{ top: creatorPickerPos.top, left: creatorPickerPos.left }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="border-b border-slate-200 p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                          Creators in this view ({creatorsInView.length})
+                        </p>
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                          <input
+                            type="text"
+                            autoFocus
+                            value={creatorQuery}
+                            onChange={(e) => setCreatorQuery(e.target.value)}
+                            placeholder="Search name or email…"
+                            className="w-full rounded-lg border border-slate-300 bg-white pl-8 pr-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+                      <div className="max-h-72 overflow-y-auto py-1">
+                        {visibleCreators.length === 0 ? (
+                          <p className="px-4 py-6 text-center text-sm text-slate-500">No matching creators</p>
+                        ) : visibleCreators.map((c: CreatorEntry) => {
+                          const state = creatorSelectionState(c, selectedIds);
+                          return (
+                            <label
+                              key={c.email}
+                              className="flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-slate-50"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={state === 'all'}
+                                ref={(el) => { if (el) el.indeterminate = state === 'some'; }}
+                                onChange={() => setSelectedIds((prev) => toggleCreatorSelection(c, prev))}
+                                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block text-sm font-medium text-slate-800 truncate">
+                                  {c.name || c.email}
+                                </span>
+                                {c.name && <span className="block text-xs text-slate-500 truncate">{c.email}</span>}
+                              </span>
+                              <span className="text-xs text-slate-400 shrink-0">
+                                {c.ids.length} agreement{c.ids.length === 1 ? '' : 's'}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center justify-between gap-2 border-t border-slate-200 p-3">
+                        <span className="text-sm text-slate-600">
+                          {selectedVisibleIds.length} agreement{selectedVisibleIds.length === 1 ? '' : 's'} selected
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedIds(new Set())}
+                            disabled={selectedVisibleIds.length === 0}
+                            className="text-sm font-medium text-slate-500 hover:text-slate-700 disabled:opacity-40"
+                          >
+                            Clear
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { closeCreatorPicker(); handleBulkDownload(selectedVisibleIds); }}
+                            disabled={bulkDownloading || selectedVisibleIds.length === 0}
+                            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                          >
+                            <FileArchive className="h-4 w-4" />
+                            Download zip
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </>,
+                  document.body
+                )}
                 {filteredAgreements.length === 0 ? (
                   <div className="text-center py-16 px-6">
                     <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -787,6 +1018,18 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                 <table className="min-w-full divide-y divide-slate-200">
                   <thead className="bg-slate-50">
                     <tr>
+                      {userIsApprovalAdmin && (
+                        <th scope="col" className="pl-6 pr-2 py-3 w-10">
+                          <input
+                            type="checkbox"
+                            checked={allVisibleSelected}
+                            onChange={toggleSelectAllVisible}
+                            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            title={allVisibleSelected ? 'Clear selection' : 'Select all in this view'}
+                            aria-label="Select all agreements in this view"
+                          />
+                        </th>
+                      )}
                       <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Document</th>
                       <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Status</th>
                       <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Recipients</th>
@@ -812,6 +1055,17 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                       return (
                       <React.Fragment key={ag.id}>
                       <tr className="hover:bg-slate-50/50">
+                        {userIsApprovalAdmin && (
+                          <td className="pl-6 pr-2 py-4 align-top">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(ag.id)}
+                              onChange={() => toggleRowSelected(ag.id)}
+                              className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                              aria-label={`Select ${ag.file_name}`}
+                            />
+                          </td>
+                        )}
                         <td className="px-6 py-4 align-top">
                           <div className="flex items-start gap-2">
                             {hasRecipients ? (
@@ -950,7 +1204,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                       </tr>
                       {expanded && hasRecipients && (
                         <tr className="bg-slate-50/60">
-                          <td colSpan={4} className="px-6 py-3">
+                          <td colSpan={userIsApprovalAdmin ? 5 : 4} className="px-6 py-3">
                             <div className="space-y-2 pl-9">
                               {[...ag.recipients].sort((a, b) => (a.order ?? 999) - (b.order ?? 999)).map((rec) => {
                                 const ts = deriveRecipientStatus(rec, ag.status);

@@ -1,8 +1,15 @@
 import { defineConfig, mergeConfig } from 'vitest/config';
 import viteConfig from './vite.config';
 
+// vite.config.ts exports a mode-aware callback (it derives import.meta.env.DEV from the build
+// mode). mergeConfig cannot merge a callback, so resolve it against the test mode first.
+const resolvedViteConfig =
+  typeof viteConfig === 'function'
+    ? viteConfig({ command: 'serve', mode: 'test' })
+    : viteConfig;
+
 export default mergeConfig(
-  viteConfig,
+  resolvedViteConfig,
   defineConfig({
     test: {
       // Pure-utility tests run in node. Component tests must opt into jsdom with a

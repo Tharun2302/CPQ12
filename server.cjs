@@ -12,6 +12,7 @@ const jwt = require('jsonwebtoken');
 const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
+const AdmZip = require('adm-zip');
 
 // --- simple in-memory cache (no external deps) ---
 const _cache = {
@@ -7452,6 +7453,139 @@ app.get('/api/esign/documents/:id/file', async (req, res) => {
   } catch (error) {
     console.error('❌ E-sign get file error:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Resolves an e-sign document's PDF bytes without the restore-to-disk side effects of the
+// single-file route: signed → review-merged → original on disk, then stored base64, then
+// (for approval-sourced docs) the originating documents record. Returns null when unavailable.
+async function resolveEsignPdfBuffer(doc) {
+  const filePath = doc.signed_file_path || doc.review_merged_file_path || doc.file_path;
+  if (filePath && fs.existsSync(filePath)) {
+    try {
+      return fs.readFileSync(path.resolve(filePath));
+    } catch (e) {
+      console.warn('⚠️ Bulk download: could not read', filePath, e.message);
+    }
+  }
+
+  const storedBase64 = doc.signed_file_data || doc.file_data || null;
+  if (storedBase64) {
+    try {
+      return Buffer.from(storedBase64, 'base64');
+    } catch (e) {
+      console.warn('⚠️ Bulk download: bad base64 for', String(doc._id), e.message);
+    }
+  }
+
+  if (doc.upload_source === 'approval' && db) {
+    try {
+      let sourceDocId = doc.source_document_id || null;
+      if (!sourceDocId) {
+        const workflow = await db.collection('approval_workflows').findOne({ esignDocumentId: String(doc._id) });
+        sourceDocId = workflow && workflow.documentId ? workflow.documentId : null;
+      }
+      if (sourceDocId) {
+        const sourceDoc = await db.collection('documents').findOne({ id: sourceDocId });
+        if (sourceDoc && sourceDoc.fileData) {
+          return typeof sourceDoc.fileData === 'string'
+            ? Buffer.from(sourceDoc.fileData, 'base64')
+            : Buffer.isBuffer(sourceDoc.fileData) ? sourceDoc.fileData : Buffer.from(sourceDoc.fileData.buffer);
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ Bulk download: approval-source recovery failed:', e.message);
+    }
+  }
+
+  return null;
+}
+
+const {
+  BULK_DOWNLOAD_MAX_DOCS,
+  uniqueZipEntryName,
+  normalizeBulkDownloadIds
+} = require('./esign-bulk-download-utils.cjs');
+
+// POST /api/esign/documents/bulk-download - Admin-only: zip up many agreement PDFs at once
+app.post('/api/esign/documents/bulk-download', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const admin = await getApprovalAdminUser(req, res);
+    if (!admin) return; // getApprovalAdminUser already responded
+
+    const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : null;
+    if (!rawIds || rawIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'ids must be a non-empty array of document ids' });
+    }
+    if (rawIds.length > BULK_DOWNLOAD_MAX_DOCS) {
+      return res.status(400).json({
+        success: false,
+        error: `Too many documents requested. Select at most ${BULK_DOWNLOAD_MAX_DOCS} at a time.`
+      });
+    }
+
+    const objectIds = normalizeBulkDownloadIds(rawIds).map((id) => new ObjectId(id));
+    if (objectIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'No valid document ids supplied' });
+    }
+
+    const docs = await db.collection('esign_documents').find({ _id: { $in: objectIds } }).toArray();
+    if (docs.length === 0) {
+      return res.status(404).json({ success: false, error: 'No matching documents found' });
+    }
+
+    const zip = new AdmZip();
+    const usedNames = new Set();
+    const skipped = [];
+    let added = 0;
+
+    for (const doc of docs) {
+      const buffer = await resolveEsignPdfBuffer(doc);
+      if (!buffer || buffer.length === 0) {
+        skipped.push(doc.file_name || String(doc._id));
+        continue;
+      }
+      zip.addFile(uniqueZipEntryName(doc.file_name, String(doc._id), usedNames), buffer);
+      added += 1;
+    }
+
+    if (added === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'None of the selected documents have a file in storage.',
+        skipped
+      });
+    }
+
+    if (skipped.length > 0) {
+      zip.addFile(
+        'MISSING-FILES.txt',
+        Buffer.from(
+          `These selected agreements had no file in storage and were not included:\n\n${skipped.map((n) => `- ${n}`).join('\n')}\n`,
+          'utf8'
+        )
+      );
+    }
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    const zipBuffer = zip.toBuffer();
+
+    await Promise.all(docs.map((doc) =>
+      logAudit(doc._id, 'bulk_downloaded', admin.email, req.ip, { total_selected: docs.length, included: added })
+    ));
+
+    res.set('Content-Type', 'application/zip');
+    res.set('Content-Disposition', `attachment; filename="esign-agreements-${stamp}.zip"`);
+    res.set('Content-Length', String(zipBuffer.length));
+    res.set('Cache-Control', 'no-store');
+    res.set('X-Bulk-Included', String(added));
+    res.set('X-Bulk-Skipped', String(skipped.length));
+    res.set('Access-Control-Expose-Headers', 'X-Bulk-Included, X-Bulk-Skipped, Content-Disposition');
+    return res.send(zipBuffer);
+  } catch (error) {
+    console.error('❌ E-sign bulk download error:', error);
+    if (!res.headersSent) res.status(500).json({ success: false, error: error.message });
   }
 });
 
