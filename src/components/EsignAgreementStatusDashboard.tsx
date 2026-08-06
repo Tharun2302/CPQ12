@@ -241,6 +241,10 @@ function formatEsignCreatedAtLine(ag: Agreement): string | null {
 const EsignAgreementStatusDashboard: React.FC = () => {
   const { user } = useAuth();
   const userIsApprovalAdmin = Boolean((user as any)?.isApprovalAdmin);
+  // Bulk download is gated on the exhibit-admin list (the one behind Exhibits → Exhibit Admins),
+  // matching how ExhibitManager derives canManageExhibits. Distinct from approval-admin, which
+  // governs editing dates below.
+  const userIsExhibitAdmin = user?.role === 'exhibit_admin';
   const [activeTab, setActiveTab] = useState<StatusFilterTab>('all');
   const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -863,7 +867,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                       </button>
                     ))}
                   </nav>
-                  {userIsApprovalAdmin && filteredAgreements.length > 0 && (
+                  {userIsExhibitAdmin && filteredAgreements.length > 0 && (
                     <div className="flex items-center gap-2 py-2">
                       <button
                         type="button"
@@ -1018,7 +1022,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                 <table className="min-w-full divide-y divide-slate-200">
                   <thead className="bg-slate-50">
                     <tr>
-                      {userIsApprovalAdmin && (
+                      {userIsExhibitAdmin && (
                         <th scope="col" className="pl-6 pr-2 py-3 w-10">
                           <input
                             type="checkbox"
@@ -1055,7 +1059,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                       return (
                       <React.Fragment key={ag.id}>
                       <tr className="hover:bg-slate-50/50">
-                        {userIsApprovalAdmin && (
+                        {userIsExhibitAdmin && (
                           <td className="pl-6 pr-2 py-4 align-top">
                             <input
                               type="checkbox"
@@ -1204,7 +1208,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                       </tr>
                       {expanded && hasRecipients && (
                         <tr className="bg-slate-50/60">
-                          <td colSpan={userIsApprovalAdmin ? 5 : 4} className="px-6 py-3">
+                          <td colSpan={userIsExhibitAdmin ? 5 : 4} className="px-6 py-3">
                             <div className="space-y-2 pl-9">
                               {[...ag.recipients].sort((a, b) => (a.order ?? 999) - (b.order ?? 999)).map((rec) => {
                                 const ts = deriveRecipientStatus(rec, ag.status);

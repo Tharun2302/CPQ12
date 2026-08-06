@@ -7507,12 +7507,13 @@ const {
   normalizeBulkDownloadIds
 } = require('./esign-bulk-download-utils.cjs');
 
-// POST /api/esign/documents/bulk-download - Admin-only: zip up many agreement PDFs at once
+// POST /api/esign/documents/bulk-download - Exhibit-admin only: zip up many agreement PDFs at once.
+// Gated on the same admin list as the Exhibits page (Exhibits → Exhibit Admins), not approval-admin.
 app.post('/api/esign/documents/bulk-download', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const admin = await getApprovalAdminUser(req, res);
-    if (!admin) return; // getApprovalAdminUser already responded
+    const admin = await getExhibitAdminUser(req, res);
+    if (!admin) return; // getExhibitAdminUser already responded
 
     const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : null;
     if (!rawIds || rawIds.length === 0) {
