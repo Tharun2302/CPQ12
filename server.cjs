@@ -6958,18 +6958,33 @@ function buildEsignRecipientEmail(doc, rec, signingUrl, inboxUrl, options = {}) 
       : isTeamLead
         ? 'E-Sign Team Lead Dashboard'
         : 'your E-Sign dashboard';
-  const openInDashboard = `Open the agreement in your <a href="${inboxUrl}">${dashboardLabel}</a>`;
+  // Recipients with a role-specific dashboard get a second route to the same agreement.
+  // The signing button in the hero is always Option 2, so this block only describes the queue.
   const dashboardBlock = showDashboardLink
-    ? `<p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}${isReviewer ? '. The agreement will appear in your queue; open it from there to review.' : '. The agreement will open in your dashboard; you can then review and sign.'}</p>
-        <p><strong>Option 2 – ${isReviewer ? 'Direct link' : 'Sign directly'}:</strong> `
-    : '<p><strong>Signing link:</strong> ';
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 24px;">
+         <tr><td style="padding:16px 18px; background:#eef2ff; border-left:4px solid #4f46e5; border-radius:6px; font-size:14px; line-height:1.6; color:#3730a3;">
+           <strong style="display:block; margin-bottom:4px;">Option 1 &ndash; Open in your dashboard</strong>
+           Open the agreement in your <a href="${inboxUrl}" style="color:#4338ca; font-weight:600;">${dashboardLabel}</a>${isReviewer
+             ? '. It will appear in your queue; open it from there to review.'
+             : '. It will open in your dashboard, where you can review and sign.'}
+           <strong style="display:block; margin:12px 0 4px;">Option 2 &ndash; ${isReviewer ? 'Direct link' : 'Sign directly'}</strong>
+           Use the ${escapeHtml(ctaText)} button above.
+         </td></tr>
+       </table>`
+    : '';
   const fileNameForSubject = sanitizeEsignEmailSubjectFileName(doc.file_name || 'Document');
+  // Outlook does not reliably inherit font-family from <body>, so every paragraph in the
+  // email body carries its own inline style.
+  const P = 'margin:0 0 14px; font-family:Arial, Helvetica, sans-serif; font-size:15px; line-height:1.6; color:#374151;';
+  const META = 'margin:0 0 6px; font-family:Arial, Helvetica, sans-serif; font-size:14px; line-height:1.6; color:#4b5563;';
   const customMessageBlock = (rec.email_message && rec.email_message.trim())
-    ? `<p style="margin:1em 0;">${escapeEmailMessage(rec.email_message.trim())}</p>`
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 16px;">
+         <tr><td style="padding:14px 16px; background:#f9fafb; border-left:3px solid #d1d5db; border-radius:4px; font-family:Arial, Helvetica, sans-serif; font-size:15px; line-height:1.6; color:#374151;">${escapeEmailMessage(rec.email_message.trim())}</td></tr>
+       </table>`
     : '';
   const expiryLabel = formatEsignExpiryDate(tokenExpiresAt);
   const expiryLine = expiryLabel
-    ? `<p><strong>Link expires:</strong> ${escapeHtml(expiryLabel)}</p>`
+    ? `<p style="${META}"><strong style="color:#111827;">Link expires:</strong> ${escapeHtml(expiryLabel)}</p>`
     : '';
 
   let subject;
@@ -6980,20 +6995,20 @@ function buildEsignRecipientEmail(doc, rec, signingUrl, inboxUrl, options = {}) 
     introLine = isReviewer
       ? 'This is a reminder that your review is still pending.'
       : 'This is a reminder that your signature is still pending.';
-    helperLine = '<p>Please complete the document before the secure link expires.</p>';
+    helperLine = `<p style="${P}">Please complete the document before the secure link expires.</p>`;
   } else if (mode === 'extended') {
     subject = `Signing link renewed: ${isReviewer ? 'Review' : 'Sign'} ${fileNameForSubject}`;
     introLine = isReviewer
       ? 'The sender has extended your review window and issued a fresh secure link.'
       : 'The sender has extended your signing window and issued a fresh secure link.';
-    helperLine = `<p>Your new secure link is active now and remains valid for ${expiryDays} day${expiryDays === 1 ? '' : 's'}.</p>`;
+    helperLine = `<p style="${P}">Your new secure link is active now and remains valid for ${expiryDays} day${expiryDays === 1 ? '' : 's'}.</p>`;
   } else if (mode === 'forwarded') {
     const forwardedByLabel = (forwardedByName || forwardedByEmail || 'The original recipient').trim();
     subject = `Forwarded: ${isReviewer ? 'Review' : 'Sign'} ${fileNameForSubject}`;
     introLine = isReviewer
       ? `${escapeHtml(forwardedByLabel)} forwarded this review request to you.`
       : `${escapeHtml(forwardedByLabel)} forwarded this signing request to you.`;
-    helperLine = `${forwardComment ? `<p><strong>Forwarding note:</strong> ${escapeEmailMessage(forwardComment)}</p>` : ''}<p>Please use the secure link below to complete the request.</p>`;
+    helperLine = `${forwardComment ? `<p style="${META}"><strong style="color:#111827;">Forwarding note:</strong> ${escapeEmailMessage(forwardComment)}</p>` : ''}<p style="${P}">Please use the secure link above to complete the request.</p>`;
   } else {
     subject = `Action required: ${isReviewer ? 'Review' : 'Sign'} ${fileNameForSubject}`;
     introLine = isReviewer
@@ -7001,15 +7016,113 @@ function buildEsignRecipientEmail(doc, rec, signingUrl, inboxUrl, options = {}) 
       : 'You have been requested to sign a document.';
   }
 
+  // Who the request comes from — shown as attribution, the way DocuSign names the sender.
+  const senderNameRaw = String(doc.requested_by_name || '').trim()
+    || (String(doc.uploaded_by || '').includes('@') ? '' : String(doc.uploaded_by || '').trim());
+  const senderEmailRaw = getEsignDocumentCreatorNotifyEmail(doc);
+  const senderLabel = senderNameRaw || senderEmailRaw || 'Your sender';
+  const action = isReviewer ? 'review' : 'review and sign';
+
+  // Headline inside the hero card. Mirrors `subject`/`introLine` per mode, but phrased as
+  // attribution so the recipient immediately sees who is asking.
+  let heroLine;
+  if (mode === 'reminder') {
+    heroLine = `Your ${isReviewer ? 'review' : 'signature'} is still pending.`;
+  } else if (mode === 'extended') {
+    heroLine = `${escapeHtml(senderLabel)} issued you a fresh secure link.`;
+  } else if (mode === 'forwarded') {
+    const fwd = (forwardedByName || forwardedByEmail || 'The original recipient').trim();
+    heroLine = `${escapeHtml(fwd)} forwarded this document for you to ${action}.`;
+  } else {
+    heroLine = `${escapeHtml(senderLabel)} sent you a document to ${action}.`;
+  }
+
+  const senderBlock = (senderNameRaw || senderEmailRaw)
+    ? `<p style="margin:0 0 2px; font-family:Arial, Helvetica, sans-serif; font-size:15px; font-weight:700; color:#111827;">${escapeHtml(senderLabel)}</p>
+       ${senderEmailRaw ? `<p style="margin:0 0 18px; font-family:Arial, Helvetica, sans-serif; font-size:14px;"><a href="mailto:${escapeHtml(senderEmailRaw)}" style="color:#4f46e5; text-decoration:none;">${escapeHtml(senderEmailRaw)}</a></p>` : ''}`
+    : '';
+
+  const fileLine = doc.file_name
+    ? `<p style="${META}"><strong style="color:#111827;">Document:</strong> ${escapeHtml(doc.file_name)}</p>`
+    : '';
+
   return {
     subject,
-    html: `<p>Hello${rec.name ? ` ${escapeHtml(rec.name)}` : ''},</p>
-      ${customMessageBlock}<p>${introLine}</p>
-      ${expiryLine}
-      ${helperLine}
-      ${dashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
-      <p>Thank you.</p>`,
+    html: renderEsignEmailShell({
+      title: subject,
+      heroLine,
+      ctaText,
+      ctaUrl: signingUrl,
+      body: `${senderBlock}
+        <p style="${P}">Hello${rec.name ? ` ${escapeHtml(rec.name)}` : ''},</p>
+        <p style="${P}">${introLine}</p>
+        ${customMessageBlock}
+        ${fileLine}
+        ${expiryLine}
+        ${helperLine}`,
+      afterBody: dashboardBlock,
+    }),
   };
+}
+
+/**
+ * Branded wrapper for e-sign recipient emails: brand header, hero card carrying the
+ * attribution line and the primary action, then details.
+ *
+ * Written for email clients, not browsers — tables for structure, inline styles only, no
+ * external assets (Outlook strips <style> blocks and blocks remote images by default), and
+ * the CTA is a padded table cell with bgcolor so it still renders as a button in Outlook's
+ * Word engine. Keep it that way when editing.
+ */
+function renderEsignEmailShell({ title, heroLine, ctaText, ctaUrl, body, afterBody = '' }) {
+  const brand = process.env.EMAIL_BRAND_NAME || 'Zenop.ai';
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title></head>
+<body style="margin:0; padding:0; background:#f3f4f6; font-family:Arial, Helvetica, sans-serif; -webkit-font-smoothing:antialiased;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f3f4f6;">
+    <tr><td align="center" style="padding:24px 12px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px; max-width:100%; background:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+
+        <tr><td align="center" style="padding:22px 24px; border-bottom:1px solid #e5e7eb;">
+          <span style="font-size:19px; font-weight:700; color:#4f46e5; letter-spacing:-0.2px;">${escapeHtml(brand)}</span>
+        </td></tr>
+
+        <tr><td style="padding:24px 24px 0;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#2e1065; border-radius:10px;">
+            <tr><td align="center" style="padding:32px 24px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 18px;">
+                <tr><td align="center" width="56" height="56" style="width:56px; height:56px; background:#ffffff; border-radius:10px; font-size:26px; line-height:56px; color:#2e1065;">&#9998;</td></tr>
+              </table>
+              <p style="margin:0 0 22px; font-size:17px; line-height:1.5; color:#ffffff; font-weight:600;">${heroLine}</p>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;">
+                <tr><td align="center" bgcolor="#4f46e5" style="border-radius:6px;">
+                  <a href="${ctaUrl}" style="display:inline-block; padding:14px 32px; font-size:15px; font-weight:700; color:#ffffff; text-decoration:none; border-radius:6px;">${escapeHtml(ctaText)}</a>
+                </td></tr>
+              </table>
+            </td></tr>
+          </table>
+        </td></tr>
+
+        <tr><td style="padding:26px 24px 0; line-height:1.6;">${body}</td></tr>
+        ${afterBody ? `<tr><td style="padding:22px 24px 0;">${afterBody}</td></tr>` : ''}
+
+        <tr><td style="padding:20px 24px 28px;">
+          <p style="margin:0; font-size:15px; color:#374151;">Thank you.</p>
+        </td></tr>
+
+        <tr><td style="padding:18px 24px; background:#f9fafb; border-top:1px solid #e5e7eb;">
+          <p style="margin:0; font-size:12px; line-height:1.5; color:#6b7280;">
+            This is an automated message from ${escapeHtml(brand)}. If the button does not work, copy and paste this link into your browser:<br>
+            <a href="${ctaUrl}" style="color:#4f46e5; word-break:break-all;">${escapeHtml(ctaUrl)}</a>
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
 }
 
 function buildEsignRecipientRestoreUpdate(recipient) {
@@ -7969,6 +8082,17 @@ async function sendDocumentViaDocusign(doc, recipients, docId, { uploadedBy = 's
     };
   });
 
+  // Match the in-house signing email, which shows "Link expires: <date>". DocuSign's default
+  // template prints no expiry, so pass the same date through emailBlurb and set a matching
+  // envelope expiration so the stated date is actually enforced. Same ESIGN_LINK_EXPIRY_DAYS
+  // and same formatter as buildEsignRecipientEmail, so both channels agree.
+  const dsExpiresAt = new Date(Date.now() + ESIGN_LINK_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+  const dsExpiryLabel = formatEsignExpiryDate(dsExpiresAt);
+  const dsBlurb = [
+    'You have been requested to sign a document.',
+    dsExpiryLabel ? `Link expires: ${dsExpiryLabel}` : '',
+  ].filter(Boolean).join('\n\n');
+
   let result;
   try {
     result = await docusign.createAndSendEnvelope({
@@ -7977,6 +8101,8 @@ async function sendDocumentViaDocusign(doc, recipients, docId, { uploadedBy = 's
       fileName: doc.file_name || 'Agreement.pdf',
       emailSubject: `Please sign: ${doc.file_name || 'Agreement'}`,
       signers: dsSigners,
+      emailBlurb: dsBlurb,
+      expireAfterDays: ESIGN_LINK_EXPIRY_DAYS,
     });
   } catch (e) {
     const apiMsg = e?.response?.data?.message || e?.message || 'DocuSign envelope creation failed';
@@ -7993,6 +8119,9 @@ async function sendDocumentViaDocusign(doc, recipients, docId, { uploadedBy = 's
       docusign_envelope_id: result.envelopeId,
       docusign_status: result.status || 'sent',
       docusign_sent_at: now,
+      // Mirrors token_expires_at on the in-house path, so the app knows when a DocuSign
+      // envelope lapses instead of the date living only inside the recipient's email.
+      docusign_expires_at: dsExpiresAt,
     } }
   );
   for (const s of signers) {

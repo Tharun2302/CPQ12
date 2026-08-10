@@ -53,8 +53,13 @@ VITE_BACKEND_URL=http://localhost:3001
 
 # Frontend URL (for email links and redirects)
 # Local: http://localhost:5173
-# Production: https://zenop.ai
+# Production: https://zenop.ai  (use a real https domain — http://localhost approve links
+#   get quarantined by Microsoft 365 and won't work for external approvers)
 BASE_URL=http://localhost:5173
+
+# Email sender for SendGrid. MUST be a SendGrid-verified sender (single sender or
+# authenticated domain). Prefer a cloudfuze.com address for deliverability to cloudfuze.com approvers.
+EMAIL_FROM=your-verified-sender@cloudfuze.com
 
 # Backend Base URL (for CORS and email links)
 # Local: http://localhost:3001

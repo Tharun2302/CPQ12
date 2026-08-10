@@ -305,7 +305,7 @@ function buildTabs(fields, pageSizes) {
  *          signers:Array<{email:string,name:string,recipientId:string,routingOrder:string,fields:any[]}>}} args
  * @returns {Promise<{envelopeId:string, status:string}>}
  */
-async function createAndSendEnvelope({ db, pdfBuffer, fileName, emailSubject, signers }) {
+async function createAndSendEnvelope({ db, pdfBuffer, fileName, emailSubject, signers, emailBlurb = '', expireAfterDays = 0 }) {
   const { accessToken, accountId, basePath } = await getAccessToken(db);
   const buf = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
   const pdfBase64 = buf.toString('base64');
@@ -331,6 +331,29 @@ async function createAndSendEnvelope({ db, pdfBuffer, fileName, emailSubject, si
     recipients: { signers: dsSigners },
     status: 'sent',
   };
+
+  // DocuSign's default email template has no expiry line and cannot be edited via the API,
+  // so the only way to show the date to the recipient is emailBlurb (the message body).
+  // Cap at DocuSign's 10,000-character limit for this field.
+  if (emailBlurb && String(emailBlurb).trim()) {
+    body.emailBlurb = String(emailBlurb).trim().slice(0, 10000);
+  }
+
+  // Make the advertised date real: without this the envelope never expires and the blurb
+  // would be a promise nothing enforces. useAccountDefaults must be false or the account-level
+  // expiration settings win and expireAfter is ignored.
+  const days = Number(expireAfterDays);
+  if (Number.isFinite(days) && days > 0) {
+    body.notification = {
+      useAccountDefaults: 'false',
+      expirations: {
+        expireEnabled: 'true',
+        expireAfter: String(Math.round(days)),
+        // Warn 2 days out, but never schedule the warning on/after expiry for short windows.
+        expireWarn: String(Math.max(0, Math.min(2, Math.round(days) - 1))),
+      },
+    };
+  }
 
   const url = `${basePath}/v2.1/accounts/${accountId}/envelopes`;
   const resp = await axios.post(url, body, {
