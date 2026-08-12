@@ -79,3 +79,4 @@ onlyoffice-debug/
 
 # Throwaway E2E test harness output (screenshots, audit JSON) — never commit
 tmp-e2e/
+.cpq-monitor/
