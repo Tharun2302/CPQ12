@@ -35,7 +35,7 @@ const LandingPage: React.FC = () => {
             Everything you need to succeed
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            <div className="bg-white p-6 rounded-lg shadow-md">
+            <div className="bg-white p-6 rounded-lg shadow-md blur-sm opacity-60 pointer-events-none select-none">
               <Calculator className="h-12 w-12 text-blue-600 mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 mb-2">Smart Pricing</h3>
               <p className="text-gray-600">
