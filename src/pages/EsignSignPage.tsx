@@ -1280,20 +1280,16 @@ const EsignSignPage: React.FC = () => {
   if (recipientRole === 'reviewer') {
     const fileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
     return (
-      <div className="min-h-screen bg-slate-50 py-6 px-4">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-xl font-bold text-slate-900 mb-2">Review document</h1>
-          <p className="text-slate-600 text-sm mb-4">{doc.file_name}</p>
-          <p className="text-slate-600 text-sm mb-4">
-            Signature fields are not shown here. Fill name, title, date, and text fields, then <strong>Save field entries</strong> — that updates the downloadable PDF (and database). Then click <strong>Approve</strong>. Use the Download button on this flow so the file comes from e-sign; other downloads (e.g. agreement from Quotes) are separate files.
-          </p>
-          <div className="mb-4">
-            {renderForwardRequestPanel()}
+      <div className="h-screen overflow-hidden bg-slate-50 flex flex-col">
+        <div className="max-w-7xl w-full mx-auto flex-1 min-h-0 flex flex-col p-4 sm:p-6 gap-4">
+          <div className="flex-shrink-0">
+            <h1 className="text-xl font-bold text-slate-900 mb-2">Review document</h1>
+            <p className="text-slate-600 text-sm mb-4">{doc.file_name}</p>
           </div>
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 flex-1 min-h-0 flex flex-col">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 min-h-0 flex flex-col">
             <div
               ref={scrollContainerRef}
-              className="rounded-xl border-2 border-slate-200 overflow-y-auto overflow-x-hidden bg-slate-100 flex-1 min-h-0"
+              className="overflow-y-auto overflow-x-hidden bg-slate-100 flex-1 min-h-0"
             >
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
                 <div
@@ -1384,104 +1380,167 @@ const EsignSignPage: React.FC = () => {
               </div>
             ))}
             </div>
-          </div>
-          {totalPages > 1 && (
-            <div className="flex items-center gap-2 mt-2 mb-6">
-              <label htmlFor="review-goto-page" className="text-sm text-slate-600">Go to page</label>
-              <input
-                id="review-goto-page"
-                type="number"
-                min={1}
-                max={totalPages}
-                defaultValue={1}
-                className="w-14 rounded border border-slate-300 px-2 py-1 text-sm"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const n = Math.max(1, Math.min(totalPages, parseInt((e.target as HTMLInputElement).value, 10) || 1));
+            {totalPages > 1 && (
+              <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-t border-slate-200 bg-white">
+                <label htmlFor="review-goto-page" className="text-sm text-slate-600">Go to page</label>
+                <input
+                  id="review-goto-page"
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  defaultValue={1}
+                  className="w-14 rounded border border-slate-300 px-2 py-1 text-sm"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const n = Math.max(1, Math.min(totalPages, parseInt((e.target as HTMLInputElement).value, 10) || 1));
+                      scrollContainerRef.current?.querySelector(`[data-page="${n}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const input = document.getElementById('review-goto-page') as HTMLInputElement;
+                    const n = input ? Math.max(1, Math.min(totalPages, parseInt(input.value, 10) || 1)) : 1;
                     scrollContainerRef.current?.querySelector(`[data-page="${n}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const input = document.getElementById('review-goto-page') as HTMLInputElement;
-                  const n = input ? Math.max(1, Math.min(totalPages, parseInt(input.value, 10) || 1)) : 1;
-                  scrollContainerRef.current?.querySelector(`[data-page="${n}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm hover:bg-slate-50"
-              >
-                Go
-              </button>
-              <span className="text-sm text-slate-500">1–{totalPages}</span>
-            </div>
-          )}
-          {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
-          <div className="flex flex-nowrap items-end gap-3 w-full min-w-0 overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6 mb-4">
-            <button
-              type="button"
-              onClick={() => handleSaveReviewerFields()}
-              disabled={savingReviewerFields || markingReviewed || fields.length === 0}
-              className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 bg-indigo-600 text-white rounded-lg text-sm sm:text-base font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-            >
-              {savingReviewerFields ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin shrink-0" />
-                  Saving…
-                </>
-              ) : (
-                <>Save field entries</>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleReviewAction('approve')}
-              disabled={markingReviewed || savingReviewerFields || (fields.length > 0 && !reviewerEntriesSaved)}
-              className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 bg-emerald-600 text-white rounded-lg text-sm sm:text-base font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-              title={fields.length > 0 && !reviewerEntriesSaved ? 'Save field entries first' : undefined}
-            >
-              {markingReviewed ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin shrink-0" />
-                  Submitting…
-                </>
-              ) : (
-                <>
-                  <Check className="h-5 w-5 shrink-0" />
-                  Approve
-                </>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleReviewAction('deny')}
-              disabled={markingReviewed}
-              className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 bg-red-600 text-white rounded-lg text-sm sm:text-base font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-            >
-              {markingReviewed ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin shrink-0" />
-                  Submitting…
-                </>
-              ) : (
-                <>
-                  <XCircle className="h-5 w-5 shrink-0" />
-                  Deny
-                </>
-              )}
-            </button>
-            <div className="flex flex-col gap-1 w-64 min-w-[16rem] flex-shrink-0">
-              <label htmlFor="review-comment" className="text-xs font-medium text-slate-600 leading-tight">
-                Comment (optional for Approve; required for Deny)
-              </label>
-              <input
-                id="review-comment"
-                type="text"
-                value={reviewComment}
-                onChange={(e) => setReviewComment(e.target.value)}
-                placeholder="Add a comment…"
-                className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-              />
+                  }}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm hover:bg-slate-50"
+                >
+                  Go
+                </button>
+                <span className="text-sm text-slate-500">1–{totalPages}</span>
+              </div>
+            )}
+          </div>
+          <div className="flex-shrink-0 bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] -mx-4 sm:-mx-6 -mb-4 sm:-mb-6 px-4 sm:px-6 pt-3 pb-4">
+            {signingToken && showForwardForm && (
+              <div className="pb-3 border-b border-slate-100 mb-3">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <input
+                    type="text"
+                    value={forwardName}
+                    onChange={(e) => setForwardName(e.target.value)}
+                    placeholder="Recipient name"
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 outline-none"
+                  />
+                  <input
+                    type="email"
+                    value={forwardEmail}
+                    onChange={(e) => setForwardEmail(e.target.value)}
+                    placeholder="Recipient email"
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={forwardComment}
+                    onChange={(e) => setForwardComment(e.target.value)}
+                    placeholder="Optional note for recipient"
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 outline-none sm:col-span-2"
+                  />
+                  <div className="sm:col-span-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleForwardRequest}
+                      disabled={forwardingRequest}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {forwardingRequest ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      {forwardingRequest ? 'Forwarding…' : 'Send forwarded link'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowForwardForm(false); setError(null); }}
+                      className="inline-flex items-center rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {error && (
+              <div className="mb-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
+                {error}
+              </div>
+            )}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <div className="flex-1 min-w-0">
+                <input
+                  id="review-comment"
+                  type="text"
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                  placeholder="Comment (optional for Approve; required for Deny)"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400"
+                />
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                {signingToken && (
+                  <button
+                    type="button"
+                    onClick={() => { setShowForwardForm((prev) => !prev); setError(null); }}
+                    title="Forward to someone else"
+                    className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors whitespace-nowrap"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="hidden sm:inline">Forward</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleSaveReviewerFields()}
+                  disabled={savingReviewerFields || markingReviewed || fields.length === 0}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                >
+                  {savingReviewerFields ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                      Saving…
+                    </>
+                  ) : (
+                    <>Save field entries</>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleReviewAction('approve')}
+                  disabled={markingReviewed || savingReviewerFields || (fields.length > 0 && !reviewerEntriesSaved)}
+                  className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm whitespace-nowrap"
+                  title={fields.length > 0 && !reviewerEntriesSaved ? 'Save field entries first' : undefined}
+                >
+                  {markingReviewed ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                      Submitting…
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4 shrink-0" />
+                      Approve
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleReviewAction('deny')}
+                  disabled={markingReviewed}
+                  className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm whitespace-nowrap"
+                >
+                  {markingReviewed ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                      Submitting…
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-4 w-4 shrink-0" />
+                      Deny
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
