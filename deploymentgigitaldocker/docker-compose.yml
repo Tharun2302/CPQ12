@@ -1,0 +1,122 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploymentgigitaldocker/Dockerfile
+      args:
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL}
+        VITE_API_URL: ${VITE_API_URL}
+        VITE_MSAL_CLIENT_ID: ${VITE_MSAL_CLIENT_ID}
+        VITE_MSAL_REDIRECT_URI: ${VITE_MSAL_REDIRECT_URI}
+        VITE_CLARITY_ID: ${VITE_CLARITY_ID}
+    container_name: cpq-application
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      GOTENBERG_URL: http://gotenberg:3000
+      MONGODB_URI: ${MONGODB_URI}
+      DB_NAME: ${DB_NAME}
+      HUBSPOT_API_KEY: ${HUBSPOT_API_KEY}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      EMAIL_FROM: ${EMAIL_FROM}
+      JWT_SECRET: ${JWT_SECRET}
+      BOLDSIGN_API_KEY: ${BOLDSIGN_API_KEY}
+      BOLDSIGN_BASE_URL: ${BOLDSIGN_BASE_URL}
+      BOLDSIGN_APP_URL: ${BOLDSIGN_APP_URL}
+      APP_BASE_URL: ${APP_BASE_URL}
+      BASE_URL: ${BASE_URL}
+      SOFFICE_PATH: /usr/bin/libreoffice
+      # --- OnlyOffice (Word-style Edit feature) ---
+      ONLYOFFICE_PUBLIC_URL: ${ONLYOFFICE_PUBLIC_URL}   # browser -> OnlyOffice (https://zenop.ai:8443)
+      ONLYOFFICE_INTERNAL_URL: http://onlyoffice        # backend -> OnlyOffice (docker network)
+      BACKEND_CALLBACK_URL: http://app:3001             # OnlyOffice -> backend (docker network)
+      ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET}
+    env_file:
+      - .env
+    volumes:
+      - ./temp-files:/temp
+    restart: unless-stopped
+    networks:
+      - cpq-network
+    depends_on:
+      - gotenberg
+      - onlyoffice
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3001/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: cpq-gotenberg
+    restart: unless-stopped
+    networks:
+      - cpq-network
+
+  # --- OnlyOffice Document Server (Word-style editor) ---
+  onlyoffice:
+    image: onlyoffice/documentserver:latest   # pin to a tested version (e.g. :8.2) for production
+    container_name: cpq-onlyoffice
+    environment:
+      - JWT_ENABLED=true
+      - JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
+      - JWT_HEADER=Authorization
+      - DB_TYPE=postgres
+      - DB_HOST=onlyoffice-postgres
+      - DB_PORT=5432
+      - DB_NAME=onlyoffice
+      - DB_USER=onlyoffice
+      - DB_PWD=${ONLYOFFICE_DB_PWD}
+    volumes:
+      - onlyoffice-data:/var/www/onlyoffice/Data
+      - onlyoffice-logs:/var/log/onlyoffice
+    depends_on:
+      - onlyoffice-postgres
+    restart: unless-stopped
+    networks:
+      - cpq-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost/healthcheck || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  onlyoffice-postgres:
+    image: postgres:15
+    container_name: cpq-onlyoffice-postgres
+    environment:
+      - POSTGRES_DB=onlyoffice
+      - POSTGRES_USER=onlyoffice
+      - POSTGRES_PASSWORD=${ONLYOFFICE_DB_PWD}
+    volumes:
+      - onlyoffice-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - cpq-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8443:8443"           # OnlyOffice (https://zenop.ai:8443)
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - app
+      - onlyoffice
+    restart: unless-stopped
+    networks:
+      - cpq-network
+
+networks:
+  cpq-network:
+    driver: bridge
+
+volumes:
+  onlyoffice-data:
+  onlyoffice-logs:
+  onlyoffice-postgres-data:
+

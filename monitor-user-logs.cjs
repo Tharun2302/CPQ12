@@ -26,11 +26,11 @@ if (fs.existsSync(ENV_FILE)) {
 }
 
 const CONTAINER = process.env.CPQ_CONTAINER || 'cpq-application';
-const REPORT_DIR = process.env.REPORT_DIR || '/app/CPQ12/logs/monitor';
-const STATE_FILE = process.env.STATE_FILE || '/app/CPQ12/logs/monitor/.state.json';
+const REPORT_DIR = process.env.REPORT_DIR || '/root/CPQ12/logs/monitor';
 const TEAMS_WEBHOOK_URL = process.env.TEAMS_WEBHOOK_URL || '';
 const SCAN_LABEL = process.env.SCAN_LABEL || 'CPQ12 User & Error Monitor';
 const MAX_SAMPLE_LINES = parseInt(process.env.MAX_SAMPLE_LINES || '12', 10);
+const SCAN_WINDOW_MINUTES = parseInt(process.env.SCAN_WINDOW_MINUTES || '16', 10);
 const FORCE_ALERT = process.env.FORCE_ALERT === '1';
 
 // Bug patterns. User-activity failures are tagged separately in the alert.
@@ -55,24 +55,6 @@ const NOISE_PATTERNS = [
 // ---- Helpers -------------------------------------------------------------
 function ensureDir(d) { fs.mkdirSync(d, { recursive: true }); }
 
-function loadState() {
-  try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); }
-  catch { return { lastTs: 0 }; }
-}
-function saveState(s) {
-  ensureDir(path.dirname(STATE_FILE));
-  fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2));
-}
-
-// Docker log lines look like: 2026-08-12T10:34:56.123456789Z message
-// Extract the timestamp (ms) so we only scan NEW lines since last run.
-function parseTs(line) {
-  const m = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?Z?/);
-  if (!m) return null;
-  const t = Date.parse(m[1] + 'Z');
-  return isNaN(t) ? null : t;
-}
-
 function classify(line) {
   const isUser = USER_ACTIVITY_PATTERNS.some(p => p.test(line));
   const isBug = GENERIC_PATTERNS.some(p => p.test(line));
@@ -80,29 +62,15 @@ function classify(line) {
 }
 
 function getContainerLogs() {
-  // --since takes an RFC3339 timestamp; we pass lastTs so docker returns
-  // only lines newer than our last processed timestamp.
-  const state = loadState();
-  let sinceArg = '';
-  if (state.lastTs) {
-    sinceArg = new Date(state.lastTs - 1000).toISOString();
-  }
+  // Container log lines have NO leading timestamps, so incremental-by-time
+  // tracking on the line itself is impossible. Instead we ask docker for
+  // only the logs from the last SCAN_WINDOW_MINUTES (default 16, covering
+  // the 15-min cron gap plus a small overlap to avoid missing a boundary).
+  const windowMin = parseInt(process.env.SCAN_WINDOW_MINUTES || '16', 10);
   try {
-    const out = execFileSync('docker', ['logs', CONTAINER], { encoding: 'utf8' });
-    // docker logs returns ALL logs; filter by timestamp ourselves for precision
-    const allLines = out.split(/\r?\n/);
-    let lastTs = state.lastTs || 0;
-    const newLines = [];
-    for (const line of allLines) {
-      if (!line.trim()) continue;
-      const ts = parseTs(line);
-      const pure = ts ? line.replace(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s*/, '') : line;
-      if (ts && ts <= lastTs) continue;
-      if (ts) lastTs = Math.max(lastTs, ts);
-      newLines.push(pure);
-    }
-    saveState({ lastTs });
-    return newLines;
+    const out = execFileSync('docker', ['logs', '--since', `${windowMin}m`, CONTAINER], { encoding: 'utf8' });
+    const lines = out.split(/\r?\n/).filter(l => l.trim().length);
+    return lines;
   } catch (e) {
     console.error('Failed to read docker logs for', CONTAINER, e.message);
     return [];
