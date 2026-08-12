@@ -943,18 +943,20 @@ const EsignPlaceFieldsPage: React.FC = () => {
     return !rf.some((f) => (f.type || 'signature') === 'signature');
   });
   const reviewersMissingField = reviewerRecipients.filter((rv) => !signatureFields.some((f) => f.recipient_id === rv.id));
-  const validationItems: { label: string; done: boolean }[] = [
+  const validationItems: { label: string; done: boolean; optional?: boolean }[] = [
     { label: recipients.length > 0 ? `${recipients.length} recipient${recipients.length === 1 ? '' : 's'} added` : 'Add at least one recipient', done: recipients.length > 0 },
-    { label: 'At least one field placed', done: signatureFields.length > 0 },
+    // Review-only sends (no signers) don't require any field to be placed either.
+    { label: 'At least one field placed', done: signatureFields.length > 0, optional: signerRecipients.length === 0 },
     {
       label: signerRecipients.length === 0 ? 'No signers to verify' : 'Signature placed for each signer',
       done: signerRecipients.length === 0 || signersMissingSignature.length === 0,
     },
+    // Reviewer fields are informational only — unlike signers, reviewers aren't required to have a field before sending.
     ...(reviewerRecipients.length > 0
-      ? [{ label: 'Field placed for each reviewer', done: reviewersMissingField.length === 0 }]
+      ? [{ label: 'Field placed for each reviewer', done: reviewersMissingField.length === 0, optional: true }]
       : []),
   ];
-  const allValidationPassed = validationItems.every((v) => v.done) && recipients.length > 0;
+  const allValidationPassed = validationItems.every((v) => v.optional || v.done) && recipients.length > 0;
 
   if (loading || !doc) {
     return (
@@ -1591,7 +1593,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                       {v.done
                         ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
                         : <Circle className="h-4 w-4 shrink-0 text-slate-300" />}
-                      <span className={v.done ? 'text-slate-700' : 'text-slate-400'}>{v.label}</span>
+                      <span className={v.done ? 'text-slate-700' : 'text-slate-400'}>{v.label}{v.optional ? ' (optional)' : ''}</span>
                     </li>
                   ))}
                 </ul>
