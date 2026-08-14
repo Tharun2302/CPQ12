@@ -685,6 +685,13 @@ async function enrichWorkflowDataFromRecord(workflowData) {
   }
 }
 
+function cloudFuzeEmailFooterHTML() {
+  return `
+          <p style="color:#6b7280; font-size:12px; margin-top:12px;"><strong>Please do not share this email.</strong> This email contains a secure link — please do not forward it or share the link with anyone else.</p>
+          <p style="color:#9ca3af; font-size:12px; margin-top:12px; border-top:1px solid #e5e7eb; padding-top:12px;">This message was sent via CloudFuze.<br/>© ${new Date().getFullYear()} CloudFuze, Inc. All rights reserved.</p>
+          <p style="font-size:12px;"><a href="https://www.cloudfuze.com/contact/" style="color:#6b7280; text-decoration:underline;">Contact Us</a> &nbsp;·&nbsp; <a href="mailto:support@cloudfuze.com" style="color:#6b7280; text-decoration:underline;">Support</a> &nbsp;·&nbsp; <a href="mailto:support@cloudfuze.com?subject=Reporting%20suspicious%20email" style="color:#6b7280; text-decoration:underline;">Report Email</a></p>`;
+}
+
 function generateTeamEmailHTML(workflowData, token) {
   const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
   const approvalLink = token
@@ -757,6 +764,7 @@ function generateTeamEmailHTML(workflowData, token) {
         
         <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
           <p>This is an automated message from your approval system.</p>
+          ${cloudFuzeEmailFooterHTML()}
         </div>
       </div>
     </body>
@@ -833,6 +841,7 @@ function generateTechnicalTeamEmailHTML(workflowData, token) {
         
         <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
           <p>This is an automated message from your approval system.</p>
+          ${cloudFuzeEmailFooterHTML()}
         </div>
       </div>
     </body>
@@ -910,6 +919,7 @@ function generateLegalTeamEmailHTML(workflowData, token) {
         
         <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
           <p>This is an automated message from your approval system.</p>
+          ${cloudFuzeEmailFooterHTML()}
         </div>
       </div>
     </body>
@@ -963,6 +973,7 @@ function generateClientEmailHTML(workflowData) {
         
         <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
           <p>This is an automated message from your approval system.</p>
+          ${cloudFuzeEmailFooterHTML()}
         </div>
       </div>
     </body>
@@ -1073,7 +1084,10 @@ function generateDenialEmailHTML(data) {
 async function sendEmail(to, subject, html, attachments = []) {
   try {
     const emailPayload = {
-      from: process.env.EMAIL_FROM || 'noreply@yourdomain.com',
+      from: {
+        email: process.env.EMAIL_FROM || 'noreply@yourdomain.com',
+        name: process.env.EMAIL_FROM_NAME || 'CloudFuze'
+      },
       to: to,
       subject: subject,
       html: html,
@@ -6043,7 +6057,7 @@ app.post('/api/send-manager-email', async (req, res) => {
     const sendStartedAt = Date.now();
     sendEmail(
       resolvedManagerEmail,
-      `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+      `CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
       generateTechnicalTeamEmailHTML(workflowData, token),
       attachments
     )
@@ -6141,7 +6155,7 @@ app.post('/api/send-team-email', async (req, res) => {
     const sendStartedAt = Date.now();
     sendEmail(
       resolvedTeamEmail,
-      `${teamLabel ? `[${teamLabel}] ` : ''}Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+      `${teamLabel ? `[${teamLabel}] ` : ''}CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
       generateTeamEmailHTML(workflowData, token),
       attachments
     )
@@ -6238,7 +6252,7 @@ app.post('/api/send-ceo-email', async (req, res) => {
     const sendStartedAt = Date.now();
     sendEmail(
       resolvedCeoEmail,
-      `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+      `CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
       generateLegalTeamEmailHTML(workflowData, token),
       attachments
     )
@@ -6503,7 +6517,7 @@ app.post('/api/send-approval-emails', async (req, res) => {
     try {
       const managerResult = await sendEmail(
         managerEmail,
-        `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+        `CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
         generateTechnicalTeamEmailHTML(workflowData)
       );
       results.push({ role: 'Manager', email: managerEmail, success: managerResult.success });
@@ -6516,7 +6530,7 @@ app.post('/api/send-approval-emails', async (req, res) => {
     try {
       const ceoResult = await sendEmail(
         ceoEmail,
-        `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+        `CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
         generateLegalTeamEmailHTML(workflowData)
       );
       results.push({ role: 'CEO', email: ceoEmail, success: ceoResult.success });
@@ -6970,6 +6984,7 @@ function buildEsignRecipientEmail(doc, rec, signingUrl, inboxUrl, options = {}) 
   let subject;
   let introLine;
   let helperLine = '';
+  let supportLine = '';
   if (mode === 'reminder') {
     subject = `Reminder: ${isReviewer ? 'Review' : 'Sign'} ${fileNameForSubject} before it expires`;
     introLine = isReviewer
@@ -6990,20 +7005,31 @@ function buildEsignRecipientEmail(doc, rec, signingUrl, inboxUrl, options = {}) 
       : `${escapeHtml(forwardedByLabel)} forwarded this signing request to you.`;
     helperLine = `${forwardComment ? `<p><strong>Forwarding note:</strong> ${escapeEmailMessage(forwardComment)}</p>` : ''}<p>Please use the secure link below to complete the request.</p>`;
   } else {
-    subject = `Action required: ${isReviewer ? 'Review' : 'Sign'} ${fileNameForSubject}`;
+    subject = isReviewer
+      ? `CloudFuze: Document Ready for Your Review`
+      : `CloudFuze: Document Ready for Your Signature`;
     introLine = isReviewer
-      ? 'You have been requested to <strong>review</strong> a document.'
-      : 'You have been requested to sign a document.';
+      ? 'You have received a document from CloudFuze that requires your review.'
+      : 'You have received a document from CloudFuze that requires your signature.';
+    helperLine = `<p>If you were expecting this document, please review it and complete the ${isReviewer ? 'review' : 'signing'} process using the secure link below.</p>`;
+    supportLine = `<p>If you were not expecting this document or are unsure why you received it, please contact our support team at <strong><a href="mailto:support@cloudfuze.com">support@cloudfuze.com</a></strong> before ${isReviewer ? 'proceeding' : 'signing'}.</p>`;
   }
+  const shareNoticeLine = '<p style="color:#6b7280; font-size:13px;"><strong>Please do not share this email.</strong> This email contains a secure link to your document. For your security, please do not forward this email or share the signing link with anyone else.</p>';
+  const footerLinksLine = `<p style="font-size:12px;"><a href="https://www.cloudfuze.com/contact/" style="color:#6b7280; text-decoration:underline;">Contact Us</a> &nbsp;·&nbsp; <a href="mailto:support@cloudfuze.com" style="color:#6b7280; text-decoration:underline;">Support</a> &nbsp;·&nbsp; <a href="mailto:support@cloudfuze.com?subject=Reporting%20suspicious%20email" style="color:#6b7280; text-decoration:underline;">Report Email</a></p>`;
+  const footerLine = `<p style="color:#9ca3af; font-size:12px; margin-top:24px; border-top:1px solid #e5e7eb; padding-top:12px;">This message was sent via CloudFuze E-Sign.<br/>© ${new Date().getFullYear()} CloudFuze, Inc. All rights reserved.</p>`;
 
   return {
     subject,
     html: `<p>Hello${rec.name ? ` ${escapeHtml(rec.name)}` : ''},</p>
       ${customMessageBlock}<p>${introLine}</p>
-      ${expiryLine}
       ${helperLine}
       ${dashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
-      <p>Thank you.</p>`,
+      ${expiryLine}
+      ${supportLine}
+      <p>Thank you.</p>
+      ${shareNoticeLine}
+      ${footerLine}
+      ${footerLinksLine}`,
   };
 }
 
@@ -12088,7 +12114,7 @@ app.post('/api/send-authorization-request', async (req, res) => {
     }
 
     // Send email to team lead
-    const emailSubject = `Authorization Request for ${teamName} Team Approval Workflows`;
+    const emailSubject = `CloudFuze Authorization Request for ${teamName} Team Approval Workflows`;
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #4F46E5;">Authorization Request</h2>
