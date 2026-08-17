@@ -526,7 +526,7 @@ const ExhibitManager: React.FC = () => {
   // Handle edit
   const handleEdit = (exhibit: Exhibit) => {
     setEditingExhibit(exhibit);
-    const exhibitCombination = exhibit.combinations[0] || '';
+    const exhibitCombination = exhibit.combinations?.[0] || '';
     
     // Check if combination exists in predefined list
     const availableCombos = getCombinationsForCategory(exhibit.category);
@@ -1195,8 +1195,8 @@ const ExhibitManager: React.FC = () => {
               <p className="text-sm text-gray-600 mb-2 line-clamp-2">{exhibit.description}</p>
               <div className="text-xs text-gray-500 mb-3">
                 <div>File: {exhibit.fileName}</div>
-                <div>Size: {(exhibit.fileSize / 1024).toFixed(2)} KB</div>
-                <div>Combinations: {exhibit.combinations.join(', ')}</div>
+                <div>Size: {((exhibit.fileSize || 0) / 1024).toFixed(2)} KB</div>
+                <div>Combinations: {(exhibit.combinations || []).join(', ')}</div>
               </div>
               <div className="flex gap-2">
                 <button

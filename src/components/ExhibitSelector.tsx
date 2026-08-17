@@ -189,7 +189,10 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   // Only Basic and Standard exist today, so each falls back to the other when a
   // combination has no exhibit of its own tier. Advanced/Premium/Enterprise are left
   // as-is (no sibling tier to fall back to) in case they're introduced later.
-  const FALLBACK_TIER: Record<string, string> = { basic: 'standard', standard: 'basic' };
+  // Advanced falls back to Standard: some combinations are only ever authored at one tier
+  // (e.g. Gmail to Outlook has no Advanced exhibit), and without this they vanish from
+  // Advanced quotes entirely.
+  const FALLBACK_TIER: Record<string, string> = { basic: 'standard', standard: 'basic', advanced: 'standard' };
 
   // Resolve an exhibit's tier from its planType field, falling back to name-based
   // detection (legacy exhibits that predate the planType field).

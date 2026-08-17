@@ -6455,7 +6455,7 @@ Total Price: {{total price}}`;
                 // Only Basic and Standard exist today, so each falls back to the other when a
                 // combination/include-type has no exhibit of its own plan. Advanced/Premium/
                 // Enterprise are left as-is (no defined sibling to fall back to).
-                const FALLBACK_PLAN: Record<string, string> = { basic: 'standard', standard: 'basic' };
+                const FALLBACK_PLAN: Record<string, string> = { basic: 'standard', standard: 'basic', advanced: 'standard' };
                 const getIncludeTypeLower = (ex: any): string =>
                   (ex?.includeType || (String(ex?.name || '').toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
 
@@ -8915,7 +8915,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               try {
                 // Only Basic and Standard exist today, so each falls back to the other when a
                 // combination/include-type has no exhibit of its own plan in this override pass.
-                const FALLBACK_PLAN_HERE: Record<string, string> = { basic: 'standard', standard: 'basic' };
+                const FALLBACK_PLAN_HERE: Record<string, string> = { basic: 'standard', standard: 'basic', advanced: 'standard' };
                 const getIncludeTypeLowerHere = (ex: any): string =>
                   (ex?.includeType || (String(ex?.name || '').toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
                 const planAvailabilityByGroupHere = new Map<string, Set<string>>();
