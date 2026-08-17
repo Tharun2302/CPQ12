@@ -191,8 +191,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
     // If planTier is provided, use it for comparison view (each column shows its own tier)
     // Otherwise, use selectedTier for custom total calculation
-    const tierToUse = planTier || PRICING_TIERS.find(t => t.name === selectedTiersPerCombination[combinationName] || 'Standard');
-    
+    const tierToUse = planTier || PRICING_TIERS.find(t => t.name === (selectedTiersPerCombination[combinationName] || 'Standard'));
+
     if (!tierToUse) {
       return defaultBreakdown;
     }
