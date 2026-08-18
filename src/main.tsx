@@ -1,7 +1,11 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import { initHotjar } from './analytics/hotjar';
 import './index.css';
+
+// Module scope, before render, so the login screen is recorded too. No-ops when VITE_HOTJAR_ID is blank.
+initHotjar();
 
 const rootElement = document.getElementById('root');
 

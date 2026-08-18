@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Calendar, Loader2, AlertTriangle, History, X, Check } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 interface DateHistoryEntry {
   changedAt: string;
@@ -397,7 +398,7 @@ const EditDatesModal: React.FC<EditDatesModalProps> = ({ documentId, actorEmail,
           ) : context ? (
             <div className="space-y-4">
               <p className="text-sm text-slate-600 truncate" title={context.file_name}>
-                <span className="font-medium text-slate-800">{context.file_name}</span>
+                <span {...SUPPRESS_PII} className="font-medium text-slate-800">{context.file_name}</span>
                 <span className="ml-2 inline-block px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700">
                   {context.status}
                 </span>

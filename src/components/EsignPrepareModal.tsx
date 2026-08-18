@@ -10,6 +10,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 export interface SignatureField {
   id: string;
@@ -202,8 +203,8 @@ const EsignPrepareModal: React.FC<EsignPrepareModalProps> = ({
                           : 'border-gray-200 bg-white hover:border-gray-300'
                       }`}
                     >
-                      <p className="text-xs font-medium text-gray-700 truncate">{r.name || 'Unnamed'}</p>
-                      <p className="text-xs text-gray-500 truncate">{r.email || 'No email'}</p>
+                      <p {...SUPPRESS_PII} className="text-xs font-medium text-gray-700 truncate">{r.name || 'Unnamed'}</p>
+                      <p {...SUPPRESS_PII} className="text-xs text-gray-500 truncate">{r.email || 'No email'}</p>
                       <p className="text-xs text-indigo-600 mt-1">{blockLabel(r.block)}</p>
                       <p className="text-xs text-gray-500 mt-1">
                         {signatureFields.filter(f => f.block === r.block).length} field(s)

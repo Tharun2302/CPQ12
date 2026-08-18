@@ -41,6 +41,7 @@ import { getCurrentUser } from '../utils/authUtils';
 import { useAuth } from '../hooks/useAuth';
 import CustomDatePicker from './CustomDatePicker';
 import OnlyOfficeEditor from './OnlyOfficeEditor';
+import { SUPPRESS_PII } from '../analytics/privacy';
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -11424,6 +11425,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                             ✏️ Editing mode — make your changes below, then click <strong>Save Changes</strong> to update the preview.
                           </div>
                           <div
+                            {...SUPPRESS_PII}
                             ref={editableAgreementRef}
                             contentEditable
                             suppressContentEditableWarning
@@ -11478,6 +11480,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         </div>
                       ) : (
                         <div
+                          {...SUPPRESS_PII}
                           ref={previewContainerRef}
                           className="document-preview-content w-full h-full min-h-0 overflow-y-auto overflow-x-hidden p-6 bg-white touch-pan-y overscroll-y-contain"
                           style={{ minHeight: 'min(700px, 85vh)' }}

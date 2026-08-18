@@ -6,6 +6,7 @@ import { FileText, X, Loader2, ThumbsUp, ThumbsDown, MessageCircle, User, BarCha
 import EsignPdfPageView from '../components/EsignPdfPageView';
 import PdfCanvasViewer from '../components/PdfCanvasViewer';
 import { track } from '../analytics/clarity';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 function showSuccessToast(message: string, durationMs = 3000) {
   const el = document.createElement('div');
@@ -519,7 +520,7 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
                     <td className="py-4 px-4 text-gray-900 font-medium">
                       {workflow.documentId || 'Unknown Document'}
                     </td>
-                    <td className="py-4 px-4 text-gray-700">
+                    <td {...SUPPRESS_PII} className="py-4 px-4 text-gray-700">
                       {workflow.clientName || 'Unknown Client'}
                     </td>
                     <td className="py-4 px-4">
@@ -599,8 +600,8 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
                   </div>
                   <div>
                     <h3 className="font-semibold text-gray-900">{workflow.documentId}</h3>
-                    <p className="text-sm text-gray-500">{workflow.clientName}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Requested by <span className="font-medium text-gray-700">{(workflow as any).creatorName || (workflow as any).creatorEmail || '—'}</span></p>
+                    <p {...SUPPRESS_PII} className="text-sm text-gray-500">{workflow.clientName}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Requested by <span {...SUPPRESS_PII} className="font-medium text-gray-700">{(workflow as any).creatorName || (workflow as any).creatorEmail || '—'}</span></p>
                   </div>
                 </div>
                 <div className="text-right">
@@ -635,7 +636,7 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
                           <StepIcon className="w-4 h-4" />
                         </div>
                         <span className="font-medium">{step.role}</span>
-                        <span className="text-gray-500">{step.email}</span>
+                        <span {...SUPPRESS_PII} className="text-gray-500">{step.email}</span>
                         {isMyStep && <span className="text-blue-600 font-semibold text-xs">(Your Turn)</span>}
                         {step.timestamp && (
                           <span className="text-gray-400 ml-auto">

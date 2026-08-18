@@ -4,6 +4,7 @@ import { Upload, Download, CheckCircle, Loader2, FileText } from 'lucide-react';
 import { DocxProcessingResult } from '../types';
 import { DocxValidator } from '../utils/helpers';
 import { docxTemplateProcessor, DocxTemplateData } from '../utils/docxTemplateProcessor';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 interface DocxTemplatesProps {
   quoteData: any;
@@ -127,7 +128,7 @@ export const DocxTemplates: React.FC<DocxTemplatesProps> = ({
             Choose DOCX File
           </label>
           {templateFile && (
-            <p className="mt-2 text-sm text-gray-600">{templateFile.name}</p>
+            <p {...SUPPRESS_PII} className="mt-2 text-sm text-gray-600">{templateFile.name}</p>
           )}
         </div>
       </div>

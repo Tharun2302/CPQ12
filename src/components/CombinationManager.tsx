@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 function getAuthHeaders(): Record<string, string> {
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cpq_token') : null;
@@ -507,9 +508,9 @@ const CombinationManager: React.FC = () => {
                 />
                 <p className="text-xs text-gray-500 mt-1">Backend combination template: DOCX or PDF. Stored and used for agreement generation.</p>
                 {editingCombo && editingCombo.hasFile && !formFile && (
-                  <p className="text-xs text-blue-600 mt-1">Current file: {editingCombo.fileName || 'attached'}. Choose a new file to replace.</p>
+                  <p className="text-xs text-blue-600 mt-1">Current file: <span {...SUPPRESS_PII}>{editingCombo.fileName || 'attached'}</span>. Choose a new file to replace.</p>
                 )}
-                {formFile && <p className="text-xs text-green-600 mt-1">{formFile.name}</p>}
+                {formFile && <p {...SUPPRESS_PII} className="text-xs text-green-600 mt-1">{formFile.name}</p>}
               </div>
               {submitError && <p className="text-sm text-red-600">{submitError}</p>}
               {submitSuccess && <p className="text-sm text-green-600">{submitSuccess}</p>}

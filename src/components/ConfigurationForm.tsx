@@ -7,6 +7,7 @@ import { getEffectiveDurationMonths } from '../utils/configDuration';
 import { PRICING_TIERS, calculateCombinationPricing, formatCurrency } from '../utils/pricing';
 import { getContentTimelineByServerType, formatServerTypeLabel, type SourceEnvironment, type ContentMigrationType } from '../utils/timelineProjection';
 import { BACKEND_URL } from '../config/api';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 interface ConfigurationFormProps {
   onConfigurationChange: (config: ConfigurationData) => void;
@@ -1610,7 +1611,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         <div className={`grid gap-6 mb-8 ${(dealData || contactInfo.clientName || contactInfo.clientEmail || contactInfo.company) ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
           {/* Contact Information Display - Show when deal data exists */}
           {(dealData || contactInfo.clientName || contactInfo.clientEmail || contactInfo.company) && (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-8 hover:shadow-md transition-shadow duration-200">
+            <div {...SUPPRESS_PII} className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-8 hover:shadow-md transition-shadow duration-200">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md">
                 <Users className="w-5 h-5 text-white" />

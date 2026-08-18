@@ -20,6 +20,7 @@ import { BACKEND_URL } from '../config/api';
 import { getCombinationsForCategory } from '../utils/exhibitAutoDetect';
 import { useAuth } from '../hooks/useAuth';
 import '../assets/docx-preview.css';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 function getAuthHeaders(): Record<string, string> {
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cpq_token') : null;
@@ -1212,7 +1213,7 @@ const ExhibitManager: React.FC = () => {
               </div>
               <p className="text-sm text-gray-600 mb-2 line-clamp-2">{exhibit.description}</p>
               <div className="text-xs text-gray-500 mb-3">
-                <div>File: {exhibit.fileName}</div>
+                <div {...SUPPRESS_PII}>File: {exhibit.fileName}</div>
                 <div>Size: {((exhibit.fileSize || 0) / 1024).toFixed(2)} KB</div>
                 <div>Combinations: {(exhibit.combinations || []).join(', ')}</div>
               </div>
@@ -1410,7 +1411,7 @@ const ExhibitManager: React.FC = () => {
                     {uploadFile ? (
                       <div className="space-y-2">
                         <FileText className="w-12 h-12 text-blue-600 mx-auto" />
-                        <p className="text-sm font-medium">{uploadFile.name}</p>
+                        <p {...SUPPRESS_PII} className="text-sm font-medium">{uploadFile.name}</p>
                         <p className="text-xs text-gray-500">
                           {(uploadFile.size / 1024).toFixed(2)} KB
                         </p>
@@ -1629,7 +1630,7 @@ const ExhibitManager: React.FC = () => {
                 {uploadError && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
                     <AlertCircle className="w-5 h-5 text-red-600" />
-                    <span className="text-sm text-red-800">{uploadError}</span>
+                    <span {...SUPPRESS_PII} className="text-sm text-red-800">{uploadError}</span>
                   </div>
                 )}
 
@@ -1874,7 +1875,7 @@ const ExhibitManager: React.FC = () => {
                 {uploadError && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
                     <AlertCircle className="w-5 h-5 text-red-600" />
-                    <span className="text-sm text-red-800">{uploadError}</span>
+                    <span {...SUPPRESS_PII} className="text-sm text-red-800">{uploadError}</span>
                   </div>
                 )}
 
@@ -2048,6 +2049,7 @@ const ExhibitManager: React.FC = () => {
               {/* Always render container for docx-preview */}
               <div className="bg-white shadow-sm rounded-lg min-h-full overflow-auto">
                 <div 
+                  {...SUPPRESS_PII}
                   id="docx-viewer-container" 
                   className="docx-viewer"
                   style={{ 

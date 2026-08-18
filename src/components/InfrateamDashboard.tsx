@@ -7,6 +7,7 @@ import PdfCanvasViewer from './PdfCanvasViewer';
 import { track } from '../analytics/clarity';
 import { useLocation } from 'react-router-dom';
 import Navigation from './Navigation';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 interface InfrateamDashboardProps {
   teamEmail?: string;
@@ -320,7 +321,7 @@ const InfrateamDashboard: React.FC<InfrateamDashboardProps> = ({
                 return (
                   <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-4 px-4 text-gray-900 font-medium">{workflow.documentId || 'Unknown'}</td>
-                    <td className="py-4 px-4 text-gray-700">{workflow.clientName || 'Unknown'}</td>
+                    <td {...SUPPRESS_PII} className="py-4 px-4 text-gray-700">{workflow.clientName || 'Unknown'}</td>
                     <td className="py-4 px-4 text-gray-600 text-sm">{expectedServers}</td>
                     <td className="py-4 px-4 text-gray-600 text-sm">{builtServers}</td>
                     <td className="py-4 px-4">
@@ -379,7 +380,7 @@ const InfrateamDashboard: React.FC<InfrateamDashboardProps> = ({
                   </div>
                   <div>
                     <h3 className="font-semibold text-gray-900">{workflow.documentId || 'Unknown Document'}</h3>
-                    <p className="text-sm text-gray-500">{workflow.clientName || 'Unknown Client'}</p>
+                    <p {...SUPPRESS_PII} className="text-sm text-gray-500">{workflow.clientName || 'Unknown Client'}</p>
                   </div>
                 </div>
                 <div className="text-right">

@@ -33,6 +33,7 @@ import {
   type DealDocumentsApprovalFilter,
 } from '../services/documentServiceMongoDB';
 import { convertPdfToWord, downloadWordFile } from '../utils/pdfToWordConverter';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 
 interface QuoteManagerProps {
@@ -1734,6 +1735,7 @@ ZENOP Pro Solutions Team`;
                   }}
                 >
                   <div 
+                    {...SUPPRESS_PII}
                     className="p-8"
                     dangerouslySetInnerHTML={{ __html: templatePreviewHTML }}
                   />
@@ -2090,7 +2092,7 @@ ZENOP Pro Solutions Team`;
             
             <div className="mt-4 text-center">
               <p className="text-sm text-gray-600">
-                File: {mergePreviewFileName} | Size: {(mergePreviewPdfBlob.size / 1024).toFixed(1)} KB
+                File: <span {...SUPPRESS_PII}>{mergePreviewFileName}</span> | Size: {(mergePreviewPdfBlob.size / 1024).toFixed(1)} KB
               </p>
               <p className="text-xs text-gray-500 mt-1">
                 Use the browser's built-in PDF controls to zoom, scroll, and navigate

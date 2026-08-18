@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { FileText, Loader2, Check, Clock, XCircle, Eye, PenLine, Download, MoreVertical, ThumbsUp, Calendar, Bell, CalendarClock, Send, MailCheck, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, Forward, ChevronRight, ChevronDown, Lock, Search, Upload, Copy, FileArchive, Users } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { SUPPRESS_PII } from '../analytics/privacy';
 import { useAuth } from '../hooks/useAuth';
 import Navigation from './Navigation';
 import EditDatesModal from './EditDatesModal';
@@ -1089,7 +1090,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                               <FileText className="h-4 w-4 text-indigo-600" />
                             </div>
                             <div className="min-w-0">
-                              <span className="font-medium text-slate-900 truncate max-w-xs block" title={ag.file_name}>{ag.file_name}</span>
+                              <span {...SUPPRESS_PII} className="font-medium text-slate-900 truncate max-w-xs block" title={ag.file_name}>{ag.file_name}</span>
                               <p className="text-xs text-slate-500 mt-0.5">
                                 {formatEsignCreatedByLine(ag)}
                               </p>
@@ -1217,8 +1218,8 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                                 return (
                                   <div key={rec.id} className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2">
                                     <div className="min-w-0">
-                                      <p className="text-sm font-medium text-slate-800 truncate">{rec.name || rec.email || 'Signer'}</p>
-                                      <p className="text-xs text-slate-500 truncate">{rec.email}<span className="capitalize"> · {rec.role || 'signer'}</span></p>
+                                      <p {...SUPPRESS_PII} className="text-sm font-medium text-slate-800 truncate">{rec.name || rec.email || 'Signer'}</p>
+                                      <p className="text-xs text-slate-500 truncate"><span {...SUPPRESS_PII}>{rec.email}</span><span className="capitalize"> · {rec.role || 'signer'}</span></p>
                                       {(rec.sent_at || rec.viewed_at || rec.signed_at) && (
                                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
                                           {rec.sent_at && <span className="inline-flex items-center gap-1"><Send className="h-3 w-3 text-blue-400" /> Sent {relativeTime(rec.sent_at)}</span>}
@@ -1400,7 +1401,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                     }
                     return (
                       <>
-                        <p className="text-slate-700 font-medium truncate">{statusModalDoc.file_name}</p>
+                        <p {...SUPPRESS_PII} className="text-slate-700 font-medium truncate">{statusModalDoc.file_name}</p>
                         <span className={`inline-flex items-center gap-1 mt-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
                           statusModalDoc.upload_source === 'approval'
                             ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
@@ -1449,8 +1450,8 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                                 <div key={rec.id} className="rounded-lg border border-slate-200 p-3">
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
-                                      <p className="font-medium text-slate-900 truncate">{rec.name || rec.email || 'Signer'}</p>
-                                      <p className="text-xs text-slate-500 truncate">{rec.email}</p>
+                                      <p {...SUPPRESS_PII} className="font-medium text-slate-900 truncate">{rec.name || rec.email || 'Signer'}</p>
+                                      <p {...SUPPRESS_PII} className="text-xs text-slate-500 truncate">{rec.email}</p>
                                       <p className="text-[11px] text-slate-400 mt-0.5 capitalize">{(rec.role || 'signer')}</p>
                                     </div>
                                     {isForwarded ? (
@@ -1577,7 +1578,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
             >
               <div className="flex items-center gap-2 min-w-0">
                 <Eye className="h-5 w-5 shrink-0" />
-                <span className="font-medium truncate">{previewDoc.file_name}</span>
+                <span {...SUPPRESS_PII} className="font-medium truncate">{previewDoc.file_name}</span>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button

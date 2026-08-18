@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download, XCircle, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { SUPPRESS_PII } from '../analytics/privacy';
 import EsignPdfPageView from '../components/EsignPdfPageView';
 import { cssStackForEsignTextFont, normalizeEsignTextColor } from '../utils/esignTextFieldStyle';
 
@@ -1039,7 +1040,7 @@ const EsignSignPage: React.FC = () => {
             <Check className="h-8 w-8 text-slate-600" />
           </div>
           <h2 className="text-xl font-bold text-slate-900 mb-2">You have already signed this document</h2>
-          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p {...SUPPRESS_PII} className="text-slate-600 mb-6">{doc.file_name}</p>
           <p className="text-slate-500 text-sm mb-6">This signing link is no longer active for new signatures. You can download the document below if needed.</p>
           <button
             type="button"
@@ -1072,7 +1073,7 @@ const EsignSignPage: React.FC = () => {
             <Check className="h-8 w-8 text-amber-600" />
           </div>
           <h2 className="text-xl font-bold text-slate-900 mb-2">You have already reviewed this document</h2>
-          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p {...SUPPRESS_PII} className="text-slate-600 mb-6">{doc.file_name}</p>
           <p className="text-slate-500 text-sm mb-6">This link is no longer active. You can download the document below if needed.</p>
           <button
             type="button"
@@ -1105,7 +1106,7 @@ const EsignSignPage: React.FC = () => {
             <XCircle className="h-8 w-8 text-red-600" />
           </div>
           <h2 className="text-xl font-bold text-slate-900 mb-2">You have already denied this document</h2>
-          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p {...SUPPRESS_PII} className="text-slate-600 mb-6">{doc.file_name}</p>
           <p className="text-slate-500 text-sm mb-6">This link is no longer active. You can download the document below if needed.</p>
           <button
             type="button"
@@ -1138,7 +1139,7 @@ const EsignSignPage: React.FC = () => {
             <XCircle className="h-8 w-8 text-red-600" />
           </div>
           <h2 className="text-xl font-bold text-slate-900 mb-2">You have denied the review</h2>
-          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p {...SUPPRESS_PII} className="text-slate-600 mb-6">{doc.file_name}</p>
           <p className="text-slate-500 text-sm mb-6">You have completed your decision. You can download the document below if needed.</p>
           <button
             type="button"
@@ -1171,7 +1172,7 @@ const EsignSignPage: React.FC = () => {
             <Check className="h-8 w-8 text-emerald-600" />
           </div>
           <h2 className="text-xl font-bold text-slate-900 mb-2">Document fully signed</h2>
-          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p {...SUPPRESS_PII} className="text-slate-600 mb-6">{doc.file_name}</p>
           <p className="text-slate-500 text-sm mb-6">All signers have completed this document. No further signatures needed. You can download the signed document below.</p>
           <button
             type="button"
@@ -1212,7 +1213,7 @@ const EsignSignPage: React.FC = () => {
             <Check className="h-8 w-8 text-emerald-600" />
           </div>
           <h2 className="text-xl font-bold text-slate-900 mb-2">Document Signed Successfully</h2>
-          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p {...SUPPRESS_PII} className="text-slate-600 mb-6">{doc.file_name}</p>
           <button
             type="button"
             onClick={() => handleDownload(doc.file_name)}
@@ -1252,7 +1253,7 @@ const EsignSignPage: React.FC = () => {
             <Check className="h-8 w-8 text-amber-600" />
           </div>
           <h2 className="text-xl font-bold text-slate-900 mb-2">Document marked as reviewed</h2>
-          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p {...SUPPRESS_PII} className="text-slate-600 mb-6">{doc.file_name}</p>
           <p className="text-slate-500 text-sm mb-6">You have completed your review. You can download the document below if needed.</p>
           <button
             type="button"
@@ -1558,7 +1559,7 @@ const EsignSignPage: React.FC = () => {
             <XCircle className="h-8 w-8 text-red-600" />
           </div>
           <h2 className="text-xl font-bold text-slate-900 mb-2">You have declined to sign</h2>
-          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p {...SUPPRESS_PII} className="text-slate-600 mb-6">{doc.file_name}</p>
           <p className="text-slate-500 text-sm mb-6">You have completed your decision. You can download the document below if needed.</p>
           <button
             type="button"

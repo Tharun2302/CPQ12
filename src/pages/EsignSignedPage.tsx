@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Download, Loader2, FileCheck } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 const EsignSignedPage: React.FC = () => {
   const { documentId } = useParams<{ documentId: string }>();
@@ -48,7 +49,7 @@ const EsignSignedPage: React.FC = () => {
           <FileCheck className="h-8 w-8 text-emerald-600" />
         </div>
         <h2 className="text-xl font-bold text-slate-900 mb-2">Signed Document Ready</h2>
-        <p className="text-slate-600 mb-6">{doc.file_name}</p>
+        <p {...SUPPRESS_PII} className="text-slate-600 mb-6">{doc.file_name}</p>
         <a
           href={downloadUrl}
           download={doc.file_name}

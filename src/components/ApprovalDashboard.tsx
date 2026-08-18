@@ -27,6 +27,7 @@ import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils
 import PdfCanvasViewer from './PdfCanvasViewer';
 import EditDatesModal from './EditDatesModal';
 import OnlyOfficeEditor from './OnlyOfficeEditor';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 type ViewKey = 'dashboard' | 'pending' | 'approved' | 'rejected';
 
@@ -986,7 +987,7 @@ const ApprovalDashboard: React.FC = () => {
 
                         <div className="min-w-0">
                           <div className="text-sm font-semibold uppercase tracking-wide text-gray-500">Client</div>
-                          <div className="mt-1 text-base font-semibold text-gray-900 truncate" title={workflow.clientName || undefined}>
+                          <div {...SUPPRESS_PII} className="mt-1 text-base font-semibold text-gray-900 truncate" title={workflow.clientName || undefined}>
                             {workflow.clientName || '—'}
                           </div>
                         </div>
@@ -1322,7 +1323,7 @@ const ApprovalDashboard: React.FC = () => {
                   </h3>
                 </div>
                 <div className="mt-1 line-clamp-2 sm:truncate text-sm text-gray-600">
-                  {selectedWorkflow.documentId} • {selectedWorkflow.clientName || 'Unknown Client'}
+                  {selectedWorkflow.documentId} • <span {...SUPPRESS_PII}>{selectedWorkflow.clientName || 'Unknown Client'}</span>
                 </div>
               </div>
               <button
