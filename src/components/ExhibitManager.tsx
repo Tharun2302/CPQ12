@@ -11,6 +11,7 @@ import {
   Plus,
   Loader2,
   Eye,
+  Download,
   Info,
   Shield,
   UserPlus
@@ -116,6 +117,7 @@ const ExhibitManager: React.FC = () => {
   const [inlineEditSuccess, setInlineEditSuccess] = useState<string | null>(null);
   const [isSavingInlineEdit, setIsSavingInlineEdit] = useState(false);
   const [isDownloadingInlineDoc, setIsDownloadingInlineDoc] = useState(false);
+  const [downloadingExhibitId, setDownloadingExhibitId] = useState<string | null>(null);
   const [editingExhibit, setEditingExhibit] = useState<Exhibit | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('');
@@ -937,33 +939,49 @@ const ExhibitManager: React.FC = () => {
     }
   };
 
+  const downloadExhibitFile = async (exhibit: Exhibit) => {
+    const exhibitId = exhibit._id || exhibit.id;
+    if (!exhibitId) {
+      throw new Error('Exhibit ID is missing');
+    }
+
+    const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file?t=${Date.now()}`, {
+      cache: 'no-store'
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to download file (${response.status})`);
+    }
+
+    const blob = await response.blob();
+    const downloadUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = exhibit.fileName || `${exhibit.name || 'exhibit'}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(downloadUrl);
+  };
+
+  const handleDownload = async (exhibit: Exhibit) => {
+    const exhibitId = exhibit._id || exhibit.id || null;
+    try {
+      setDownloadingExhibitId(exhibitId);
+      await downloadExhibitFile(exhibit);
+    } catch (error: any) {
+      alert(error?.message || 'Failed to download document');
+    } finally {
+      setDownloadingExhibitId(null);
+    }
+  };
+
   const handleDownloadViewedDocx = async () => {
     if (!viewingExhibit) return;
-    const exhibitId = viewingExhibit._id || viewingExhibit.id;
-    if (!exhibitId) {
-      setInlineEditError('Exhibit ID is missing');
-      return;
-    }
 
     try {
       setIsDownloadingInlineDoc(true);
       setInlineEditError(null);
-      const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file?t=${Date.now()}`, {
-        cache: 'no-store'
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to download file (${response.status})`);
-      }
-
-      const blob = await response.blob();
-      const downloadUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = viewingExhibit.fileName || 'exhibit.docx';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(downloadUrl);
+      await downloadExhibitFile(viewingExhibit);
     } catch (error: any) {
       setInlineEditError(error?.message || 'Failed to download document');
     } finally {
@@ -1198,27 +1216,40 @@ const ExhibitManager: React.FC = () => {
                 <div>Size: {((exhibit.fileSize || 0) / 1024).toFixed(2)} KB</div>
                 <div>Combinations: {(exhibit.combinations || []).join(', ')}</div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => handleView(exhibit)}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors text-sm"
-                  title="View/Download document"
+                  className="flex-1 min-w-[90px] flex items-center justify-center gap-2 px-3 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors text-sm"
+                  title="View document"
                 >
                   <Eye className="w-4 h-4" />
                   View
+                </button>
+                <button
+                  onClick={() => handleDownload(exhibit)}
+                  disabled={downloadingExhibitId === (exhibit._id || exhibit.id)}
+                  className="flex-1 min-w-[90px] flex items-center justify-center gap-2 px-3 py-2 bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Download DOCX"
+                >
+                  {downloadingExhibitId === (exhibit._id || exhibit.id) ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  Download
                 </button>
                 {canManageExhibits && (
                   <>
                     <button
                       onClick={() => handleEdit(exhibit)}
-                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors text-sm"
+                      className="flex-1 min-w-[90px] flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors text-sm"
                     >
                       <Edit className="w-4 h-4" />
                       Edit
                     </button>
                     <button
                       onClick={() => handleDelete(exhibit)}
-                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors text-sm"
+                      className="flex-1 min-w-[90px] flex items-center justify-center gap-2 px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors text-sm"
                     >
                       <Trash2 className="w-4 h-4" />
                       Delete
@@ -1890,6 +1921,19 @@ const ExhibitManager: React.FC = () => {
                 <p className="text-sm text-gray-600 mt-1">{viewingExhibit.name}</p>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDownloadViewedDocx}
+                  disabled={isDownloadingInlineDoc}
+                  className="inline-flex items-center gap-2 px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Download DOCX"
+                >
+                  {isDownloadingInlineDoc ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  {isDownloadingInlineDoc ? 'Downloading...' : 'Download'}
+                </button>
                 {canManageExhibits && !isInlineEditMode && (
                   <button
                     onClick={() => {
