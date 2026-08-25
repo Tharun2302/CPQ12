@@ -64,11 +64,6 @@ function esignRecipientsDocumentFilter(docId) {
   return { $or: [{ document_id: oid }, { document_id: oid.toString() }] };
 }
 
-function normalizeEsignEmail(e) {
-  if (!e || typeof e !== 'string') return '';
-  return e.trim().toLowerCase();
-}
-
 /** Short, safe file name for email subjects. */
 function sanitizeEsignEmailSubjectFileName(name) {
   if (!name || typeof name !== 'string') return 'document';
@@ -76,21 +71,21 @@ function sanitizeEsignEmailSubjectFileName(name) {
   return t.length > 120 ? `${t.slice(0, 117)}...` : t;
 }
 
+const {
+  esignDocumentCreatorEmail,
+  actorIsEsignDocumentCreator,
+} = require('./esign-creator-utils.cjs');
+
 /** Email to notify for creator-facing e-sign events (matches list "Created by" when uploaded_by is not an address). */
 function getEsignDocumentCreatorNotifyEmail(doc) {
-  if (!doc) return '';
-  const up = String(doc.uploaded_by || '').trim();
-  if (up.includes('@')) return up;
-  const req = String(doc.requested_by_email || '').trim();
-  if (req.includes('@')) return req;
-  return '';
+  return esignDocumentCreatorEmail(doc);
 }
 
-/** True when actor is the uploader (creator) of the e-sign document. */
+/** True when actor is the creator of the e-sign document. Accepts the same identity the
+ *  agreement list advertises as "Created by" — `uploaded_by` when it is an address, else
+ *  `requested_by_email` — so approval-created documents are not locked to nobody. */
 function esignActorIsDocumentCreator(doc, actorEmail) {
-  const uploader = normalizeEsignEmail(doc.uploaded_by);
-  const actor = normalizeEsignEmail(actorEmail);
-  return uploader !== '' && actor !== '' && uploader === actor;
+  return actorIsEsignDocumentCreator(doc, actorEmail);
 }
 
 /** Authorization for Edit Dates on an e-sign document. Creator OR Approval Admin.
@@ -7661,13 +7656,24 @@ app.delete('/api/esign/documents/:id', async (req, res) => {
       console.warn('E-sign DELETE: document not found', idParam);
       return res.status(404).json({ success: false, error: 'Document not found' });
     }
-    const actorEmail = req.body?.actor_email || req.body?.user_email || '';
-    if (!esignActorIsDocumentCreator(doc, actorEmail)) {
+    // Authorization: deleting an agreement is destructive and irreversible, so the caller
+    // must be the creator. Identity comes from the verified JWT, never from the body — a
+    // client-supplied email could name anyone. Same rule as DELETE /api/approval-workflows/:id.
+    const actor = await getAuthenticatedUser(req, res);
+    if (!actor) return; // 401 already sent
+    if (!esignActorIsDocumentCreator(doc, actor.email)) {
+      console.warn('⛔ E-sign DELETE denied — actor is not the document creator:', {
+        id: idParam,
+        actorEmail: actor.email,
+        resolvedCreator: getEsignDocumentCreatorNotifyEmail(doc) || '(none — document has no creator address)',
+        uploaded_by: doc.uploaded_by,
+        requested_by_email: doc.requested_by_email,
+      });
       return res.status(403).json({ success: false, error: 'Only the document creator can delete this document' });
     }
 
     await db.collection('signature_fields').deleteMany(signatureFieldsDocumentFilter(docId));
-    await db.collection('esign_recipients').deleteMany({ document_id: docId });
+    await db.collection('esign_recipients').deleteMany(esignRecipientsDocumentFilter(docId));
     await db.collection('esign_signature_secrets').deleteMany({
       $or: [{ document_id: docId }, { document_id: docId.toString() }],
     });

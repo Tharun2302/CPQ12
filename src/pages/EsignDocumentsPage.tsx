@@ -6,6 +6,7 @@ import { BACKEND_URL } from '../config/api';
 import { SUPPRESS_PII } from '../analytics/privacy';
 import { useAuth } from '../hooks/useAuth';
 import { shouldAutoStartLandingTour, startEsignLandingTour } from '../utils/esignTour';
+import { deleteEsignDocument } from '../services/esignDocumentService';
 
 interface RecipientRow {
   id: string;
@@ -318,25 +319,16 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
     if (!window.confirm(`Remove "${uploadedDocumentName || 'this document'}"? The uploaded file will be deleted.`)) return;
     setRemovingUpload(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${uploadedDocumentId}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actor_email: user?.email || '' }),
-      });
       // Treat success and 404 (already gone) the same — clear the local state either way.
-      if (!res.ok && res.status !== 404) {
-        const data = await res.json().catch(() => ({}));
-        alert(data?.error || `Remove failed (${res.status})`);
-        return;
-      }
+      await deleteEsignDocument(uploadedDocumentId, { treat404AsSuccess: true });
       setUploadedDocumentId(null);
       setUploadedDocumentName('');
       setUploadedFileSize(0);
       setRecipientInputs([{ name: '', email: '' }]);
       setSigningOrderEnabled(false);
       await loadDocuments();
-    } catch {
-      alert('Could not remove the file. Please try again.');
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not remove the file. Please try again.');
     } finally {
       setRemovingUpload(false);
     }
@@ -476,30 +468,11 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
     if (!window.confirm('Delete this document? This cannot be undone.')) return;
     setDeletingId(docId);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actor_email: user?.email || '' }),
-      });
-      let data: { success?: boolean; error?: string } = {};
-      const contentType = res.headers.get('Content-Type') || '';
-      if (contentType.includes('application/json')) {
-        try {
-          data = await res.json();
-        } catch {
-          data = { success: false, error: 'Invalid response' };
-        }
-      }
-      if (res.ok && data.success) {
-        await loadDocuments();
-      } else if (res.status === 404) {
-        // Document already deleted (e.g. elsewhere or previous request) — refresh list so it disappears
-        await loadDocuments();
-      } else {
-        alert(data.error || `Delete failed${!res.ok ? ` (${res.status})` : ''}`);
-      }
-    } catch (err) {
-      alert('Delete failed. Check the console or try again.');
+      // 404 means it was already deleted elsewhere — refresh the list so it disappears either way.
+      await deleteEsignDocument(docId, { treat404AsSuccess: true });
+      await loadDocuments();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Delete failed. Check the console or try again.');
     } finally {
       setDeletingId(null);
     }

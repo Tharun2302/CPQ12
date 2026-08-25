@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { FileText, Loader2, Check, Clock, XCircle, Eye, PenLine, Download, MoreVertical, ThumbsUp, Calendar, Bell, CalendarClock, Send, MailCheck, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, Forward, ChevronRight, ChevronDown, Lock, Search, Upload, Copy, FileArchive, Users } from 'lucide-react';
+import { FileText, Loader2, Check, Clock, XCircle, Eye, PenLine, Download, MoreVertical, ThumbsUp, Calendar, Bell, CalendarClock, Send, MailCheck, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, Forward, ChevronRight, ChevronDown, Lock, Search, Upload, Copy, FileArchive, Users, Trash2 } from 'lucide-react';
+import { deleteEsignDocument } from '../services/esignDocumentService';
 import { BACKEND_URL } from '../config/api';
 import { SUPPRESS_PII } from '../analytics/privacy';
 import { useAuth } from '../hooks/useAuth';
@@ -262,6 +263,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
   const [copyToast, setCopyToast] = useState(false);
   const [remindingId, setRemindingId] = useState<string | null>(null);
   const [extendingId, setExtendingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
   const [dateFilter, setDateFilter] = useState<{ type: 'none' } | { type: 'dateRange'; from: string; to: string }>({ type: 'none' });
@@ -721,10 +723,38 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     }
   };
 
+  const handleDeleteAgreement = async (agreementId: string, fileName?: string) => {
+    const docLabel = fileName ? `"${fileName}"` : 'this agreement';
+    if (!window.confirm(
+      `Delete ${docLabel} permanently?\n\nThis removes the agreement, its recipients, placed fields, and signing history. This cannot be undone.`
+    )) return;
+    setDeletingId(agreementId);
+    try {
+      await deleteEsignDocument(agreementId);
+      if (statusModalId === agreementId) closeStatusModal();
+      setSelectedIds((prev) => {
+        if (!prev.has(agreementId)) return prev;
+        const next = new Set(prev);
+        next.delete(agreementId);
+        return next;
+      });
+      await fetchStatus();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not delete the agreement. Please try again.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const isCurrentUserCreator = (ag: Agreement): boolean => {
     const me = (user?.email || '').trim().toLowerCase();
     if (!me) return false;
-    const creator = (ag.uploaded_by || ag.creator_email || '').trim().toLowerCase();
+    // `uploaded_by` is an address for manual uploads but a display NAME for approval-created
+    // documents, which carry the address in `creator_email`. Compare against an address only,
+    // and use the same precedence the backend does — otherwise the menu offers actions the
+    // server then rejects with a 403.
+    const uploaded = (ag.uploaded_by || '').trim();
+    const creator = (uploaded.includes('@') ? uploaded : (ag.creator_email || '')).trim().toLowerCase();
     return creator !== '' && creator === me;
   };
 
@@ -1335,6 +1365,26 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                           Download
                         </button>
                       )}
+                      {/* Delete — creator only, any status. Separated and red-tinted because
+                          it is the only irreversible action in this menu. */}
+                      <div className="my-1 border-t border-slate-100" />
+                      <button
+                        type="button"
+                        onClick={isCreator
+                          ? () => { handleDeleteAgreement(openAgreement.id, openAgreement.file_name); closeActionsMenu(); }
+                          : () => denyAction('Only the agreement creator can delete this agreement.')}
+                        disabled={isCreator && deletingId === openAgreement.id}
+                        className={isCreator
+                          ? 'flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50'
+                          : mgmtBtnClass}
+                        title={isCreator ? 'Permanently delete this agreement' : 'Only the agreement creator can delete this agreement.'}
+                      >
+                        {isCreator && deletingId === openAgreement.id
+                          ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                          : <Trash2 className="h-4 w-4 shrink-0" />}
+                        Delete
+                        {!isCreator && <Lock className="h-3 w-3 ml-auto shrink-0" />}
+                      </button>
                     </div>
                   </>,
                   document.body

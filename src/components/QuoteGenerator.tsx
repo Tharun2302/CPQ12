@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { PricingCalculation, ConfigurationData, Quote } from '../types/pricing';
-import { formatCurrency, getInstanceTypeCost, manageUserCost, MANAGE_STANDALONE_DATA_RATE, overagePerServerPerMonth } from '../utils/pricing';
+import { formatCurrency, getInstanceTypeCost, manageUserCost, MANAGE_STANDALONE_DATA_RATE, overagePerServerPerMonth, calcSprawlCost, lookupMessageSprawlRate, lookupContentSprawlRate } from '../utils/pricing';
 import {
   FileText,
   Download,
@@ -2009,6 +2009,16 @@ Quote ID: ${quoteData.id}
           
           // Per-data cost calculations - cost per GB
           '{{per_data_cost}}': (() => {
+            // Data Sprawl has its own rate tables and its own basis (per GB for Content,
+            // per user for Message/Email). The migration tier's per-GB rate does not apply.
+            const sprawlCfg = (configuration as any) as any;
+            const sprawlSt = sprawlCfg?.servicePlan === 'Manage' ? sprawlCfg?.manageSprawlType : undefined;
+            if (sprawlSt === 'Content') {
+              return formatCurrency(lookupContentSprawlRate(Number(sprawlCfg?.manageDataGB ?? 0)));
+            }
+            if (sprawlSt === 'Message' || sprawlSt === 'Email') {
+              return formatCurrency(lookupMessageSprawlRate(Number(sprawlCfg?.manageUsers ?? 0)));
+            }
             // Multi combination: per-GB should come from CONTENT side (messaging has no data size)
             const isMulti = configuration?.migrationType === 'Multi combination';
             const safeDataSize = isMulti ? (configuration?.contentConfig?.dataSizeGB ?? 0) : (dataSizeGB ?? 0);
@@ -4931,6 +4941,10 @@ Total Price: {{total price}}`;
           if (cfg?.servicePlan === 'Manage') {
             // If this agreement doesn't require users (e.g. Data Sprawl), userCost is always 0
             if (cfg?.manageRequiresUsers === false) return 0;
+            // MANAGE + Sprawl and Data Sprawl (Standalone) share one config; only the
+            // selected calculation records which was picked, and standalone zeroes the
+            // license line. Recomputing from manageUsers here would re-add it.
+            if (calculation?.sprawlType && (calculation.userCost || 0) === 0) return 0;
             const raw = manageUserCost(cfg?.manageUsers ?? 0);
             return raw === 'CUSTOM' ? (quoteData.calculation?.userCost || 0) : (raw as number);
           }
@@ -5023,8 +5037,16 @@ Total Price: {{total price}}`;
         // Calculate comprehensive pricing breakdown for consistency
         const dataCost = (() => {
           const cfg = (finalConfiguration || quoteData.configuration || configuration) as any;
-          // Manage Standalone: recalculate from manageDataGB × $0.13 to avoid stale calculation values
+          // Manage Standalone: recalculate from the config (not the calculation) to avoid
+          // stale values bleeding in from a previous configuration.
           if (cfg?.servicePlan === 'Manage') {
+            // Data Sprawl: the data line IS the sprawl cost — Content is priced per GB,
+            // Message/Email per user, so the flat manageDataGB rate would read $0 for
+            // the per-user types (manageDataGB is cleared for them).
+            const st = cfg?.manageSprawlType;
+            if (st === 'Content' || st === 'Message' || st === 'Email') {
+              return calcSprawlCost(st, Number(cfg?.manageUsers ?? 0), Number(cfg?.manageDataGB ?? 0));
+            }
             return Number(cfg?.manageDataGB ?? 0) * 0.13;
           }
           return quoteData.calculation?.dataCost || 0;
@@ -5467,6 +5489,16 @@ Total Price: {{total price}}`;
           
           // Per-data cost calculations - cost per GB
           '{{per_data_cost}}': (() => {
+            // Data Sprawl has its own rate tables and its own basis (per GB for Content,
+            // per user for Message/Email). The migration tier's per-GB rate does not apply.
+            const sprawlCfg = (finalConfiguration || quoteData.configuration || configuration) as any;
+            const sprawlSt = sprawlCfg?.servicePlan === 'Manage' ? sprawlCfg?.manageSprawlType : undefined;
+            if (sprawlSt === 'Content') {
+              return formatCurrency(lookupContentSprawlRate(Number(sprawlCfg?.manageDataGB ?? 0)));
+            }
+            if (sprawlSt === 'Message' || sprawlSt === 'Email') {
+              return formatCurrency(lookupMessageSprawlRate(Number(sprawlCfg?.manageUsers ?? 0)));
+            }
             // Multi combination: per-GB should come from CONTENT side (messaging has no data size)
             const isMulti = configuration?.migrationType === 'Multi combination';
             const safeDataSize = isMulti ? (configuration?.contentConfig?.dataSizeGB ?? 0) : (dataSizeGB ?? 0);

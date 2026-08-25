@@ -1303,9 +1303,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     // does NOT use migrationType / combination / numberOfUsers / instance / duration
     // / dataSizeGB. Validate manageUsers only if the selected agreement requires it.
     if (config.servicePlan === 'Manage') {
-      const manageCombinations = apiCombinations.filter(c => c.migrationType === 'Manage');
-      const fallback = [{ value: 'Manage', label: 'Manage Plan – SaaS Agreement', migrationType: 'Manage', requiresUsers: true }];
-      const options = manageCombinations.length > 0 ? manageCombinations : fallback;
+      const options = apiCombinations.filter(c => c.migrationType === 'Manage');
       const selectedOption = options.find(o => o.value === config.migrationType);
       const showUsersField = selectedOption ? selectedOption.requiresUsers !== false : true;
       // Data Sprawl mode (E101) changes the required basis: Message/Email are priced
@@ -1963,9 +1961,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   Dropdown is driven by API combinations (migrationType === 'Manage').
                   requiresUsers flag on each combination controls whether Number of Users is shown. */}
               {migrationOrTimeline === 'migration' && config.servicePlan === 'Manage' && (() => {
-                const manageCombinations = apiCombinations.filter(c => c.migrationType === 'Manage');
-                const fallback = [{ value: 'Manage', label: 'Manage Plan – SaaS Agreement', migrationType: 'Manage', requiresUsers: true }];
-                const options = manageCombinations.length > 0 ? manageCombinations : fallback;
+                const options = apiCombinations.filter(c => c.migrationType === 'Manage');
                 const selectedOption = options.find(o => o.value === config.migrationType);
                 const showUsersField = selectedOption ? selectedOption.requiresUsers !== false : true;
                 // Data Sprawl (E101) drives which basis input is collected:
