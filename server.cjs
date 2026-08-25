@@ -7758,7 +7758,7 @@ app.post('/api/esign/documents/:id/remind', async (req, res) => {
     }
 
     const recipients = await db.collection('esign_recipients').find({
-      document_id: docId,
+      ...esignRecipientsDocumentFilter(docId),
       status: { $in: ['pending', 'viewed'] },
       email: { $exists: true, $ne: '' },
       signing_token: { $exists: true, $ne: '' },
@@ -7786,9 +7786,11 @@ app.post('/api/esign/documents/:id/remind', async (req, res) => {
           errors.push(`${recipient.email}: ${result.error?.message || result.error || 'send failed'}`);
           continue;
         }
+        // Backfill sent_at for a deferred recipient whose first email is this reminder,
+        // so the sequential hand-off does not email them a second time later.
         await db.collection('esign_recipients').updateOne(
           { _id: recipient._id },
-          { $set: { expiry_reminder_sent_at: new Date() } }
+          { $set: { expiry_reminder_sent_at: new Date(), ...(recipient.sent_at ? {} : { sent_at: new Date() }) } }
         );
         sentCount++;
       } catch (recErr) {
@@ -8159,6 +8161,47 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
   );
   await logAudit(docId, 'sent', uploadedBy, null);
   return { success: true, emails_sent: emailsSent, emails_sent_to: emailsSentTo };
+}
+
+const {
+  esignSequentialAdvanceAllowed,
+  pickNextEsignSequentialRecipient,
+} = require('./esign-sequential-utils.cjs');
+
+// Sequential signing: hand the envelope to the next recipient in the signing order.
+// EVERY path that completes a recipient must call this — signing (generate-signed-pdf) AND
+// reviewer approval (mark-reviewed). A reviewer placed first in the order previously left the
+// signer's email unsent, stalling the envelope with no visible error.
+async function advanceEsignSequentialSigning(docId, actorEmail) {
+  try {
+    if (!db) return null;
+    const freshDoc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!esignSequentialAdvanceAllowed(freshDoc)) return null;
+    const ordered = await db.collection('esign_recipients')
+      .find(esignRecipientsDocumentFilter(docId))
+      .sort({ order: 1, _id: 1 })
+      .toArray();
+    const next = pickNextEsignSequentialRecipient(ordered);
+    if (!next) return null;
+    const { signingUrl, inboxUrl } = getEsignRecipientUrls(next.signing_token);
+    const { subject, html } = buildEsignRecipientEmail(freshDoc, next, signingUrl, inboxUrl, {
+      mode: 'initial',
+      tokenExpiresAt: next.token_expires_at,
+    });
+    const result = await sendEmail(next.email, subject, html);
+    if (!result || result.success === false) {
+      // Leave `sent_at` unset so Remind / Extend expiry can retry this recipient.
+      console.error('❌ Sequential e-sign: next recipient email FAILED —', next.email, '—', result?.error?.message || result?.error?.code || result?.error);
+      return null;
+    }
+    await db.collection('esign_recipients').updateOne({ _id: next._id }, { $set: { sent_at: new Date() } });
+    await logAudit(docId, 'sent', next.email, null, { recipient: next.email, sequential: true, after: actorEmail || null });
+    console.log('📧 Sequential e-sign: sent signing email to next recipient', next.email);
+    return next.email;
+  } catch (err) {
+    console.warn('Sequential e-sign: failed to send next recipient email (non-fatal):', err?.message || err);
+    return null;
+  }
 }
 
 // POST /api/esign/documents/:id/send-for-signature - Generate tokens, send emails, mark sent
@@ -9248,12 +9291,14 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
       { signing_token: token },
       { $set: { status: 'reviewed', review_decision: 'approved', ...(comment != null && String(comment).trim() ? { comment: String(comment).trim() } : {}) } }
     );
-    const totalCount = await db.collection('esign_recipients').countDocuments({ document_id: docId });
+    const recipientFilter = esignRecipientsDocumentFilter(docId);
+    const totalCount = await db.collection('esign_recipients').countDocuments(recipientFilter);
     const completedCount = await db.collection('esign_recipients').countDocuments({
-      document_id: docId,
+      ...recipientFilter,
       status: { $in: ['signed', 'reviewed'] },
     });
-    if (totalCount > 0 && completedCount >= totalCount) {
+    const envelopeComplete = totalCount > 0 && completedCount >= totalCount;
+    if (envelopeComplete) {
       await db.collection('esign_documents').updateOne(
         { _id: docId },
         { $set: { status: 'completed', signed_at: doc.signed_at || new Date() } }
@@ -9267,6 +9312,10 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
         }
       }
     }
+    let nextRecipientEmailed = null;
+    if (!envelopeComplete) {
+      nextRecipientEmailed = await advanceEsignSequentialSigning(docId, recipient.email || null);
+    }
     try {
       await logAudit(docId.toString(), 'reviewed', recipient.email || null, req.ip || req.connection?.remoteAddress);
     } catch (auditErr) {
@@ -9277,6 +9326,7 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
       message: 'Document marked as reviewed',
       action: 'approve',
       document_id: docId.toString(),
+      next_recipient_notified: nextRecipientEmailed,
     });
   } catch (error) {
     console.error('❌ E-sign mark-reviewed error:', error);
@@ -9990,9 +10040,10 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
         { signing_token },
         { $set: { status: 'signed', signed_at: new Date() } }
       );
-      const totalCount = await db.collection('esign_recipients').countDocuments({ document_id: docId });
+      const recipientFilter = esignRecipientsDocumentFilter(docId);
+      const totalCount = await db.collection('esign_recipients').countDocuments(recipientFilter);
       const completedCount = await db.collection('esign_recipients').countDocuments({
-        document_id: docId,
+        ...recipientFilter,
         status: { $in: ['signed', 'reviewed'] },
       });
       if (totalCount > 0 && completedCount >= totalCount) {
@@ -10029,27 +10080,8 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       } catch (_) { /* non-fatal */ }
     }
 
-    // Sequential signing: send email to the next pending recipient
-    try {
-      const freshDoc = await db.collection('esign_documents').findOne({ _id: docId });
-      if (freshDoc?.signing_order_enforced && freshDoc.status !== 'completed') {
-        const nextRecipient = await db.collection('esign_recipients').findOne(
-          { document_id: docId, status: 'pending', signing_token: { $exists: true } },
-          { sort: { order: 1, _id: 1 } }
-        );
-        if (nextRecipient?.email && nextRecipient.signing_token) {
-          const { signingUrl, inboxUrl } = getEsignRecipientUrls(nextRecipient.signing_token);
-          const tokenExpiresAt = nextRecipient.token_expires_at;
-          const { subject, html } = buildEsignRecipientEmail(freshDoc, nextRecipient, signingUrl, inboxUrl, { mode: 'initial', tokenExpiresAt });
-          await sendEmail(nextRecipient.email, subject, html);
-          await db.collection('esign_recipients').updateOne({ _id: nextRecipient._id }, { $set: { sent_at: new Date() } });
-          await logAudit(docId, 'sent', nextRecipient.email, null, { recipient: nextRecipient.email, sequential: true });
-          console.log('📧 Sequential e-sign: sent signing email to next recipient', nextRecipient.email);
-        }
-      }
-    } catch (seqErr) {
-      console.warn('Sequential e-sign: failed to send next recipient email (non-fatal):', seqErr?.message || seqErr);
-    }
+    // Sequential signing: hand off to the next recipient in the signing order
+    await advanceEsignSequentialSigning(docId, signer_email || null);
 
     res.json({
       success: true,
