@@ -9,6 +9,7 @@ services:
         VITE_MSAL_CLIENT_ID: ${VITE_MSAL_CLIENT_ID}
         VITE_MSAL_REDIRECT_URI: ${VITE_MSAL_REDIRECT_URI}
         VITE_CLARITY_ID: ${VITE_CLARITY_ID}
+        VITE_HOTJAR_ID: ${VITE_HOTJAR_ID}
     container_name: cpq-application
     environment:
       NODE_ENV: production

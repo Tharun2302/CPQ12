@@ -41,6 +41,7 @@ import { getCurrentUser } from '../utils/authUtils';
 import { useAuth } from '../hooks/useAuth';
 import CustomDatePicker from './CustomDatePicker';
 import OnlyOfficeEditor from './OnlyOfficeEditor';
+import { SUPPRESS_PII } from '../analytics/privacy';
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -6455,7 +6456,7 @@ Total Price: {{total price}}`;
                 // Only Basic and Standard exist today, so each falls back to the other when a
                 // combination/include-type has no exhibit of its own plan. Advanced/Premium/
                 // Enterprise are left as-is (no defined sibling to fall back to).
-                const FALLBACK_PLAN: Record<string, string> = { basic: 'standard', standard: 'basic' };
+                const FALLBACK_PLAN: Record<string, string> = { basic: 'standard', standard: 'basic', advanced: 'standard' };
                 const getIncludeTypeLower = (ex: any): string =>
                   (ex?.includeType || (String(ex?.name || '').toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
 
@@ -8915,7 +8916,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               try {
                 // Only Basic and Standard exist today, so each falls back to the other when a
                 // combination/include-type has no exhibit of its own plan in this override pass.
-                const FALLBACK_PLAN_HERE: Record<string, string> = { basic: 'standard', standard: 'basic' };
+                const FALLBACK_PLAN_HERE: Record<string, string> = { basic: 'standard', standard: 'basic', advanced: 'standard' };
                 const getIncludeTypeLowerHere = (ex: any): string =>
                   (ex?.includeType || (String(ex?.name || '').toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
                 const planAvailabilityByGroupHere = new Map<string, Set<string>>();
@@ -11424,6 +11425,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                             ✏️ Editing mode — make your changes below, then click <strong>Save Changes</strong> to update the preview.
                           </div>
                           <div
+                            {...SUPPRESS_PII}
                             ref={editableAgreementRef}
                             contentEditable
                             suppressContentEditableWarning
@@ -11478,6 +11480,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         </div>
                       ) : (
                         <div
+                          {...SUPPRESS_PII}
                           ref={previewContainerRef}
                           className="document-preview-content w-full h-full min-h-0 overflow-y-auto overflow-x-hidden p-6 bg-white touch-pan-y overscroll-y-contain"
                           style={{ minHeight: 'min(700px, 85vh)' }}

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Mail, Loader2, ListChecks } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { SUPPRESS_PII } from '../analytics/privacy';
 import {
   formatSendForSignatureSuccessMessage,
   validateSignatureFieldsBeforeSend,
@@ -84,7 +85,7 @@ const EsignSendPage: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
           <div className="bg-indigo-600 px-6 py-4">
             <h1 className="text-xl font-bold text-white">Send to Signer</h1>
-            <p className="text-indigo-100 text-sm mt-0.5">{doc.file_name}</p>
+            <p {...SUPPRESS_PII} className="text-indigo-100 text-sm mt-0.5">{doc.file_name}</p>
           </div>
 
           <div className="p-6 space-y-6">

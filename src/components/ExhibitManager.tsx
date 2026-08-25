@@ -9,8 +9,11 @@ import {
   AlertCircle,
   Search,
   Plus,
+  ChevronRight,
+  ChevronDown,
   Loader2,
   Eye,
+  Download,
   Info,
   Shield,
   UserPlus
@@ -19,6 +22,7 @@ import { BACKEND_URL } from '../config/api';
 import { getCombinationsForCategory } from '../utils/exhibitAutoDetect';
 import { useAuth } from '../hooks/useAuth';
 import '../assets/docx-preview.css';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 function getAuthHeaders(): Record<string, string> {
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cpq_token') : null;
@@ -80,6 +84,172 @@ function buildCombinationKey(base: string, includeType: string, planType: string
   return b || 'all';
 }
 
+export type ExhibitFolder = {
+  id: string;
+  name: string;
+  exhibits: Exhibit[];
+  isUngrouped: boolean;
+};
+
+const UNGROUPED_FOLDER_ID = 'folder-__ungrouped__';
+const UNGROUPED_FOLDER_NAME = 'Ungrouped';
+
+// Returns the display folder label for an exhibit, or null when it cannot be grouped
+export function deriveFolderName(exhibit: Exhibit): string | null {
+  // Stored documents can omit combinations even though the interface requires it
+  const primaryCombination = exhibit?.combinations?.[0];
+  if (!primaryCombination || primaryCombination === 'all') return null;
+
+  // Include and plan suffixes can stack (e.g. "-standard-included"), so strip twice
+  const base = primaryCombination
+    .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced|premium|enterprise)$/i, '')
+    .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced|premium|enterprise)$/i, '');
+
+  if (!base || base.length < 1) return null;
+
+  const allCombos = getCombinationsForCategory(exhibit.category || 'content');
+  const matchingCombo = allCombos.find(c => c.value === base);
+
+  let folderName: string;
+  if (matchingCombo) {
+    folderName = matchingCombo.label;
+  } else {
+    // Custom folders read more reliably off the exhibit name than off the reconstructed key
+    const dashIdx = (exhibit.name || '').indexOf(' - ');
+    let nameBase = '';
+    if (dashIdx > 0) {
+      nameBase = exhibit.name.substring(0, dashIdx)
+        .replace(/\s+(Basic|Standard|Advanced)\s+Plan\s*$/i, '')
+        .replace(/\s+(std|adv|basic|standard|advanced)\s+(inscope|outscope|in scope|out scope|include|not include|included|not included)\s*$/i, '')
+        .trim();
+    }
+
+    if (nameBase && nameBase.length >= 1) {
+      folderName = nameBase;
+    } else {
+      folderName = base
+        .split('-')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+    }
+  }
+
+  return folderName.trim() || null;
+}
+
+export function buildFolderGroups(list: Exhibit[]): ExhibitFolder[] {
+  const grouped = new Map<string, Exhibit[]>();
+  const ungrouped: Exhibit[] = [];
+
+  (list || []).forEach((exhibit) => {
+    const folderName = deriveFolderName(exhibit);
+    if (!folderName) {
+      ungrouped.push(exhibit);
+      return;
+    }
+    const bucket = grouped.get(folderName);
+    if (bucket) {
+      bucket.push(exhibit);
+    } else {
+      grouped.set(folderName, [exhibit]);
+    }
+  });
+
+  const folders: ExhibitFolder[] = Array.from(grouped.keys())
+    .sort()
+    .map(name => ({
+      id: `folder-${name}`,
+      name,
+      exhibits: grouped.get(name) as Exhibit[],
+      isUngrouped: false,
+    }));
+
+  if (ungrouped.length > 0) {
+    folders.push({
+      id: UNGROUPED_FOLDER_ID,
+      name: UNGROUPED_FOLDER_NAME,
+      exhibits: ungrouped,
+      isUngrouped: true,
+    });
+  }
+
+  return folders;
+}
+
+type ExhibitCardProps = {
+  exhibit: Exhibit;
+  canManageExhibits: boolean;
+  downloadingExhibitId: string | null;
+  onView: (exhibit: Exhibit) => void;
+  onDownload: (exhibit: Exhibit) => void;
+  onEdit: (exhibit: Exhibit) => void;
+  onDelete: (exhibit: Exhibit) => void;
+};
+
+function ExhibitCard({ exhibit, canManageExhibits, downloadingExhibitId, onView, onDownload, onEdit, onDelete }: ExhibitCardProps) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+      <div className="flex justify-between items-start mb-2">
+        <h3 className="font-semibold text-gray-900">{exhibit.name}</h3>
+        <span className={`px-2 py-1 text-xs rounded ${
+          exhibit.category === 'messaging' ? 'bg-blue-100 text-blue-800' :
+          exhibit.category === 'content' ? 'bg-green-100 text-green-800' :
+          'bg-purple-100 text-purple-800'
+        }`}>
+          {exhibit.category}
+        </span>
+      </div>
+      <p className="text-sm text-gray-600 mb-2 line-clamp-2">{exhibit.description}</p>
+      <div className="text-xs text-gray-500 mb-3">
+        <div {...SUPPRESS_PII}>File: {exhibit.fileName}</div>
+        <div>Size: {((exhibit.fileSize || 0) / 1024).toFixed(2)} KB</div>
+        <div>Combinations: {(exhibit.combinations || []).join(', ')}</div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => onView(exhibit)}
+          className="flex-1 min-w-[90px] flex items-center justify-center gap-2 px-3 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors text-sm"
+          title="View document"
+        >
+          <Eye className="w-4 h-4" />
+          View
+        </button>
+        <button
+          onClick={() => onDownload(exhibit)}
+          disabled={downloadingExhibitId === (exhibit._id || exhibit.id)}
+          className="flex-1 min-w-[90px] flex items-center justify-center gap-2 px-3 py-2 bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Download DOCX"
+        >
+          {downloadingExhibitId === (exhibit._id || exhibit.id) ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Download className="w-4 h-4" />
+          )}
+          Download
+        </button>
+        {canManageExhibits && (
+          <>
+            <button
+              onClick={() => onEdit(exhibit)}
+              className="flex-1 min-w-[90px] flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors text-sm"
+            >
+              <Edit className="w-4 h-4" />
+              Edit
+            </button>
+            <button
+              onClick={() => onDelete(exhibit)}
+              className="flex-1 min-w-[90px] flex items-center justify-center gap-2 px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors text-sm"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface Exhibit {
   _id: string;
   id?: string;
@@ -116,9 +286,12 @@ const ExhibitManager: React.FC = () => {
   const [inlineEditSuccess, setInlineEditSuccess] = useState<string | null>(null);
   const [isSavingInlineEdit, setIsSavingInlineEdit] = useState(false);
   const [isDownloadingInlineDoc, setIsDownloadingInlineDoc] = useState(false);
+  const [downloadingExhibitId, setDownloadingExhibitId] = useState<string | null>(null);
   const [editingExhibit, setEditingExhibit] = useState<Exhibit | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('');
+  // Track EXPANDED ids so folders added later default to collapsed
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
   // Exhibit Admins modal (only used when canManageExhibits)
   const [showExhibitAdminsModal, setShowExhibitAdminsModal] = useState(false);
@@ -526,7 +699,7 @@ const ExhibitManager: React.FC = () => {
   // Handle edit
   const handleEdit = (exhibit: Exhibit) => {
     setEditingExhibit(exhibit);
-    const exhibitCombination = exhibit.combinations[0] || '';
+    const exhibitCombination = exhibit.combinations?.[0] || '';
     
     // Check if combination exists in predefined list
     const availableCombos = getCombinationsForCategory(exhibit.category);
@@ -937,33 +1110,49 @@ const ExhibitManager: React.FC = () => {
     }
   };
 
+  const downloadExhibitFile = async (exhibit: Exhibit) => {
+    const exhibitId = exhibit._id || exhibit.id;
+    if (!exhibitId) {
+      throw new Error('Exhibit ID is missing');
+    }
+
+    const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file?t=${Date.now()}`, {
+      cache: 'no-store'
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to download file (${response.status})`);
+    }
+
+    const blob = await response.blob();
+    const downloadUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = exhibit.fileName || `${exhibit.name || 'exhibit'}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(downloadUrl);
+  };
+
+  const handleDownload = async (exhibit: Exhibit) => {
+    const exhibitId = exhibit._id || exhibit.id || null;
+    try {
+      setDownloadingExhibitId(exhibitId);
+      await downloadExhibitFile(exhibit);
+    } catch (error: any) {
+      alert(error?.message || 'Failed to download document');
+    } finally {
+      setDownloadingExhibitId(null);
+    }
+  };
+
   const handleDownloadViewedDocx = async () => {
     if (!viewingExhibit) return;
-    const exhibitId = viewingExhibit._id || viewingExhibit.id;
-    if (!exhibitId) {
-      setInlineEditError('Exhibit ID is missing');
-      return;
-    }
 
     try {
       setIsDownloadingInlineDoc(true);
       setInlineEditError(null);
-      const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file?t=${Date.now()}`, {
-        cache: 'no-store'
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to download file (${response.status})`);
-      }
-
-      const blob = await response.blob();
-      const downloadUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = viewingExhibit.fileName || 'exhibit.docx';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(downloadUrl);
+      await downloadExhibitFile(viewingExhibit);
     } catch (error: any) {
       setInlineEditError(error?.message || 'Failed to download document');
     } finally {
@@ -1023,7 +1212,7 @@ const ExhibitManager: React.FC = () => {
   };
 
   // Filter and sort exhibits (newest first)
-  const filteredExhibits = exhibits
+  const filteredExhibits = useMemo(() => exhibits
     .filter(exhibit => {
       const q = (searchTerm || '').toLowerCase();
       const matchesSearch =
@@ -1038,60 +1227,31 @@ const ExhibitManager: React.FC = () => {
       const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       return dateB - dateA; // Descending order (newest first)
-    });
+    }), [exhibits, searchTerm, filterCategory]);
 
-  // Extract unique folders from existing exhibits
-  const availableFolders = useMemo(() => {
-    const folderSet = new Set<string>();
+  const folderGroups = useMemo(() => buildFolderGroups(filteredExhibits), [filteredExhibits]);
 
-    exhibits.forEach(exhibit => {
-      if (exhibit.combinations && exhibit.combinations.length > 0) {
-        const primaryCombination = exhibit.combinations[0];
-        if (primaryCombination && primaryCombination !== 'all') {
-          // Extract base combination (remove include/notinclude and plan type)
-          const base = primaryCombination
-            .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced|premium|enterprise)$/i, '')
-            .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced|premium|enterprise)$/i, '');
+  const isSearching = searchTerm.trim().length > 0;
+  // Derived, not an effect: collapse state must return to the user choice when the search clears
+  const isFolderExpanded = (folderId: string) => isSearching || expandedFolders.has(folderId);
 
-          if (base && base.length >= 1) {
-            // Try to match with predefined combinations to get clean name
-            const allCombos = getCombinationsForCategory(exhibit.category || 'content');
-            const matchingCombo = allCombos.find(c => c.value === base);
-
-            let folderName: string;
-            if (matchingCombo) {
-              // Use clean label from predefined list
-              folderName = matchingCombo.label;
-            } else {
-              // Format for display - try to match exhibit name pattern first
-              // For custom folders, extract from exhibit name (more reliable than reconstructing from key)
-              const dashIdx = (exhibit.name || '').indexOf(' - ');
-              let nameBase = '';
-              if (dashIdx > 0) {
-                nameBase = exhibit.name.substring(0, dashIdx)
-                  .replace(/\s+(Basic|Standard|Advanced)\s+Plan\s*$/i, '')
-                  .replace(/\s+(std|adv|basic|standard|advanced)\s+(inscope|outscope|in scope|out scope|include|not include|included|not included)\s*$/i, '')
-                  .trim();
-              }
-
-              // Use exhibit name base if available, otherwise reconstruct from key
-              if (nameBase && nameBase.length >= 1) {
-                folderName = nameBase;
-              } else {
-                folderName = base
-                  .split('-')
-                  .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                  .join(' ');
-              }
-            }
-
-            folderSet.add(folderName);
-          }
-        }
+  const toggleFolder = (folderId: string) => {
+    setExpandedFolders(prev => {
+      const next = new Set(prev);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
       }
+      return next;
     });
-    return Array.from(folderSet).sort();
-  }, [exhibits]);
+  };
+
+  // Extract unique folders from existing exhibits (spans ALL exhibits, not the filtered view)
+  const availableFolders = useMemo(
+    () => Array.from(new Set(exhibits.map(deriveFolderName).filter(Boolean) as string[])).sort(),
+    [exhibits]
+  );
 
   // Filter combination folders by search (for "Select existing combination" dropdown)
   const filteredAvailableFolders = useMemo(() => {
@@ -1176,58 +1336,55 @@ const ExhibitManager: React.FC = () => {
           <p className="text-gray-600">No exhibits found</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredExhibits.map((exhibit) => (
-            <div
-              key={exhibit._id || exhibit.id}
-              className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-            >
-              <div className="flex justify-between items-start mb-2">
-                <h3 className="font-semibold text-gray-900">{exhibit.name}</h3>
-                <span className={`px-2 py-1 text-xs rounded ${
-                  exhibit.category === 'messaging' ? 'bg-blue-100 text-blue-800' :
-                  exhibit.category === 'content' ? 'bg-green-100 text-green-800' :
-                  'bg-purple-100 text-purple-800'
-                }`}>
-                  {exhibit.category}
-                </span>
-              </div>
-              <p className="text-sm text-gray-600 mb-2 line-clamp-2">{exhibit.description}</p>
-              <div className="text-xs text-gray-500 mb-3">
-                <div>File: {exhibit.fileName}</div>
-                <div>Size: {(exhibit.fileSize / 1024).toFixed(2)} KB</div>
-                <div>Combinations: {exhibit.combinations.join(', ')}</div>
-              </div>
-              <div className="flex gap-2">
+        <div className="space-y-3">
+          {folderGroups.map((folder) => {
+            const isExpanded = isFolderExpanded(folder.id);
+            const fileCount = folder.exhibits.length;
+            // Folder names carry spaces, so slugify before using the id as a DOM IDREF
+            const panelId = `${folder.id.replace(/[^a-zA-Z0-9_-]+/g, '-')}-panel`;
+            return (
+              <div key={folder.id} className="bg-white border border-gray-200 rounded-lg">
                 <button
-                  onClick={() => handleView(exhibit)}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors text-sm"
-                  title="View/Download document"
+                  type="button"
+                  onClick={() => toggleFolder(folder.id)}
+                  aria-expanded={isExpanded}
+                  aria-controls={panelId}
+                  className={`w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-gray-50 transition-colors ${
+                    isExpanded ? 'rounded-t-lg' : 'rounded-lg'
+                  }`}
                 >
-                  <Eye className="w-4 h-4" />
-                  View
+                  {isExpanded ? (
+                    <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                  )}
+                  <span className="font-semibold text-gray-900 truncate">{folder.name}</span>
+                  <span className="text-sm text-gray-500 whitespace-nowrap">
+                    ({fileCount} {fileCount === 1 ? 'file' : 'files'})
+                  </span>
                 </button>
-                {canManageExhibits && (
-                  <>
-                    <button
-                      onClick={() => handleEdit(exhibit)}
-                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors text-sm"
-                    >
-                      <Edit className="w-4 h-4" />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(exhibit)}
-                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors text-sm"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Delete
-                    </button>
-                  </>
+                {isExpanded && (
+                  <div
+                    id={panelId}
+                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 px-4 pt-4 pb-4 border-t border-gray-100"
+                  >
+                    {folder.exhibits.map((exhibit) => (
+                      <ExhibitCard
+                        key={exhibit._id || exhibit.id}
+                        exhibit={exhibit}
+                        canManageExhibits={canManageExhibits}
+                        downloadingExhibitId={downloadingExhibitId}
+                        onView={handleView}
+                        onDownload={handleDownload}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -1379,7 +1536,7 @@ const ExhibitManager: React.FC = () => {
                     {uploadFile ? (
                       <div className="space-y-2">
                         <FileText className="w-12 h-12 text-blue-600 mx-auto" />
-                        <p className="text-sm font-medium">{uploadFile.name}</p>
+                        <p {...SUPPRESS_PII} className="text-sm font-medium">{uploadFile.name}</p>
                         <p className="text-xs text-gray-500">
                           {(uploadFile.size / 1024).toFixed(2)} KB
                         </p>
@@ -1598,7 +1755,7 @@ const ExhibitManager: React.FC = () => {
                 {uploadError && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
                     <AlertCircle className="w-5 h-5 text-red-600" />
-                    <span className="text-sm text-red-800">{uploadError}</span>
+                    <span {...SUPPRESS_PII} className="text-sm text-red-800">{uploadError}</span>
                   </div>
                 )}
 
@@ -1843,7 +2000,7 @@ const ExhibitManager: React.FC = () => {
                 {uploadError && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
                     <AlertCircle className="w-5 h-5 text-red-600" />
-                    <span className="text-sm text-red-800">{uploadError}</span>
+                    <span {...SUPPRESS_PII} className="text-sm text-red-800">{uploadError}</span>
                   </div>
                 )}
 
@@ -1890,6 +2047,19 @@ const ExhibitManager: React.FC = () => {
                 <p className="text-sm text-gray-600 mt-1">{viewingExhibit.name}</p>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDownloadViewedDocx}
+                  disabled={isDownloadingInlineDoc}
+                  className="inline-flex items-center gap-2 px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Download DOCX"
+                >
+                  {isDownloadingInlineDoc ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  {isDownloadingInlineDoc ? 'Downloading...' : 'Download'}
+                </button>
                 {canManageExhibits && !isInlineEditMode && (
                   <button
                     onClick={() => {
@@ -2004,6 +2174,7 @@ const ExhibitManager: React.FC = () => {
               {/* Always render container for docx-preview */}
               <div className="bg-white shadow-sm rounded-lg min-h-full overflow-auto">
                 <div 
+                  {...SUPPRESS_PII}
                   id="docx-viewer-container" 
                   className="docx-viewer"
                   style={{ 

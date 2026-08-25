@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate, Link } from 'react-router-dom';
 import { Upload, FileText, Loader2, PenLine, Download, Trash2, Check, Clock, XCircle, Eye, MoreVertical, BookOpen, Copy, Bell, X, Users } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { SUPPRESS_PII } from '../analytics/privacy';
 import { useAuth } from '../hooks/useAuth';
 import { shouldAutoStartLandingTour, startEsignLandingTour } from '../utils/esignTour';
 
@@ -785,7 +786,7 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
               </div>
             )}
             {uploadError && (
-              <p className="mt-3 text-sm text-red-600">{uploadError}</p>
+              <p {...SUPPRESS_PII} className="mt-3 text-sm text-red-600">{uploadError}</p>
             )}
           </div>
         </div>
@@ -964,7 +965,7 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
                               <FileText className="h-4 w-4 text-indigo-600" />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <span className="font-medium text-slate-900 text-sm truncate block" title={doc.file_name}>
+                              <span {...SUPPRESS_PII} className="font-medium text-slate-900 text-sm truncate block" title={doc.file_name}>
                                 {doc.file_name}
                               </span>
                               <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
@@ -1241,12 +1242,12 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
                         {initials}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-900 truncate">{rec.name || rec.email || (kind === 'signer' ? 'Signer' : 'Reviewer')}</p>
+                        <p {...SUPPRESS_PII} className="text-sm font-semibold text-slate-900 truncate">{rec.name || rec.email || (kind === 'signer' ? 'Signer' : 'Reviewer')}</p>
                         <p className="text-xs text-slate-500 truncate">
                           {kind === 'signer'
                             ? `Signer ${index + 1}`
                             : 'Reviewer · view only'}
-                          {rec.email ? ` · ${rec.email}` : ''}
+                          {rec.email ? <span {...SUPPRESS_PII}>{` · ${rec.email}`}</span> : ''}
                         </p>
                         {rec.comment && (
                           <p className="mt-1 text-xs text-slate-600 bg-slate-100 rounded-md px-2 py-1 border border-slate-200">
@@ -1293,7 +1294,7 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
                     <div className="px-6 pt-5 pb-4 border-b border-slate-200">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
-                          <p className="text-base font-semibold text-slate-900 truncate">{statusModalDoc.file_name}</p>
+                          <p {...SUPPRESS_PII} className="text-base font-semibold text-slate-900 truncate">{statusModalDoc.file_name}</p>
                           {sentDate && (
                             <p className="text-xs text-slate-500 mt-0.5">Sent {formatEsignDateTime(sentDate)}</p>
                           )}

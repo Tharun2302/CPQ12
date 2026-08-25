@@ -3,6 +3,7 @@ import { Upload, Eye, Download, AlertCircle, CheckCircle, Loader2 } from 'lucide
 import { PDFProcessingResult } from '../types';
 import { PDFValidator } from '../utils/helpers';
 import { pdfOrchestrator } from '../utils/pdfOrchestratorIntegration';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 interface TemplateProcessorProps {
   quoteData: any;
@@ -102,7 +103,7 @@ export const TemplateProcessor: React.FC<TemplateProcessorProps> = ({
             Choose File
           </label>
           {templateFile && (
-            <p className="mt-2 text-sm text-gray-600">{templateFile.name}</p>
+            <p {...SUPPRESS_PII} className="mt-2 text-sm text-gray-600">{templateFile.name}</p>
           )}
         </div>
       </div>

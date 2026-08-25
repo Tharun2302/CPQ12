@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { FileText, Loader2, PenLine, ShieldX, ArrowRight, User, BarChart3, CheckCircle, X, Eye, Check, XCircle, Clock } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 interface QueueItem {
   documentId: string;
@@ -284,7 +285,7 @@ const EsignInboxByToken: React.FC = () => {
                     >
                       <FileText className="w-10 h-10 text-slate-400 shrink-0" />
                       <div className="min-w-0">
-                        <p className="font-medium text-slate-900 truncate">{doc.file_name}</p>
+                        <p {...SUPPRESS_PII} className="font-medium text-slate-900 truncate">{doc.file_name}</p>
                         <p className="text-sm text-slate-500">Click to view document, then review or sign</p>
                       </div>
                       <Eye className="w-5 h-5 text-slate-400 shrink-0" />
@@ -321,7 +322,7 @@ const EsignInboxByToken: React.FC = () => {
                     <div className="flex items-center gap-3 min-w-0">
                       <CheckCircle className="w-10 h-10 text-emerald-500 shrink-0" />
                       <div className="min-w-0">
-                        <p className="font-medium text-slate-900 truncate">{item.file_name}</p>
+                        <p {...SUPPRESS_PII} className="font-medium text-slate-900 truncate">{item.file_name}</p>
                         <p className="text-sm text-slate-500">
                           {item.status === 'signed' ? 'Signed' : item.status === 'reviewed' ? 'Reviewed' : item.documentStatus || 'Completed'}
                         </p>
@@ -347,7 +348,7 @@ const EsignInboxByToken: React.FC = () => {
                 <FileText className="w-8 h-8 text-indigo-600 shrink-0" />
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900">Document Preview</h2>
-                  <p className="text-sm text-slate-500 truncate max-w-md">{selectedQueueItem.file_name}</p>
+                  <p {...SUPPRESS_PII} className="text-sm text-slate-500 truncate max-w-md">{selectedQueueItem.file_name}</p>
                 </div>
               </div>
               <button

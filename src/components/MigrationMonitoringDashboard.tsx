@@ -4,6 +4,7 @@ import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Navigation from './Navigation';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 interface Batch {
   id: string;
@@ -1956,7 +1957,7 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
                         <div className="flex-1">
                           <div className="flex items-center justify-between">
                             <div>
-                              <h4 className="font-semibold text-gray-900">{doc.name}</h4>
+                              <h4 {...SUPPRESS_PII} className="font-semibold text-gray-900">{doc.name}</h4>
                               <p className="text-sm text-gray-600 mt-1">
                                 Uploaded: {new Date(doc.uploadedAt).toLocaleString()}
                               </p>
@@ -2100,7 +2101,7 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
                   title="PDF Preview"
                 />
               ) : previewDocument.type.toLowerCase() === '.csv' ? (
-                <div className="overflow-auto">
+                <div {...SUPPRESS_PII} className="overflow-auto">
                   <table className="min-w-full divide-y divide-gray-200 border border-gray-300">
                     <thead className="bg-gray-50">
                       {previewContent.split('\n')[0] && (

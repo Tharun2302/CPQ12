@@ -7,6 +7,7 @@ import { getEffectiveDurationMonths } from '../utils/configDuration';
 import { PRICING_TIERS, calculateCombinationPricing, formatCurrency } from '../utils/pricing';
 import { getContentTimelineByServerType, formatServerTypeLabel, type SourceEnvironment, type ContentMigrationType } from '../utils/timelineProjection';
 import { BACKEND_URL } from '../config/api';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 interface ConfigurationFormProps {
   onConfigurationChange: (config: ConfigurationData) => void;
@@ -29,7 +30,30 @@ interface ConfigurationFormProps {
 }
 
 
-const ConfigurationForm: React.FC<ConfigurationFormProps> = ({ 
+// Exhibit records are stored with category "default", so the migration family has to be
+// derived from the combination/name. Without this, "default" matches no branch and Multi
+// combination builds zero config panels (every plan then totals $0.00).
+const MESSAGING_CATEGORY_HINT = /(slack|teams|google\s*chat|chat|messag)/i;
+const EMAIL_CATEGORY_HINT = /(gmail|outlook|\bemail\b|mailbox|exchange|imap|\bmail\b)/i;
+
+const resolveExhibitCategory = (exhibit: any): 'messaging' | 'content' | 'email' => {
+  const declared = String(exhibit?.category || '').toLowerCase();
+  if (declared === 'messaging' || declared === 'message') return 'messaging';
+  if (declared === 'email' || declared === 'mail') return 'email';
+  if (declared === 'content') return 'content';
+
+  const combos = Array.isArray(exhibit?.combinations)
+    ? exhibit.combinations
+    : Array.isArray(exhibit?.combination)
+      ? exhibit.combination
+      : [];
+  const haystack = `${exhibit?.name || ''} ${combos.join(' ')}`;
+  if (MESSAGING_CATEGORY_HINT.test(haystack)) return 'messaging';
+  if (EMAIL_CATEGORY_HINT.test(haystack)) return 'email';
+  return 'content';
+};
+
+const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   onConfigurationChange, 
   onSubmit, 
   selectedExhibits,
@@ -386,8 +410,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             uniqueSelectedExhibits.forEach(exhibitId => {
               const exhibit = exhibits.find((ex: any) => ex._id === exhibitId);
               if (exhibit) {
-                const rawCategory = (exhibit.category || 'content');
-                const category = rawCategory.toLowerCase();
+                const category = resolveExhibitCategory(exhibit);
                 // Group by a STABLE base-combination key so all files of one selected
                 // combination land in a single panel. The display label is chosen separately
                 // (the most descriptive label among the grouped files).
@@ -407,22 +430,15 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   }
                 };
 
-                if (category === 'messaging' || category === 'message') {
+                if (category === 'messaging') {
                   hasMessaging = true;
                   addToMap(messagingCombinationMap);
-                } else if (category === 'content') {
-                  hasContent = true;
-                  addToMap(contentCombinationMap);
-                } else if (
-                  category === 'email' ||
-                  category === 'mail' ||
-                  category.includes('email') ||
-                  category.includes('mailbox') ||
-                  category.includes('outlook') ||
-                  category.includes('gmail')
-                ) {
+                } else if (category === 'email') {
                   hasEmail = true;
                   addToMap(emailCombinationMap);
+                } else {
+                  hasContent = true;
+                  addToMap(contentCombinationMap);
                 }
               }
             });
@@ -752,14 +768,13 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             const selectedExhibitsData = exhibits.filter((ex: any) => selectedExhibits.includes(ex._id));
             
             const hasMessaging = selectedExhibitsData.some((ex: any) => 
-              (ex.category || 'content').toLowerCase() === 'messaging' || 
-              (ex.category || 'content').toLowerCase() === 'message'
+              resolveExhibitCategory(ex) === 'messaging'
             );
             const hasContent = selectedExhibitsData.some((ex: any) => 
-              (ex.category || 'content').toLowerCase() === 'content'
+              resolveExhibitCategory(ex) === 'content'
             );
             const hasEmail = selectedExhibitsData.some((ex: any) => 
-              (ex.category || 'content').toLowerCase() === 'email'
+              resolveExhibitCategory(ex) === 'email'
             );
 
             setSelectedExhibitCategories({ hasMessaging, hasContent, hasEmail });
@@ -1596,7 +1611,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         <div className={`grid gap-6 mb-8 ${(dealData || contactInfo.clientName || contactInfo.clientEmail || contactInfo.company) ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
           {/* Contact Information Display - Show when deal data exists */}
           {(dealData || contactInfo.clientName || contactInfo.clientEmail || contactInfo.company) && (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-8 hover:shadow-md transition-shadow duration-200">
+            <div {...SUPPRESS_PII} className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-8 hover:shadow-md transition-shadow duration-200">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md">
                 <Users className="w-5 h-5 text-white" />

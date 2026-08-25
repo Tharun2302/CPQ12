@@ -4,6 +4,7 @@ import { Loader2, Check, Clock, Download, Eye, XCircle, CalendarClock } from 'lu
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
 import EditDatesModal from '../components/EditDatesModal';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 interface EsignDocument {
   id: string;
@@ -281,7 +282,7 @@ const EsignTrackingPage: React.FC = () => {
                     <li key={rec.id} className="py-2 border-b border-slate-100 last:border-0">
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-slate-800">
-                          Recipient {idx + 1}: {rec.name || rec.email || 'Signer'}{' '}
+                          Recipient {idx + 1}: <span {...SUPPRESS_PII}>{rec.name || rec.email || 'Signer'}</span>{' '}
                           <span className="text-slate-400">({rec.role || 'signer'})</span>
                           {' — '}
                           {isForwarded ? (

@@ -4,6 +4,7 @@ import { FileText, Loader2, PenLine, User, RefreshCw, BarChart3, Eye, X } from '
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
 import Navigation from './Navigation';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 interface PendingItem {
   documentId: string;
@@ -215,7 +216,7 @@ const EsignTeamLeadDashboard: React.FC = () => {
                             <PenLine className="w-5 h-5 text-teal-600" />
                           </div>
                           <div>
-                            <h3 className="font-semibold text-gray-900 truncate max-w-md">{item.file_name}</h3>
+                            <h3 {...SUPPRESS_PII} className="font-semibold text-gray-900 truncate max-w-md">{item.file_name}</h3>
                             <p className="text-sm text-gray-500">{item.role === 'reviewer' ? 'Reviewer' : 'Signer'}</p>
                           </div>
                         </div>
@@ -262,7 +263,7 @@ const EsignTeamLeadDashboard: React.FC = () => {
                 </div>
                 <div>
                   <h2 className="text-xl font-semibold text-gray-900">Document Preview</h2>
-                  <p className="text-sm text-gray-500">{selectedItem.file_name}</p>
+                  <p {...SUPPRESS_PII} className="text-sm text-gray-500">{selectedItem.file_name}</p>
                 </div>
               </div>
               <button onClick={closeDocumentModal} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">

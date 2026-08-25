@@ -21,6 +21,7 @@ import { templateService } from '../utils/templateService';
 import { sanitizeNameInput, sanitizeEmailInput } from '../utils/emojiSanitizer';
 import { track } from '../analytics/clarity';
 import { BACKEND_URL } from '../config/api';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 // Helper function to limit consecutive spaces to maximum 5
 function limitConsecutiveSpaces(value: string, maxSpaces: number = 5): string {
@@ -1954,7 +1955,7 @@ CloudFuze Team`;
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <FileText className="w-5 h-5 text-blue-600" />
-                  <h3 className="font-semibold text-gray-800">{template.name}</h3>
+                  <h3 {...SUPPRESS_PII} className="font-semibold text-gray-800">{template.name}</h3>
                   {template.isDefault && (
                     <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full font-medium">
                       Default
@@ -2156,7 +2157,7 @@ CloudFuze Team`;
                       <div className="flex items-center gap-2">
                         <FileText className="w-4 h-4 text-blue-600" />
                         <span className="text-sm text-blue-700">
-                          PDF: {newTemplate.file.name} ({formatFileSize(newTemplate.file.size)})
+                          PDF: <span {...SUPPRESS_PII}>{newTemplate.file.name}</span> ({formatFileSize(newTemplate.file.size)})
                         </span>
                       </div>
                     </div>
@@ -2167,7 +2168,7 @@ CloudFuze Team`;
                          <div className="flex items-center gap-2">
                            <CheckCircle className="w-4 h-4 text-green-600" />
                            <span className="text-sm text-green-700">
-                             RTF: {newTemplate.wordFile.name} ({formatFileSize(newTemplate.wordFile.size)})
+                             RTF: <span {...SUPPRESS_PII}>{newTemplate.wordFile.name}</span> ({formatFileSize(newTemplate.wordFile.size)})
                            </span>
                          </div>
                        </div>
@@ -2181,7 +2182,7 @@ CloudFuze Team`;
                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
                   <div className="flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 text-red-600" />
-                    <span className="text-sm text-red-700">{uploadError}</span>
+                    <span {...SUPPRESS_PII} className="text-sm text-red-700">{uploadError}</span>
                   </div>
                 </div>
               )}

@@ -19,6 +19,7 @@ import {
 } from '../utils/esignTextFieldStyle';
 import { shouldAutoStartPlaceFieldsTour, startEsignPlaceFieldsTour } from '../utils/esignTour';
 import { lookupRecipient } from '../config/recipientDirectory';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 const QUOTE_PENDING_APPROVAL_KEY = 'quotePendingApproval';
 const SAVED_RECIPIENTS_KEY = 'esign_saved_recipients';
@@ -1465,9 +1466,9 @@ const EsignPlaceFieldsPage: React.FC = () => {
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5">
                                 <span className={`h-2 w-2 rounded-full shrink-0 ${recipientColor.dot}`} title="Field color" />
-                                <p className="font-medium text-slate-900 text-sm truncate">{r.name || r.email}</p>
+                                <p {...SUPPRESS_PII} className="font-medium text-slate-900 text-sm truncate">{r.name || r.email}</p>
                               </div>
-                              <p className="text-xs text-slate-500 truncate mt-0.5">{r.email || ''}</p>
+                              <p {...SUPPRESS_PII} className="text-xs text-slate-500 truncate mt-0.5">{r.email || ''}</p>
                               <div className="mt-1.5 flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
                                 <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded ${isReviewer ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
                                   {isReviewer ? 'Review' : 'Sign'}

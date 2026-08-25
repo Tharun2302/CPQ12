@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { useNavigate } from 'react-router-dom';
 import { User, AuthContextType, SignUpData, AuthProvider as AuthProviderType } from '../types/auth';
 import { track, identify } from '../analytics/clarity';
+import { identifyHotjarUser } from '../analytics/hotjar';
 import { BACKEND_URL } from '../config/api';
  
 // Create the context
@@ -36,6 +37,12 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Single identify point covering every auth path (restored session, email, Microsoft, HubSpot):
+  // the first render where `user` is set is the first moment the app knows who this is.
+  useEffect(() => {
+    if (user) identifyHotjarUser(user);
+  }, [user?.email, user?.role]);
  
   // Check for existing authentication on app load
   useEffect(() => {

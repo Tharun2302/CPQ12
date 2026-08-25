@@ -82,6 +82,16 @@ VITE_CLARITY_ID=your-clarity-project-id-here
 VITE_CLARITY_ENABLE_DEV=0
 
 # ===========================================
+# HOTJAR (session recordings + heatmaps)
+# ===========================================
+# Numeric Site ID from https://insights.hotjar.com/ > Settings > Sites & Organizations.
+# LEAVE BLANK for local dev and in the committed default: blank means the tag never loads
+# and no script is requested, so dev traffic never records into the same site as real users.
+# Vite bakes this in at BUILD time, so changing it needs a rebuild + redeploy to take effect.
+# Set it ONLY in the production/staging build environment.
+VITE_HOTJAR_ID=
+
+# ===========================================
 # APPROVAL WORKFLOW DEFAULT RECIPIENTS
 # ===========================================
 # Frontend defaults (Vite requires VITE_ prefix)

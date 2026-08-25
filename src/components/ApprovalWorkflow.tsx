@@ -6,6 +6,7 @@ import { BACKEND_URL } from '../config/api';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getCurrentUser } from '../utils/authUtils';
 import { useAuth } from '../hooks/useAuth';
+import { SUPPRESS_PII } from '../analytics/privacy';
 
 interface ApprovalWorkflowProps {
   quotes?: any[];
@@ -758,7 +759,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                       </p>
                       {uploadedFile && (
                         <p className="mt-1 text-xs text-gray-600">
-                          Selected file: <span className="font-medium">{uploadedFile.name}</span>
+                          Selected file: <span {...SUPPRESS_PII} className="font-medium">{uploadedFile.name}</span>
                         </p>
                       )}
                       {isUploadingDocument && (
