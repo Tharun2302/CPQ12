@@ -13,6 +13,7 @@ const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const AdmZip = require('adm-zip');
+const rateLimit = require('express-rate-limit');
 
 // --- simple in-memory cache (no external deps) ---
 const _cache = {
@@ -45,7 +46,48 @@ if (!process.env.APP_BASE_URL && require('fs').existsSync(envPath)) {
   if (match) process.env.APP_BASE_URL = match[1].trim().replace(/^["']|["']$/g, '');
 }
 
+// Redirect console.* to the structured file logger so all existing call sites
+// (551 of them) get persisted, rotated logs with zero individual edits.
+// Placed as early as possible after dotenv so LOG_FILE/LOG_LEVEL are available,
+// but a handful of console.log calls above this line (module load messages)
+// still go to raw stdout since the shim isn't installed yet.
+const logger = require('./server/logger.cjs');
+const stringifyArg = (a) => {
+  // String args go through logger.redact() too (not just object args) — it scrubs any
+  // embedded scheme://user:pass@host credentials segment in the string itself, which
+  // matters because e.g. console.log('...', JSON.stringify(objWithSecrets)) flattens an
+  // object to a string BEFORE this shim ever sees it as an object, so the object-only
+  // key-based redaction below would otherwise never get a chance to run on it.
+  if (typeof a === 'string') return logger.redact(a);
+  // Redact object args too, not just structured `meta` — otherwise a stray
+  // console.log(obj) elsewhere in the 551 call sites could still leak secrets
+  // once flattened into a single message string below.
+  try { return JSON.stringify(logger.redact(a)); } catch { return String(a); }
+};
+console.log = (...args) => logger.info(args.map(stringifyArg).join(' '));
+console.warn = (...args) => logger.warn(args.map(stringifyArg).join(' '));
+console.error = (...args) => logger.error(args.map(stringifyArg).join(' '));
+
 const app = express();
+// Reverse-proxy trust must NOT be assumed by default — it's env-driven, defaulting to 0
+// (no hops trusted; req.ip read straight off the socket). Only set TRUST_PROXY where
+// there really is exactly one trusted proxy hop between the internet and this process:
+// prod's nginx container (see deploymentgigitaldocker/docker-compose.yml + nginx.conf,
+// which appends via proxy_add_x_forwarded_for) is one such hop. The dev droplet, despite
+// running the *same* deploymentgigitaldocker/docker-compose.yml, has been deployed there
+// with the app container's port published directly to the host and no nginx container
+// running at all (verified 2026-09-03 via `docker ps` on the droplet: only cpq-application
+// + mongo are up, and curl to :3001 returns raw Express response headers, no nginx hop) —
+// so trusting a hop on dev would let any caller spoof req.ip via a hand-crafted
+// X-Forwarded-For header. That header is read not just by the rate limiters below but by
+// ~15 e-signature audit-log call sites (search `logAudit(` passing req.ip — uploaded,
+// signed, voided, viewed, forwarded, reviewed, sign_denied, etc.), so a wrong default here
+// makes those audit entries forgeable. Set TRUST_PROXY=1 only in the *host-specific*
+// deploymentgigitaldocker/.env on the prod machine (never committed) — see compose file.
+const trustProxyHops = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : 0;
+if (Number.isFinite(trustProxyHops) && trustProxyHops > 0) {
+  app.set('trust proxy', trustProxyHops);
+}
 // IMPORTANT: dotenv values are strings. If PORT is provided as a string (e.g. "3001"),
 // Node can treat it as a named pipe instead of a TCP port. Always coerce to number.
 const PORT = Number.parseInt(process.env.PORT, 10) || 3001;
@@ -166,6 +208,71 @@ app.use((req, res, next) => {
   }
   next();
 });
+// Unauthenticated, internet-reachable client-error-reporting endpoint (see the route
+// itself, further down, for the handler). It needs its own hard 10KB body cap enforced
+// BEFORE the 50MB global parser below ever touches the stream — otherwise the global
+// express.json({limit:'50mb'}) fully buffers/parses the body first and sets req._body,
+// which makes any route-local express.json() a no-op (body-parser skips re-parsing once
+// req._body is set), so a route-local limit alone never actually runs. A Content-Length
+// check alone is also not enough: a client can omit Content-Length (e.g. chunked transfer
+// encoding), so this also hard-caps the actual bytes read off the socket, independent of
+// any header claim.
+const CLIENT_LOG_RAW_MAX_BYTES = 10 * 1024;
+app.use('/api/client-log', (req, res, next) => {
+  if (req.method !== 'POST') return next();
+
+  // Fast-path: reject on the declared Content-Length when present, before reading anything.
+  const declaredLength = Number(req.headers['content-length']);
+  if (Number.isFinite(declaredLength) && declaredLength > CLIENT_LOG_RAW_MAX_BYTES) {
+    res.status(413).json({ success: false, error: 'Payload too large', code: 'PAYLOAD_TOO_LARGE' });
+    req.destroy();
+    return;
+  }
+
+  // Hard cutoff on bytes actually received, so a missing/lying/chunked Content-Length
+  // can't bypass the check above.
+  let received = 0;
+  const chunks = [];
+  let settled = false;
+
+  const fail = (status, error, code) => {
+    if (settled) return;
+    settled = true;
+    req.removeAllListeners('data');
+    req.removeAllListeners('end');
+    try { res.status(status).json({ success: false, error, code }); } catch (_e) { /* response may already be closed */ }
+    req.destroy();
+  };
+
+  req.on('data', (chunk) => {
+    if (settled) return;
+    received += chunk.length;
+    if (received > CLIENT_LOG_RAW_MAX_BYTES) {
+      fail(413, 'Payload too large', 'PAYLOAD_TOO_LARGE');
+      return;
+    }
+    chunks.push(chunk);
+  });
+
+  req.on('error', () => fail(400, 'Malformed request body', 'BAD_REQUEST'));
+
+  req.on('end', () => {
+    if (settled) return;
+    settled = true;
+    const raw = Buffer.concat(chunks).toString('utf8');
+    try {
+      // Mirror what body-parser sets on success so the global express.json() below (and
+      // the route's own local one) see req._body === true and skip re-parsing rather than
+      // trying to read the now-exhausted stream again.
+      req.body = raw.trim().length ? JSON.parse(raw) : {};
+      req._body = true;
+      next();
+    } catch (e) {
+      res.status(400).json({ success: false, error: 'Invalid JSON body', code: 'INVALID_JSON' });
+    }
+  });
+});
+
 // Large enough for generate-signed JSON bodies with base64 signature images (multiple fields).
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -302,6 +409,12 @@ const esignDocumentUpload = multer({ storage: esignDocumentStorage });
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
 const DB_NAME = process.env.DB_NAME || 'cpq_database';
 
+/** Strips embedded user:pass@ credentials from a Mongo URI before it ever reaches a log line. */
+function maskMongoUri(uri) {
+  if (!uri || typeof uri !== 'string') return '[unset]';
+  return uri.replace(/\/\/[^/@]+@/, '//[REDACTED]@');
+}
+
 // MongoDB client
 let client;
 let db;
@@ -312,7 +425,9 @@ async function initializeDatabase() {
     // Check if database connection is available
     console.log('🔍 Checking database connection...');
     console.log('📊 MongoDB config:', {
-      uri: MONGODB_URI,
+      // Deliberately NOT keyed "uri" — the console.* shim's generic redaction net matches that
+      // key name and would blank the whole value, defeating the point of showing a masked host.
+      host: maskMongoUri(MONGODB_URI),
       database: DB_NAME
     });
     
@@ -5785,7 +5900,7 @@ app.post('/api/hubspot/contacts', async (req, res) => {
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ 
+  res.json({
     success: true,
     message: 'CPQ Server is running',
     timestamp: new Date(),
@@ -5793,6 +5908,66 @@ app.get('/api/health', (req, res) => {
     email: isEmailConfigured ? 'Configured' : 'Not configured',
     hubspot: HUBSPOT_API_KEY !== 'demo-key' ? 'Configured' : 'Demo mode'
   });
+});
+
+// Rate limit scoped only to this route (not applied globally) — it's reachable by
+// logged-out clients, so it needs a tighter public-facing cap than the rest of the API.
+const clientLogLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const ALLOWED_CLIENT_LOG_SEVERITIES = new Set(['error', 'warn', 'info']);
+// Body-size limit for this route lives at CLIENT_LOG_RAW_MAX_BYTES, next to the raw-body
+// guard near the top of this file (app.use('/api/client-log', ...) before the global
+// express.json({limit:'50mb'})) — that's where it's actually enforced.
+
+/** Best-effort decode of an optional Bearer JWT for attribution only; never rejects an unauthenticated request. */
+function resolveClientLogUserId(req) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Bearer ')) return 'anonymous';
+  const token = auth.slice(7);
+  if (!token || token.split('.').length !== 3) return 'anonymous';
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return (decoded && decoded.userId) || 'anonymous';
+  } catch (e) {
+    return 'anonymous';
+  }
+}
+
+// Client-side (browser) error reporting. The real size enforcement (immune to a missing
+// or lying Content-Length header) happens in the app.use('/api/client-log', ...) raw-body
+// guard registered near the top of this file, ahead of the global express.json({limit:
+// '50mb'}) — that guard already parses the body and sets req.body/req._body, so both the
+// global json() middleware and this route-local one below are no-ops here by design
+// (body-parser skips re-parsing once req._body is set). The route-local parser is kept
+// only so this handler still works correctly if it's ever reordered ahead of that guard.
+app.post('/api/client-log', clientLogLimiter, express.json({ limit: '10kb' }), (req, res) => {
+  try {
+    const body = req.body || {};
+    const rawMessage = body.message;
+    if (!rawMessage || typeof rawMessage !== 'string' || !rawMessage.trim()) {
+      return res.status(400).json({ success: false, error: 'message is required' });
+    }
+    const message = rawMessage.slice(0, 2000);
+    const stack = typeof body.stack === 'string' ? body.stack.slice(0, 5000) : undefined;
+    const url = typeof body.url === 'string' ? body.url.slice(0, 2000) : undefined;
+    // Client-supplied severity only ever picks the log level — never trusted for anything else.
+    const severity = ALLOWED_CLIENT_LOG_SEVERITIES.has(body.severity) ? body.severity : 'error';
+    const context = (body.context && typeof body.context === 'object' && !Array.isArray(body.context))
+      ? body.context
+      : undefined;
+    const userId = resolveClientLogUserId(req);
+
+    logger[severity](message, { source: 'client', stack, url, userId, context });
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to record client log' });
+  }
 });
 
 // Email sending endpoint (supports attachments e.g., DOCX/PDF)

@@ -32,10 +32,28 @@ services:
       ONLYOFFICE_INTERNAL_URL: http://onlyoffice        # backend -> OnlyOffice (docker network)
       BACKEND_CALLBACK_URL: http://app:3001             # OnlyOffice -> backend (docker network)
       ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET}
+      # --- App logging (persists across container recreation; see server/logger.cjs) ---
+      LOG_FILE: /app/logs/cpq.log
+      LOG_LEVEL: info
+      LOG_RETENTION_DAYS: 2
+      # --- Reverse-proxy trust (server.cjs reads this; defaults to 0/untrusted if unset) ---
+      # This compose file is shared by prod and dev, but they are NOT topologically
+      # identical: prod puts exactly one nginx hop in front of this container (see the
+      # `nginx` service + nginx.conf below), while the dev droplet has been deployed with
+      # this app container's port published directly to the host, no nginx in front at all
+      # (verified 2026-09-03 via `docker ps` on the dev host: only cpq-application + mongo
+      # containers running). Trusting a proxy hop that doesn't exist lets any caller spoof
+      # req.ip via X-Forwarded-For. So this must NOT be a single value hardcoded here for
+      # both hosts — it's substituted from each host's own (uncommitted)
+      # deploymentgigitaldocker/.env, defaulting to 0 (untrusted) if that host's .env
+      # doesn't set it. Set TRUST_PROXY=1 in .env on the PROD host only; leave it unset (or
+      # 0) on dev.
+      TRUST_PROXY: ${TRUST_PROXY:-0}
     env_file:
       - .env
     volumes:
       - ./temp-files:/temp
+      - ./logs:/app/logs
     restart: unless-stopped
     networks:
       - cpq-network

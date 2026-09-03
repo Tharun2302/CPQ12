@@ -38,6 +38,7 @@ import { useNavigate } from 'react-router-dom';
 import { trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from '../analytics/clarity';
 import { getEffectiveDurationMonths, formatMonths } from '../utils/configDuration';
 import { getCurrentUser } from '../utils/authUtils';
+import { reportClientError } from '../utils/reportClientError';
 import { useAuth } from '../hooks/useAuth';
 import CustomDatePicker from './CustomDatePicker';
 import OnlyOfficeEditor from './OnlyOfficeEditor';
@@ -8544,8 +8545,15 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           `.trim();
           
           console.error('❌ Template diagnostic found issues:', issueMessage);
+          reportClientError('Template diagnostic found issues', {
+            severity: 'error',
+            context: {
+              missingTokens: filteredMissing,
+              mismatchedTokens: filteredMismatched,
+            },
+          });
           alert(issueMessage);
-          
+
           // Stop only when non-optional tokens have issues
           throw new Error('Template diagnostic found issues. Please fix the token mismatches before proceeding.');
         } else {
@@ -9888,6 +9896,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
     } catch (error) {
       console.error('❌ Error generating agreement:', error);
+      reportClientError('Error generating agreement', {
+        stack: error instanceof Error ? error.stack : undefined,
+        severity: 'error',
+        context: { errorMessage: error instanceof Error ? error.message : String(error) },
+      });
       alert(`Error generating agreement: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`);
     } finally {
       setIsGeneratingAgreement(false);
