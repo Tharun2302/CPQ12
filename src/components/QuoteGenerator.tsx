@@ -8548,8 +8548,12 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           reportClientError('Template diagnostic found issues', {
             severity: 'error',
             context: {
-              missingTokens: filteredMissing,
-              mismatchedTokens: filteredMismatched,
+              // Named "...Fields", not "...Tokens": the logger's redaction net hides any
+              // object key containing "token" (to protect real auth/signing tokens), and
+              // these are just template placeholder names, not secrets — "Tokens" here
+              // would get wiped to '[REDACTED]' and defeat the point of reporting them.
+              missingFields: filteredMissing,
+              mismatchedFields: filteredMismatched,
             },
           });
           alert(issueMessage);

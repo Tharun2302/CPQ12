@@ -174,26 +174,36 @@ function ensureCurrentFile() {
 // concurrent requests. Left synchronous deliberately for now rather than risk an
 // under-tested ordering bug; revisit with a proper ordered async write queue if log volume
 // or request concurrency grows enough for this to show up in latency.
-function writeLine(line) {
+// Mirrors every line to stdout/stderr in addition to the log file, so `docker logs` and
+// anything else watching container stdout (e.g. the pre-existing monitor-user-logs.cjs
+// script) keep working. The file is the durable copy that survives a redeploy; stdout is
+// the live-tail copy other tooling already depends on.
+function mirrorLine(level, line) {
+  try {
+    (level === 'error' || level === 'warn' ? process.stderr : process.stdout).write(line);
+  } catch (e) { /* best effort only, never let this throw */ }
+}
+
+function writeLine(level, line) {
   try {
     ensureCurrentFile();
     if (currentFd === null) {
-      process.stdout.write(line);
+      mirrorLine(level, line);
       return;
     }
     const stats = fs.fstatSync(currentFd);
     if (stats.size >= MAX_BYTES_PER_DAY) {
       if (!capWarned) {
         capWarned = true;
-        process.stderr.write(`[logger] ${currentFilePath} exceeded ${MAX_BYTES_PER_DAY} bytes; dropping further writes until tomorrow's rotation\n`);
+        process.stderr.write(`[logger] ${currentFilePath} exceeded ${MAX_BYTES_PER_DAY} bytes; dropping further file writes until tomorrow's rotation (still mirrored to stdout/stderr)\n`);
       }
+      mirrorLine(level, line);
       return;
     }
     fs.appendFileSync(currentFd, line);
+    mirrorLine(level, line);
   } catch (e) {
-    try {
-      process.stdout.write(line);
-    } catch (e2) { /* nothing more we can do */ }
+    mirrorLine(level, line);
   }
 }
 
@@ -218,7 +228,7 @@ function log(level, message, meta) {
         entry[key] = safeMeta[key];
       }
     }
-    writeLine(JSON.stringify(entry) + '\n');
+    writeLine(level, JSON.stringify(entry) + '\n');
   } catch (e) {
     try {
       process.stderr.write(`[logger] ${level}: ${typeof message === 'string' ? message : '[unloggable]'}\n`);
