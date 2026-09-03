@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { PricingCalculation, ConfigurationData, Quote } from '../types/pricing';
-import { formatCurrency, getInstanceTypeCost, manageUserCost, MANAGE_STANDALONE_DATA_RATE, overagePerServerPerMonth, calcSprawlCost, lookupMessageSprawlRate, lookupContentSprawlRate } from '../utils/pricing';
+import { formatCurrency, getInstanceTypeCost, overagePerServerPerMonth, manageDataLineCost, manageUserLineCost } from '../utils/pricing';
+import { buildSprawlAgreementData, sprawlPerDataCost, withDiscountRow } from '../utils/sprawlAgreement';
 import {
   FileText,
   Download,
@@ -1740,20 +1741,31 @@ Quote ID: ${quoteData.id}
         const userCount = configuration?.servicePlan === 'Manage'
           ? (configuration?.manageUsers || 1)
           : (configuration?.numberOfUsers || 1);
-        const userCost = calculation?.userCost ?? safeCalculation.userCost;
+        const sprawlAgreement = configuration?.servicePlan === 'Manage'
+          ? buildSprawlAgreementData(configuration, calculation)
+          : undefined;
+        const sprawlRowType = sprawlAgreement?.types.length ? sprawlAgreement.types[0] : undefined;
+        const userCost = sprawlRowType
+          ? sprawlAgreement!.userCost
+          : (calculation?.userCost ?? safeCalculation.userCost);
         const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
-        const totalCost = getEffectiveTotalCost(configuration, calculation || safeCalculation);
         const duration = getEffectiveDurationMonths(configuration) || 1;
         const migrationType = configuration?.migrationType || 'Content';
         const clientName = clientInfo.clientName || dealData?.contactName || 'Contact Name';
         const clientEmail = clientInfo.clientEmail || dealData?.contactEmail || 'contact@email.com';
 
-        // Calculate comprehensive pricing breakdown
-        const dataCost = calculation?.dataCost ?? safeCalculation.dataCost;
+        // Sprawl only: the selected tier is a snapshot that still holds the pre-sprawl figure.
+        const dataCost = sprawlRowType
+          ? sprawlAgreement!.dataCost
+          : (calculation?.dataCost ?? safeCalculation.dataCost);
         const instanceCost = calculation?.instanceCost ?? safeCalculation.instanceCost;
         const tierName = calculation?.tier?.name ?? safeCalculation.tier.name;
         const instanceType = configuration?.instanceType || 'Standard';
         const numberOfInstances = configuration?.numberOfInstances || 1;
+        // Keep the Total Price consistent with the two lines the sprawl agreement prints.
+        const totalCost = sprawlRowType
+          ? sprawlAgreement!.totalCost
+          : getEffectiveTotalCost(configuration, calculation || safeCalculation);
 
         // Data size (GB)
         // - Email agreements do not have a GB/data-size concept -> 0 / blank tokens
@@ -1858,6 +1870,9 @@ Quote ID: ${quoteData.id}
           '{{dataCost}}': formatCurrency(dataCost),
           '{{manag_data_size}}': (configuration?.manageDataGB ?? 0).toString(),
           '{{manag_data_cost}}': formatCurrency(dataCost),
+          // Spread last: the builder is the single source of truth for sprawl tokens.
+          ...(sprawlAgreement?.tokens ?? {}),
+          // sprawlRows is attached after the literal — it is an array, not a token string.
           '{{price_migration}}': formatCurrency(migrationCost || 0),
           '{{migration_cost}}': formatCurrency(migrationCost || 0),
           '{{migration_price}}': formatCurrency(migrationCost || 0),
@@ -2012,13 +2027,8 @@ Quote ID: ${quoteData.id}
             // Data Sprawl has its own rate tables and its own basis (per GB for Content,
             // per user for Message/Email). The migration tier's per-GB rate does not apply.
             const sprawlCfg = (configuration as any) as any;
-            const sprawlSt = sprawlCfg?.servicePlan === 'Manage' ? sprawlCfg?.manageSprawlType : undefined;
-            if (sprawlSt === 'Content') {
-              return formatCurrency(lookupContentSprawlRate(Number(sprawlCfg?.manageDataGB ?? 0)));
-            }
-            if (sprawlSt === 'Message' || sprawlSt === 'Email') {
-              return formatCurrency(lookupMessageSprawlRate(Number(sprawlCfg?.manageUsers ?? 0)));
-            }
+            const sprawlRate = sprawlPerDataCost(sprawlCfg);
+            if (sprawlRate !== undefined) return sprawlRate;
             // Multi combination: per-GB should come from CONTENT side (messaging has no data size)
             const isMulti = configuration?.migrationType === 'Multi combination';
             const safeDataSize = isMulti ? (configuration?.contentConfig?.dataSizeGB ?? 0) : (dataSizeGB ?? 0);
@@ -2249,6 +2259,14 @@ Quote ID: ${quoteData.id}
             templateData['{{discount_row}}'] = totalDiscountAmount > 0 ? `<tr><td>Discount</td><td>-${formatCurrency(totalDiscountAmount)}</td></tr>` : '';
           }
         }
+
+        // Loop array for {{#sprawlRows}} — attached outside the string-typed literal,
+        // the same way exhibits/servers are.
+        (templateData as any).sprawlRows = withDiscountRow(
+          sprawlAgreement?.rows ?? [],
+          localShouldApplyDiscount ? localDiscountPercent : 0,
+          localShouldApplyDiscount ? localDiscountAmount : 0
+        );
 
         // Snapshot the full token map so we can re-render this agreement later with
         // different dates (EditDatesModal uses this).
@@ -2868,6 +2886,9 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       '{{dataSizeGB}}': '',
       '{{data_size_gb}}': '',
       '{{per_data_cost}}': (() => {
+        // Data Sprawl has its own rate tables; the migration tier's per-GB rate does not apply.
+        const storedSprawlRate = sprawlPerDataCost(quote.configuration as any);
+        if (storedSprawlRate !== undefined) return storedSprawlRate;
         // Multi combination: per-GB should come from CONTENT side (messaging has no data size)
         const isMulti = quote.configuration?.migrationType === 'Multi combination';
         const safeDataSize = isMulti ? (quote.configuration?.contentConfig?.dataSizeGB ?? 0) : (quote.configuration.dataSizeGB ?? 0);
@@ -4729,7 +4750,9 @@ Total Price: {{total price}}`;
           migrationCost: finalCalculation.migrationCost,
           instanceCost: finalCalculation.instanceCost,
           totalCost: finalCalculation.totalCost,
-          tier: finalCalculation.tier
+          tier: finalCalculation.tier,
+          // Only this field distinguishes Data Sprawl (Standalone) from MANAGE + Sprawl.
+          sprawlType: finalCalculation.sprawlType
         },
         costs: {
           userCost: finalCalculation.userCost,
@@ -4936,29 +4959,26 @@ Total Price: {{total price}}`;
         const userCount = quoteData.configuration?.servicePlan === 'Manage'
           ? (quoteData.configuration?.manageUsers || 1)
           : (quoteData.configuration?.numberOfUsers || 1);
-        const userCost = (() => {
-          const cfg = (finalConfiguration || quoteData.configuration || configuration) as any;
-          if (cfg?.servicePlan === 'Manage') {
-            // If this agreement doesn't require users (e.g. Data Sprawl), userCost is always 0
-            if (cfg?.manageRequiresUsers === false) return 0;
-            // MANAGE + Sprawl and Data Sprawl (Standalone) share one config; only the
-            // selected calculation records which was picked, and standalone zeroes the
-            // license line. Recomputing from manageUsers here would re-add it.
-            if (calculation?.sprawlType && (calculation.userCost || 0) === 0) return 0;
-            const raw = manageUserCost(cfg?.manageUsers ?? 0);
-            return raw === 'CUSTOM' ? (quoteData.calculation?.userCost || 0) : (raw as number);
-          }
-          return quoteData.calculation?.userCost || 0;
-        })();
+        const agreementConfig = (finalConfiguration || quoteData.configuration || configuration) as any;
+        // Description cell of the Data Sprawl row; undefined for every non-sprawl plan.
+        const sprawlAgreement = agreementConfig?.servicePlan === 'Manage'
+          ? buildSprawlAgreementData(agreementConfig, quoteData.calculation)
+          : undefined;
+        const sprawlRowType = sprawlAgreement?.types.length ? sprawlAgreement.types[0] : undefined;
+        const userCost = agreementConfig?.servicePlan === 'Manage'
+          ? manageUserLineCost(agreementConfig, quoteData.calculation)
+          : (quoteData.calculation?.userCost || 0);
         const migrationCost = quoteData.calculation?.migrationCost || 0;
         const calculatedTotalCost = quoteData.calculation?.totalCost || 0;
         const isOverageAgreementQuote =
           (quoteData.configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
           (quoteData.configuration?.migrationType || '').toLowerCase() === 'overage agreement';
-        // For Manage plans, totalCost must be recomputed after dataCost is recalculated
-        // to avoid stale values from previous configurations bleeding into the agreement.
-        // dataCost is declared below — use a forward reference via a thunk resolved after dataCost.
-        const totalCost = calculatedTotalCost;
+        // Recalculated from the config; a stale tier reads $0 for the per-user sprawl types.
+        const dataCost = agreementConfig?.servicePlan === 'Manage'
+          ? manageDataLineCost(agreementConfig)
+          : (quoteData.calculation?.dataCost || 0);
+        // Sprawl total must match the rows printed above it, including discount tokens.
+        const totalCost = sprawlRowType ? sprawlAgreement!.totalCost : calculatedTotalCost;
         const duration = getEffectiveDurationMonths(quoteData.configuration) || 1;
         const migrationType = quoteData.configuration?.migrationType || 'Content';
         const clientName = quoteData.clientName || clientInfo.clientName || 'Demo Client';
@@ -5033,24 +5053,6 @@ Total Price: {{total price}}`;
           console.log('  quoteData.calculation.totalCost:', quoteData.calculation?.totalCost);
         }
         
-        // CRITICAL: Create comprehensive template data with ALL tokens for your template
-        // Calculate comprehensive pricing breakdown for consistency
-        const dataCost = (() => {
-          const cfg = (finalConfiguration || quoteData.configuration || configuration) as any;
-          // Manage Standalone: recalculate from the config (not the calculation) to avoid
-          // stale values bleeding in from a previous configuration.
-          if (cfg?.servicePlan === 'Manage') {
-            // Data Sprawl: the data line IS the sprawl cost — Content is priced per GB,
-            // Message/Email per user, so the flat manageDataGB rate would read $0 for
-            // the per-user types (manageDataGB is cleared for them).
-            const st = cfg?.manageSprawlType;
-            if (st === 'Content' || st === 'Message' || st === 'Email') {
-              return calcSprawlCost(st, Number(cfg?.manageUsers ?? 0), Number(cfg?.manageDataGB ?? 0));
-            }
-            return Number(cfg?.manageDataGB ?? 0) * 0.13;
-          }
-          return quoteData.calculation?.dataCost || 0;
-        })();
         const instanceCost = quoteData.calculation?.instanceCost || 0;
         const tierName = quoteData.calculation?.tier?.name || 'Advanced';
         const instanceType = quoteData.configuration?.instanceType || 'Standard';
@@ -5213,8 +5215,11 @@ Total Price: {{total price}}`;
           '{{price_data}}': formatCurrency((userCost || 0) + (dataCost || 0)),
           '{{data_cost}}': formatCurrency(dataCost || 0),
           '{{dataCost}}': formatCurrency(dataCost || 0),
-          '{{manag_data_size}}': (configuration?.manageDataGB ?? 0).toString(),
+          '{{manag_data_size}}': (agreementConfig?.manageDataGB ?? 0).toString(),
           '{{manag_data_cost}}': formatCurrency(dataCost || 0),
+          // Spread last: the builder is the single source of truth for sprawl tokens.
+          ...(sprawlAgreement?.tokens ?? {}),
+          // sprawlRows is attached after the literal — it is an array, not a token string.
           '{{price_migration}}': formatCurrency(migrationCost || 0),
           '{{migration_price}}': formatCurrency(migrationCost || 0),
           
@@ -5492,13 +5497,8 @@ Total Price: {{total price}}`;
             // Data Sprawl has its own rate tables and its own basis (per GB for Content,
             // per user for Message/Email). The migration tier's per-GB rate does not apply.
             const sprawlCfg = (finalConfiguration || quoteData.configuration || configuration) as any;
-            const sprawlSt = sprawlCfg?.servicePlan === 'Manage' ? sprawlCfg?.manageSprawlType : undefined;
-            if (sprawlSt === 'Content') {
-              return formatCurrency(lookupContentSprawlRate(Number(sprawlCfg?.manageDataGB ?? 0)));
-            }
-            if (sprawlSt === 'Message' || sprawlSt === 'Email') {
-              return formatCurrency(lookupMessageSprawlRate(Number(sprawlCfg?.manageUsers ?? 0)));
-            }
+            const sprawlRate = sprawlPerDataCost(sprawlCfg);
+            if (sprawlRate !== undefined) return sprawlRate;
             // Multi combination: per-GB should come from CONTENT side (messaging has no data size)
             const isMulti = configuration?.migrationType === 'Multi combination';
             const safeDataSize = isMulti ? (configuration?.contentConfig?.dataSizeGB ?? 0) : (dataSizeGB ?? 0);
@@ -8458,6 +8458,14 @@ Total Price: {{total price}}`;
                                    formatCurrency(totalCost ?? 0);
           templateData['{{cfm_total_b}}'] = fallbackCfmTotalB;
         }
+
+        // Attach before the diagnostic: it validates templateData, and without the array
+        // the loop's per-row fields look like missing top-level tokens and block generation.
+        (templateData as any).sprawlRows = withDiscountRow(
+          sprawlAgreement?.rows ?? [],
+          localShouldApplyDiscount ? localDiscountPercent : 0,
+          localShouldApplyDiscount ? localDiscountAmount : 0
+        );
 
         // DIAGNOSTIC: Run comprehensive template analysis
         console.log('🔍 Running comprehensive template diagnostic...');

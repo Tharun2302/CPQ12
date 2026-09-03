@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CheckCircle } from 'lucide-react';
 import { PricingCalculation, ConfigurationData, PricingTier } from '../types/pricing';
-import { formatCurrency, PRICING_TIERS, calculateCombinationPricing, getManageDataRatePerGB } from '../utils/pricing';
+import { formatCurrency, PRICING_TIERS, calculateCombinationPricing, getManageDataRatePerGB, resolveSprawlLines, sprawlDisplayTotal, manageAgreementCard } from '../utils/pricing';
 
 interface PricingComparisonProps {
   calculations: PricingCalculation[];
@@ -242,6 +242,12 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
   // Filter plans: only Basic and Standard are shown (Advanced is retained in PRICING_TIERS
   // for any backend templates still referencing it, but never surfaced in the UI).
+  // Show only the card matching the agreement picked in the Manage dropdown.
+  const isManagePlan = configuration?.servicePlan === 'Manage';
+  const agreementCard = manageAgreementCard(configuration);
+  const wantsCombinedOnly = agreementCard === 'combined';
+  const wantsStandaloneOnly = agreementCard === 'standalone';
+
   const filteredCalculations = calculations.filter(calc => {
     // Debug logging for slack-to-google-chat
     if (configuration?.combination === 'slack-to-google-chat') {
@@ -276,6 +282,13 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     return calc.tier.name === 'Basic' || calc.tier.name === 'Standard';
   });
   
+  // Only ever suppress a card when the other one will actually render, so the screen
+  // can never end up with no selectable plan.
+  const standaloneAvailable =
+    !!filteredCalculations[0]?.sprawlType && !!filteredCalculations[0]?.sprawlStandalone;
+  const showStandaloneOnly = wantsStandaloneOnly && standaloneAvailable;
+  const hideStandalone = wantsCombinedOnly && filteredCalculations.length > 0;
+
   // Debug logging after filtering
   useEffect(() => {
     if (configuration?.combination === 'slack-to-teams' || configuration?.combination === 'slack-to-google-chat') {
@@ -364,7 +377,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
       </div>
       
       <div className={`${containerClass} max-w-6xl mx-auto`}>
-        {filteredCalculations.map((calc) => {
+        {(showStandaloneOnly ? [] : filteredCalculations).map((calc) => {
           // For Multi combination, recalculate total based on this plan's tier
           let planTotal = calc.totalCost;
           let originalTotalBeforeMinimum = planTotal;
@@ -816,27 +829,25 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                         </div>
                       </>
                     )}
-                    {calc.sprawlType === 'Content'
-                      ? (configuration?.manageDataGB ?? 0) > 0 && (
-                          <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                            <span className="text-gray-700 font-medium">Per GB cost:</span>
-                            <span className="font-bold text-gray-900">
-                              {`${formatCurrency(calc.dataCost / (configuration?.manageDataGB ?? 1))}/GB`}
-                            </span>
-                          </div>
-                        )
-                      : (configuration?.manageUsers ?? 0) > 0 && (
-                          <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                            <span className="text-gray-700 font-medium">Sprawl per user cost:</span>
-                            <span className="font-bold text-gray-900">
-                              {`${formatCurrency(calc.dataCost / (configuration?.manageUsers ?? 1))}/user`}
-                            </span>
-                          </div>
-                        )}
-                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                      <span className="text-gray-700 font-medium">{`Data Sprawl (${calc.sprawlType})`}:</span>
-                      <span className="font-bold text-gray-900">{formatCurrency(calc.dataCost)}</span>
-                    </div>
+                    {/* Rate × quantity per line, so each type's own basis is visible. */}
+                    {resolveSprawlLines(calc).map((line) => (
+                      <div key={line.type} className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                        <span className="text-gray-700 font-medium">
+                          {line.quantity > 0
+                            ? `${line.label} (${formatCurrency(line.rate)}/${line.basis === 'gb' ? 'GB' : 'user'} × ${line.quantity})`
+                            : `${line.label}`}:
+                        </span>
+                        <span className="font-bold text-gray-900">{formatCurrency(line.cost)}</span>
+                      </div>
+                    ))}
+                    {resolveSprawlLines(calc).length > 1 && (
+                      <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                        <span className="text-gray-900 font-bold">Data Sprawl total:</span>
+                        <span className="font-bold text-gray-900">
+                          {formatCurrency(sprawlDisplayTotal(resolveSprawlLines(calc)))}
+                        </span>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
@@ -922,30 +933,51 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
       </div>
 
       {/* Data Sprawl (Standalone) — sprawl cost only, no license/user line. */}
-      {configuration?.servicePlan === 'Manage' && filteredCalculations[0]?.sprawlType && filteredCalculations[0]?.sprawlStandalone && (
+      {isManagePlan && !hideStandalone && standaloneAvailable && (
         <div className="flex justify-center mt-8">
           <div className="w-full max-w-sm rounded-2xl border-2 border-gray-200 bg-white p-8">
             <div className="text-center mb-6">
               <h3 className="text-2xl font-bold mb-3 text-gray-800">Data Sprawl (Standalone)</h3>
-              <div className="text-4xl font-bold mb-2 text-gray-900">
-                {formatCurrency(filteredCalculations[0].sprawlStandalone!.totalCost)}
+              {(() => {
+                // Same discount treatment as the plan cards above; without it the Data Sprawl
+                // agreement (which shows only this card) hid the discount entirely.
+                const standaloneDiscount = calculateDiscountedPrice(
+                  filteredCalculations[0].sprawlStandalone!.totalCost
+                );
+                return standaloneDiscount.hasDiscount ? (
+                  <>
+                    <div className="text-2xl text-gray-500 line-through mb-1">
+                      {formatCurrency(standaloneDiscount.originalPrice)}
+                    </div>
+                    <div className="text-4xl font-bold mb-2 text-green-600">
+                      {formatCurrency(standaloneDiscount.finalPrice)}
+                    </div>
+                    <div className="text-sm text-green-600 font-medium mb-1">
+                      Save {formatCurrency(standaloneDiscount.discountAmount)} ({standaloneDiscount.discountPercent}% off)
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-4xl font-bold mb-2 text-gray-900">
+                    {formatCurrency(standaloneDiscount.originalPrice)}
+                  </div>
+                );
+              })()}
+              <div className="text-sm text-gray-600 font-medium">
+                {resolveSprawlLines(filteredCalculations[0]).length > 1
+                  ? `Standalone sprawl cost (${resolveSprawlLines(filteredCalculations[0]).map(l => l.type).join(' + ')})`
+                  : 'Standalone sprawl cost'}
               </div>
-              <div className="text-sm text-gray-600 font-medium">Standalone sprawl cost</div>
             </div>
-            {(configuration?.manageDataGB ?? 0) > 0 && (
-              <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3 mb-3">
-                <span className="text-gray-700 font-medium">Per GB cost:</span>
-                <span className="font-bold text-gray-900">
-                  {`${formatCurrency(filteredCalculations[0].sprawlStandalone!.dataCost / (configuration?.manageDataGB ?? 1))}/GB`}
+            {resolveSprawlLines(filteredCalculations[0]).map((line) => (
+              <div key={line.type} className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3 mb-3">
+                <span className="text-gray-700 font-medium">
+                  {line.quantity > 0
+                    ? `${line.label} (${formatCurrency(line.rate)}/${line.basis === 'gb' ? 'GB' : 'user'} × ${line.quantity})`
+                    : `${line.label}`}:
                 </span>
+                <span className="font-bold text-gray-900">{formatCurrency(line.cost)}</span>
               </div>
-            )}
-            <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-              <span className="text-gray-700 font-medium">{`Data Sprawl (${filteredCalculations[0].sprawlType})`}:</span>
-              <span className="font-bold text-gray-900">
-                {formatCurrency(filteredCalculations[0].sprawlStandalone!.dataCost)}
-              </span>
-            </div>
+            ))}
 
             <button
               onClick={() => {

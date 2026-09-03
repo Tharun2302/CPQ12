@@ -115,6 +115,17 @@ export interface DocxTemplateData {
   '{{cloudfuze_manage_user_total_bundled}}'?: string;
   '{{cfm_user_bundled}}'?: string;
   
+  // Data Sprawl rows for the {{#sprawlRows}} table loop — one row per selected type
+  sprawlRows?: Array<{
+    sprawlJobRequirement: string;
+    sprawlLabel: string;
+    sprawlPrice: string;
+    sprawlRate?: string;
+    sprawlBasis?: string;
+    sprawlQty?: string;
+    isLast?: boolean;
+  }>;
+
   // Servers array for dynamic table loops
   servers?: Array<{
     serverDescription: string;
@@ -2301,6 +2312,20 @@ export class DocxTemplateProcessor {
       processedData.servers = [];
       console.log('ℹ️ DOCX PROCESSOR: No servers array found; defaulting to []');
     }
+
+    // CRITICAL: Pass through sprawlRows for the Data Sprawl loop ({{#sprawlRows}} ... {{/sprawlRows}})
+    // Unknown array keys are dropped, and a dropped loop array renders ZERO rows with no error.
+    const sprawlRows = (data as any)?.sprawlRows;
+    if (Array.isArray(sprawlRows)) {
+      processedData.sprawlRows = sprawlRows;
+      console.log('✅ DOCX PROCESSOR: sprawlRows array copied to processedData', {
+        length: sprawlRows.length,
+        sample: sprawlRows[0]
+      });
+    } else {
+      processedData.sprawlRows = [];
+      console.log('ℹ️ DOCX PROCESSOR: No sprawlRows array found; defaulting to []');
+    }
     
     // Extract core values with fallbacks - EXACT tokens from template
     console.log('🔍 DOCX PROCESSOR: Company name sources:');
@@ -2819,7 +2844,7 @@ export class DocxTemplateProcessor {
     // This ensures that any fields set in QuoteGenerator but not in tokenMappings are still passed through
     Object.keys(data).forEach(key => {
       // Only copy fields that look like template tokens (start with {{) or are known data fields
-      if (key.startsWith('{{') || key === 'exhibits' || key === 'servers') {
+      if (key.startsWith('{{') || key === 'exhibits' || key === 'servers' || key === 'sprawlRows') {
         if (!(key in processedData) || processedData[key] === undefined || processedData[key] === null) {
           processedData[key] = (data as any)[key];
         }

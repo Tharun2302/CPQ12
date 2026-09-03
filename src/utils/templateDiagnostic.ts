@@ -69,6 +69,18 @@ export class TemplateDiagnostic {
           nestedTokens.add('isLast');
         }
 
+        // Data Sprawl rows: the array is legitimately empty when no sprawl type is selected,
+        // and the template still references the loop's fields inside {{#sprawlRows}}.
+        if (dataKey === 'sprawlRows') {
+          nestedTokens.add('sprawlJobRequirement');
+          nestedTokens.add('sprawlLabel');
+          nestedTokens.add('sprawlPrice');
+          nestedTokens.add('sprawlRate');
+          nestedTokens.add('sprawlBasis');
+          nestedTokens.add('sprawlQty');
+          nestedTokens.add('isLast');
+        }
+
         // If the array is empty, we cannot infer keys from objects; rely on special cases above.
         if (value.length === 0) continue;
 
@@ -143,6 +155,14 @@ export class TemplateDiagnostic {
         console.log('🧩 Template diagnostic: servers loop detected; treating server loop-item tokens as optional.');
       }
       
+      // Same handling for the Data Sprawl rows loop
+      const hasSprawlLoop = templateTokens.includes('#sprawlRows');
+      if (hasSprawlLoop) {
+        ['sprawlJobRequirement', 'sprawlLabel', 'sprawlPrice', 'sprawlRate', 'sprawlBasis',
+         'sprawlQty', 'isLast'].forEach((t) => optionalLoopItemTokens.add(t));
+        console.log('🧩 Template diagnostic: sprawlRows loop detected; treating its item tokens as optional.');
+      }
+
       // Handle conditional blocks ({{#token}}...{{/token}}) - these are not loops but conditionals
       // For conditional blocks like {{#exhibitOveragePerGB}}, we need to check if the token exists
       // in nested data tokens, not as a top-level array
