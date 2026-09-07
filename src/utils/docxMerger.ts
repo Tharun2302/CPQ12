@@ -52,17 +52,103 @@ function createExhibitTitleParagraph(doc: Document, title: string): Element {
   return p;
 }
 
+function createPageBreakParagraph(doc: Document): Element {
+  const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const p = doc.createElementNS(ns, 'w:p');
+  const r = doc.createElementNS(ns, 'w:r');
+  const br = doc.createElementNS(ns, 'w:br');
+  br.setAttribute('w:type', 'page');
+  r.appendChild(br);
+  p.appendChild(r);
+  return p;
+}
+
+export interface VerbatimStripReport {
+  drawings: number;
+  hyperlinks: number;
+  fields: number;
+  sectionBreaks: number;
+}
+
+function removeAll(root: Element, tagName: string, onRemove?: (el: Element) => void): number {
+  const found = Array.from(root.getElementsByTagName(tagName)) as Element[];
+  for (const el of found) {
+    if (onRemove) onRemove(el);
+    el.parentNode?.removeChild(el);
+  }
+  return found.length;
+}
+
+/**
+ * Strips the parts of a foreign document that this merger cannot carry across.
+ *
+ * Only word/document.xml and word/styles.xml are copied - never document.xml.rels,
+ * word/media/* or numbering.xml. Anything holding a relationship id would therefore
+ * resolve against the HOST document's relationships: a dangling id makes Word demand
+ * repair on a signature-bearing agreement, and a colliding one silently rewires the
+ * reference to whichever host part owns that id. Field instructions are stripped
+ * because INCLUDEPICTURE/INCLUDETEXT/DDE would reach out to an attacker-chosen target
+ * on the counter-signer's machine. A paragraph-level w:sectPr is stripped because it
+ * defines the section ENDING at that paragraph - i.e. it would retroactively re-page
+ * the whole agreement it was appended after.
+ *
+ * Callers must report what was dropped; silent loss is not acceptable in a contract.
+ */
+export function stripUnsupportedForVerbatim(el: Element): VerbatimStripReport {
+  const report: VerbatimStripReport = { drawings: 0, hyperlinks: 0, fields: 0, sectionBreaks: 0 };
+
+  for (const tag of ['w:drawing', 'w:pict', 'w:object', 'w:altChunk']) {
+    report.drawings += removeAll(el, tag);
+  }
+
+  // Unwrap rather than delete: the link text is real content, only the target is unusable
+  const links = Array.from(el.getElementsByTagName('w:hyperlink')) as Element[];
+  for (const link of links) {
+    const parent = link.parentNode;
+    if (!parent) continue;
+    while (link.firstChild) parent.insertBefore(link.firstChild, link);
+    parent.removeChild(link);
+    report.hyperlinks += 1;
+  }
+
+  // w:fldSimple caches its rendered result in child runs, so unwrapping keeps the text
+  const simpleFields = Array.from(el.getElementsByTagName('w:fldSimple')) as Element[];
+  for (const field of simpleFields) {
+    const parent = field.parentNode;
+    if (!parent) continue;
+    while (field.firstChild) parent.insertBefore(field.firstChild, field);
+    parent.removeChild(field);
+    report.fields += 1;
+  }
+  report.fields += removeAll(el, 'w:instrText');
+  report.fields += removeAll(el, 'w:fldChar');
+
+  report.sectionBreaks += removeAll(el, 'w:sectPr');
+
+  // Belt and braces: anything still carrying a relationship id loses just the attribute
+  for (const attr of ['r:id', 'r:embed', 'r:link']) {
+    const holders = Array.from(el.getElementsByTagName('*')) as Element[];
+    for (const holder of holders) {
+      if (holder.getAttribute && holder.getAttribute(attr)) holder.removeAttribute(attr);
+    }
+  }
+
+  return report;
+}
+
 /**
  * Merges multiple DOCX files into one, grouped by Included/Not Included
  * @param mainDocx - The main processed template DOCX blob
  * @param exhibitDocxBlobs - Array of exhibit DOCX blobs to append
  * @param exhibitMetadata - Optional array of exhibit metadata (name, category, includeType) for grouping
+ * @param options - sectionTitle adds a header bar before ungrouped appends (no effect when exhibitMetadata is supplied)
  * @returns Promise<Blob> - The merged DOCX file
  */
 export async function mergeDocxFiles(
   mainDocx: Blob,
   exhibitDocxBlobs: Blob[],
-  exhibitMetadata?: Array<{ name: string; category?: string; includeType?: 'included' | 'notincluded' }>
+  exhibitMetadata?: Array<{ name: string; category?: string; includeType?: 'included' | 'notincluded' }>,
+  options?: { sectionTitle?: string; verbatim?: boolean; onStripReport?: (report: VerbatimStripReport) => void }
 ): Promise<Blob> {
   try {
     console.log('📎 Starting DOCX merge...', {
@@ -105,6 +191,14 @@ export async function mergeDocxFiles(
     if (!mainXml) {
       throw new Error('Could not read main document XML. The file may not be a valid DOCX file.');
     }
+
+    const stripTotals: VerbatimStripReport = { drawings: 0, hyperlinks: 0, fields: 0, sectionBreaks: 0 };
+    const accumulateStrip = (r: VerbatimStripReport): void => {
+      stripTotals.drawings += r.drawings;
+      stripTotals.hyperlinks += r.hyperlinks;
+      stripTotals.fields += r.fields;
+      stripTotals.sectionBreaks += r.sectionBreaks;
+    };
 
     // Helper to merge styles from exhibit into main document
     const mergeStylesFromExhibit = (exhibitZip: PizZip) => {
@@ -283,41 +377,45 @@ export async function mergeDocxFiles(
       addPageBreak: boolean = true,
       skipFirstHeading: boolean = false,
       isIncludedExhibit: boolean = false
-    ): Promise<void> => {
+    ): Promise<number> => {
       const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+      // Verbatim callers append a contract attachment: a silent skip would leave the
+      // section header standing over nothing, so surface the failure instead.
+      const verbatim = options?.verbatim === true;
+      const fail = (message: string): number => {
+        if (verbatim) throw new Error(message);
+        console.warn(`⚠️ ${message}, skipping`);
+        return 0;
+      };
+      let appended = 0;
       
       // Validate exhibit blob
       if (!exhibitBlob || !(exhibitBlob instanceof Blob)) {
-        console.warn(`⚠️ Invalid exhibit blob, skipping`);
-        return;
+        return fail('Invalid document blob');
       }
       
       if (exhibitBlob.size === 0) {
-        console.warn(`⚠️ Empty exhibit blob, skipping`);
-        return;
+        return fail('Document is empty');
       }
       
       let exhibitBuffer: ArrayBuffer;
       try {
         exhibitBuffer = await exhibitBlob.arrayBuffer();
       } catch (error) {
-        console.warn(`⚠️ Failed to read exhibit buffer: ${error instanceof Error ? error.message : String(error)}, skipping`);
-        return;
+        return fail(`Could not read the document: ${error instanceof Error ? error.message : String(error)}`);
       }
       
       let exhibitZip: PizZip;
       try {
         exhibitZip = new PizZip(exhibitBuffer);
       } catch (error) {
-        console.warn(`⚠️ Failed to parse exhibit as ZIP: ${error instanceof Error ? error.message : String(error)}, skipping`);
-        return;
+        return fail(`Not a readable .docx file: ${error instanceof Error ? error.message : String(error)}`);
       }
       
       const exhibitXml = exhibitZip.file('word/document.xml')?.asText();
       
       if (!exhibitXml) {
-        console.warn(`⚠️ Could not read exhibit XML (file may not be a valid DOCX), skipping`);
-        return;
+        return fail('Not a Word .docx file (no word/document.xml inside)');
       }
 
       const exhibitDoc = parser.parseFromString(exhibitXml, 'text/xml');
@@ -326,8 +424,7 @@ export async function mergeDocxFiles(
       ensureNamespacesFromExhibit(exhibitDoc);
       
       if (!exhibitBody) {
-        console.warn(`⚠️ Could not find exhibit body, skipping`);
-        return;
+        return fail('The document body could not be read');
       }
 
       // Merge styles from exhibit to preserve table and formatting styles
@@ -362,8 +459,10 @@ export async function mergeDocxFiles(
         }
         return false;
       };
-      while (children.length > 0 && !isMeaningful(children[children.length - 1])) {
-        children.pop();
+      if (!verbatim) {
+        while (children.length > 0 && !isMeaningful(children[children.length - 1])) {
+          children.pop();
+        }
       }
 
       let skippedFirstHeading = false;
@@ -475,13 +574,15 @@ export async function mergeDocxFiles(
             console.log('   ↔️  Added spacing to empty separator paragraph between tables');
           }
 
+          if (verbatim) accumulateStrip(stripUnsupportedForVerbatim(importedTable));
           mainBody.insertBefore(importedTable, mainBody.lastChild);
+          appended += 1;
           console.log('   📊 Imported table with overlap-safe properties');
           continue;
         }
         
         // Check if this is a paragraph (heading or content)
-        if (child.nodeName === 'w:p' && child instanceof Element) {
+        if (!verbatim && child.nodeName === 'w:p' && child instanceof Element) {
           const pElement = child as Element;
           
           // Get all text from this paragraph
@@ -545,10 +646,15 @@ export async function mergeDocxFiles(
         
         // Import the node into the main document (deep clone to preserve all properties)
         const importedNode = mainDoc.importNode(child, true);
+        if (verbatim && importedNode.nodeType === 1) {
+          accumulateStrip(stripUnsupportedForVerbatim(importedNode as Element));
+        }
         mainBody.insertBefore(importedNode, mainBody.lastChild);
+        appended += 1;
       }
 
       console.log(`✅ Exhibit merged`);
+      return appended;
     };
 
     // Process exhibits in groups if grouping is available
@@ -642,17 +748,45 @@ export async function mergeDocxFiles(
     } else {
       // Fallback: Process exhibits in order without grouping
       console.log('⚠️ No grouping available, processing exhibits in order without headers');
+      const sectionTitle = options?.sectionTitle?.trim();
+      const verbatimAppend = options?.verbatim === true;
+      const headerNodes: Element[] = [];
+      if (sectionTitle) {
+        const pageBreak = createPageBreakParagraph(mainDoc);
+        const titleP = createExhibitTitleParagraph(mainDoc, sectionTitle);
+        mainBody.insertBefore(pageBreak, mainBody.lastChild);
+        mainBody.insertBefore(titleP, mainBody.lastChild);
+        headerNodes.push(pageBreak, titleP);
+      }
+      // A header standing over content that never arrived is worse than no header at all
+      const removeHeader = (): void => {
+        for (const node of headerNodes) node.parentNode?.removeChild(node);
+        headerNodes.length = 0;
+      };
+      let totalAppended = 0;
       for (let i = 0; i < exhibitDocxBlobs.length; i++) {
-        console.log(`📎 Processing exhibit ${i + 1}/${exhibitDocxBlobs.length}...`);
+        console.log(`📎 Processing document ${i + 1}/${exhibitDocxBlobs.length}...`);
         try {
-          await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[i], parser, true); // true = add page break
+          // The section title already emitted the page break for the first document
+          totalAppended += await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[i], parser, !(sectionTitle && i === 0));
         } catch (e) {
+          if (verbatimAppend) {
+            removeHeader();
+            throw e;
+          }
           console.error('❌ Failed to merge an exhibit (skipping):', {
             index: i,
             name: exhibitMetadata?.[i]?.name,
             error: e
           });
         }
+      }
+      if (verbatimAppend) {
+        if (totalAppended === 0) {
+          removeHeader();
+          throw new Error('The document contained no content that could be appended.');
+        }
+        options?.onStripReport?.(stripTotals);
       }
     }
 

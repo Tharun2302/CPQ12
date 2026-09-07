@@ -175,6 +175,15 @@ export interface DocxTemplateValidation {
 /**
  * DOCX Template Processor using docxtemplater
  */
+// A row/paragraph is the Discount LINE only if it starts with "discount" and is short
+// enough to be a label. The previous `includes('discount')` test deleted any content
+// merely mentioning a discount — e.g. a custom line item named "Loyalty discount" —
+// from every quote that had no discount applied.
+export function isDiscountOnlyBlock(strippedText: string): boolean {
+  const text = String(strippedText || '').trim().toLowerCase();
+  return /^discount(?![a-z])/.test(text) && text.length <= 60;
+}
+
 export class DocxTemplateProcessor {
   private static instance: DocxTemplateProcessor;
   
@@ -957,15 +966,13 @@ export class DocxTemplateProcessor {
             // Remove any table row that contains the word "discount" even when split across multiple runs
             const rowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
             let newXml = originalXml.replace(rowRegex, (row) => {
-              const text = stripTags(row);
-              return text.includes('discount') ? '' : row;
+              return isDiscountOnlyBlock(stripTags(row)) ? '' : row;
             });
 
             // Also remove standalone paragraphs that contain the word "discount"
             const paraRegex = /<w:p[\s\S]*?<\/w:p>/gi;
             newXml = newXml.replace(paraRegex, (para) => {
-              const text = stripTags(para);
-              return text.includes('discount') ? '' : para;
+              return isDiscountOnlyBlock(stripTags(para)) ? '' : para;
             });
 
             // Additionally, remove any table row that is effectively empty (e.g., when cells are only tokens that resolved to empty

@@ -27,7 +27,8 @@ import {
   Shield,
   UserPlus,
   Loader2,
-  ChevronDown
+  ChevronDown,
+  Paperclip
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -736,6 +737,87 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   /** Snapshot of the last token map sent to the DOCX processor — enables date editing
    *  post-generation. Saved alongside the document so EditDatesModal can re-render. */
   const [lastTemplateDataSnapshot, setLastTemplateDataSnapshot] = useState<Record<string, string> | null>(null);
+
+  /** Customer scope document appended verbatim after the agreement body. */
+  const [scopeAttachment, setScopeAttachment] = useState<File | null>(null);
+  const [scopeAttachmentError, setScopeAttachmentError] = useState<string | null>(null);
+  const [scopeAttachmentWarnings, setScopeAttachmentWarnings] = useState<string[]>([]);
+  /** Company the attachment was chosen for, so it can never follow the user to another customer. */
+  const [scopeAttachmentOwner, setScopeAttachmentOwner] = useState<string | null>(null);
+
+  const clearScopeAttachment = () => {
+    setScopeAttachment(null);
+    setScopeAttachmentError(null);
+    setScopeAttachmentWarnings([]);
+    setScopeAttachmentOwner(null);
+  };
+
+  const handleScopeAttachmentChange = async (file: File | null) => {
+    if (!file) {
+      clearScopeAttachment();
+      return;
+    }
+
+    setScopeAttachmentError(null);
+    setScopeAttachmentWarnings([]);
+
+    const { inspectScopeAttachment } = await import('../utils/scopeAttachment');
+    const inspection = await inspectScopeAttachment(file);
+    if (!inspection.ok) {
+      setScopeAttachment(null);
+      setScopeAttachmentOwner(null);
+      setScopeAttachmentError(inspection.error);
+      return;
+    }
+
+    setScopeAttachment(file);
+    setScopeAttachmentOwner(clientInfo.company || null);
+    setScopeAttachmentWarnings(inspection.warnings);
+  };
+
+  /** Degrades to the unmerged agreement: a failed append must not lose a valid document. */
+  const mergeScopeAttachment = async (agreement: Blob): Promise<Blob> => {
+    if (!scopeAttachment) return agreement;
+
+    const { DOCX_MIME, appendScopeAttachment } = await import('../utils/scopeAttachment');
+
+    if (agreement.type !== DOCX_MIME) {
+      setScopeAttachmentError('Not appended: the selected template produces a PDF, and a .docx scope document can only be merged into a DOCX agreement.');
+      return agreement;
+    }
+
+    try {
+      const { blob, stripped } = await appendScopeAttachment(agreement, scopeAttachment);
+      const dropped = stripped.drawings + stripped.hyperlinks + stripped.fields + stripped.sectionBreaks;
+      if (dropped > 0) {
+        console.warn('📎 Scope document appended with unsupported content removed:', stripped);
+      }
+      return blob;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setScopeAttachmentError(`Not appended: ${message} The agreement itself was generated successfully.`);
+      return agreement;
+    }
+  };
+
+  // A scope document belongs to the customer it was uploaded for. Selecting a different
+  // HubSpot contact does not remount this component, so without this the previous
+  // customer's scope document would be appended to — and emailed with — the next
+  // customer's agreement.
+  useEffect(() => {
+    if (!scopeAttachment) return;
+
+    const company = clientInfo.company || null;
+    if (scopeAttachmentOwner === null) {
+      // Attached before the company was known; adopt it rather than discarding the file
+      if (company) setScopeAttachmentOwner(company);
+      return;
+    }
+
+    if (company !== scopeAttachmentOwner) {
+      clearScopeAttachment();
+    }
+  }, [clientInfo.company, scopeAttachment, scopeAttachmentOwner]);
 
   /** Build the date-editing snapshot to persist with the saved document. Called at every
    *  saveDocument site. Returns null fields gracefully when state isn't populated yet
@@ -2600,6 +2682,10 @@ Quote ID: ${quoteData.id}
               console.error('❌ Error merging exhibits for email:', mergeError);
               // Continue with main document without exhibits
             }
+          }
+          
+          if (agreementBlob) {
+            agreementBlob = await mergeScopeAttachment(agreementBlob);
           }
           
           setProcessedAgreement(agreementBlob);
@@ -9544,6 +9630,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         throw new Error('Unsupported template file type. Please use PDF or DOCX files.');
       }
 
+      // Appended for every agreement type, independently of the Multi-combination exhibit gate
+      if (processedDocument) {
+        processedDocument = await mergeScopeAttachment(processedDocument);
+      }
+
       // Show preview of the processed agreement
       if (processedDocument) {
         console.log('✅ Agreement processed successfully');
@@ -11099,6 +11190,63 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 <Sparkles className="w-5 h-5" />
               </span>
             </button>
+
+            {/* Customer scope document - appended after the agreement body */}
+            <div className="mt-6 p-4 bg-white border border-gray-200 rounded-xl">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Paperclip className="w-4 h-4 text-gray-500" />
+                  <span className="text-sm font-semibold text-gray-800">Scope document (optional)</span>
+                </div>
+                {scopeAttachment && (
+                  <button
+                    type="button"
+                    onClick={() => handleScopeAttachmentChange(null)}
+                    className="text-gray-400 hover:text-red-600 transition-colors"
+                    title="Remove scope document"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {scopeAttachment ? (
+                <p className="mt-2 text-xs text-gray-600">
+                  <span className="font-medium text-gray-900">{scopeAttachment.name}</span>
+                  {' — its pages are added after the agreement'}
+                </p>
+              ) : (
+                <>
+                  <label className="mt-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors">
+                    <Paperclip className="w-4 h-4" />
+                    Choose .docx file
+                    <input
+                      type="file"
+                      accept=".docx"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        e.target.value = '';
+                        handleScopeAttachmentChange(file);
+                      }}
+                    />
+                  </label>
+                  <p className="mt-2 text-xs text-gray-500">Word .docx only, up to 10 MB.</p>
+                </>
+              )}
+
+              {scopeAttachmentError && (
+                <p className="mt-2 text-xs text-red-600 font-medium">{scopeAttachmentError}</p>
+              )}
+
+              {scopeAttachmentWarnings.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {scopeAttachmentWarnings.map((warning) => (
+                    <li key={warning} className="text-xs text-amber-700">⚠️ {warning}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
             {/* Preview Agreement - primary CTA */}
             <button
