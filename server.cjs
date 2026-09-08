@@ -8137,6 +8137,14 @@ app.post('/api/esign/documents/:id/recipients', async (req, res) => {
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
     const { recipients: list } = req.body || {};
     if (!Array.isArray(list)) return res.status(400).json({ success: false, error: 'recipients array required' });
+    // Absent key keeps the stored value, so recipient autosaves never clear it.
+    // Draft-only: flipping it mid-flight strands deferred recipients holding unsent tokens.
+    if (doc.status === 'draft' && Object.prototype.hasOwnProperty.call(req.body || {}, 'signing_order_enforced')) {
+      await db.collection('esign_documents').updateOne(
+        { _id: docId },
+        { $set: { signing_order_enforced: req.body.signing_order_enforced === true } }
+      );
+    }
     const MAX_EMAIL_MESSAGE_LENGTH = 1000;
     const listFiltered = list.filter((r) => r && (r.email || r.name));
     const existingAll = await db.collection('esign_recipients').find(esignRecipientsDocumentFilter(docId)).toArray();
@@ -8235,7 +8243,7 @@ app.post('/api/esign/documents/:id/recipients', async (req, res) => {
 
 // Shared helper: send e-sign document to signers (used by POST route and by approval-completion auto-send)
 async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}) {
-  const { uploadedBy = 'system', signingOrderEnforced = false } = options;
+  const { uploadedBy = 'system' } = options;
   if (!db) return { success: false, error: 'Database not available' };
   let docId;
   try {
@@ -8245,6 +8253,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
   }
   const doc = await db.collection('esign_documents').findOne({ _id: docId });
   if (!doc) return { success: false, error: 'Document not found' };
+  const signingOrderEnforced = resolveEsignSigningOrderEnforced(doc, options.signingOrderEnforced);
   if (doc.status === 'sent') {
     console.log('📧 E-sign document already sent, skipping auto-send');
     return { success: true, emails_sent: 0, already_sent: true, emails_sent_to: [] };
@@ -8347,7 +8356,24 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
 const {
   esignSequentialAdvanceAllowed,
   pickNextEsignSequentialRecipient,
+  resolveEsignSigningOrderEnforced,
+  esignRecipientEmailWithheld,
+  findEsignBlockingPredecessor,
 } = require('./esign-sequential-utils.cjs');
+
+// Returns a refusal message when this recipient's turn has not come up, else null. Guards the open
+// AND submit paths: a link that arrives early (copied, forwarded) must not be usable early.
+async function esignOutOfTurnRefusal(doc, recipient) {
+  if (!db || !doc || doc.signing_order_enforced !== true || !recipient) return null;
+  const ordered = await db.collection('esign_recipients')
+    .find(esignRecipientsDocumentFilter(doc._id))
+    .sort({ order: 1, _id: 1 })
+    .toArray();
+  const blocker = findEsignBlockingPredecessor(doc, ordered, recipient._id);
+  if (!blocker) return null;
+  const who = blocker.name || blocker.email || 'an earlier recipient';
+  return `It is not your turn yet — this document comes to you after ${who} ${recipientIsEsignReviewer(blocker) ? 'reviews' : 'signs'} it. You will be emailed automatically.`;
+}
 
 // Sequential signing: hand the envelope to the next recipient in the signing order.
 // EVERY path that completes a recipient must call this — signing (generate-signed-pdf) AND
@@ -8391,7 +8417,9 @@ app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
     const result = await sendDocumentForSignatureInternal(req.params.id, {
       uploadedBy: req.body.uploaded_by || 'system',
-      signingOrderEnforced: req.body.signing_order_enforced === true,
+      ...(Object.prototype.hasOwnProperty.call(req.body || {}, 'signing_order_enforced')
+        ? { signingOrderEnforced: req.body.signing_order_enforced === true }
+        : {}),
     });
     if (!result.success) {
       return res.status(result.error === 'Document not found' ? 404 : 400).json({ success: false, error: result.error });
@@ -8457,6 +8485,7 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
 
     const emailsSentTo = [];
     const failedRecipients = [];
+    const deferredRecipients = [];
     const signingLinks = [];
     const now = new Date();
     const tokenExpiresAt = new Date(now.getTime() + expiryDays * 24 * 60 * 60 * 1000);
@@ -8494,6 +8523,12 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
         }
       );
 
+      // Their turn has not come up: refresh the link quietly, or we hand it over ahead of the order.
+      if (esignRecipientEmailWithheld(doc, rec)) {
+        deferredRecipients.push(String(rec.email).trim());
+        continue;
+      }
+
       try {
         const result = await sendEmail(rec.email, subject, html);
         if (!result.success) throw result.error || new Error('Email send failed');
@@ -8520,7 +8555,8 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
       }
     }
 
-    if (!emailsSentTo.length) {
+    // Deferred-only is a success: their links were extended, they just must not be emailed yet.
+    if (!emailsSentTo.length && !deferredRecipients.length) {
       return res.status(500).json({
         success: false,
         error: 'Failed to extend expiry for pending recipients',
@@ -8528,12 +8564,16 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
       });
     }
 
+    const deferredNote = deferredRecipients.length
+      ? ` ${deferredRecipients.length} recipient(s) awaiting their turn were extended without an email.`
+      : '';
     res.json({
       success: true,
-      message: `Expiry extended for ${emailsSentTo.length} pending recipient(s).`,
+      message: `Expiry extended for ${emailsSentTo.length} pending recipient(s).${deferredNote}`,
       emails_sent: emailsSentTo.length,
       emails_sent_to: emailsSentTo,
       failed_recipients: failedRecipients,
+      deferred_recipients: deferredRecipients,
       expires_at: tokenExpiresAt,
       extension_days: expiryDays,
     });
@@ -9136,6 +9176,10 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
     if (doc.status === 'voided') {
       return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
     }
+    const openRefusal = await esignOutOfTurnRefusal(doc, recipient);
+    if (openRefusal) {
+      return res.status(403).json({ success: false, error: openRefusal, out_of_turn: true });
+    }
     // Track first "viewed": when a recipient opens their signing link, promote pending → viewed
     // (never downgrade signed/reviewed/denied). Record viewed_at once for the activity timeline.
     if (recipient.status === 'pending') {
@@ -9431,6 +9475,8 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
     if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
+    const reviewRefusal = await esignOutOfTurnRefusal(doc, recipient);
+    if (reviewRefusal) return res.status(403).json({ success: false, error: reviewRefusal, out_of_turn: true });
     const esignEnvelopeWasAlreadyCompleted = doc.status === 'completed';
     if (recipient.status === 'reviewed') {
       return res.json({ success: true, message: 'Already reviewed', already_reviewed: true });
@@ -10025,6 +10071,8 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       if (rDocId.toString() !== docId.toString()) {
         return res.status(400).json({ success: false, error: 'Document does not match signing link' });
       }
+      const signRefusal = await esignOutOfTurnRefusal(doc, recipient);
+      if (signRefusal) return res.status(403).json({ success: false, error: signRefusal, out_of_turn: true });
       fields = await getEsignFieldsForRecipient(db, docId, recipient._id.toString());
     } else {
       fields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
@@ -12476,6 +12524,8 @@ async function runEsignExpiryReminderJob() {
         if (isEsignTokenExpired(recipient)) continue;
         const doc = await getEsignDocumentForRecipient(recipient);
         if (!doc || doc.status !== 'sent') continue;
+        // Never remind someone who has not been invited yet — it would hand out their link early.
+        if (esignRecipientEmailWithheld(doc, recipient)) continue;
 
         const { signingUrl, inboxUrl } = getEsignRecipientUrls(recipient.signing_token);
         const { subject, html } = buildEsignRecipientEmail(doc, recipient, signingUrl, inboxUrl, {

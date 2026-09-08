@@ -196,6 +196,7 @@ const EsignSignPage: React.FC = () => {
   const [denyingSign, setDenyingSign] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isExpired, setIsExpired] = useState(false);
+  const [outOfTurnMessage, setOutOfTurnMessage] = useState<string | null>(null);
   const [showForwardForm, setShowForwardForm] = useState(false);
   const [forwardName, setForwardName] = useState('');
   const [forwardEmail, setForwardEmail] = useState('');
@@ -349,7 +350,9 @@ const EsignSignPage: React.FC = () => {
             return;
           }
           if (!data.success) {
-            if ((res.status === 410 || (data as any).expired) && !data.error?.toLowerCase().includes('void')) {
+            if (res.status === 403 && (data as any).out_of_turn) {
+              setOutOfTurnMessage(data.error || 'It is not your turn to sign yet.');
+            } else if ((res.status === 410 || (data as any).expired) && !data.error?.toLowerCase().includes('void')) {
               setIsExpired(true);
             } else {
               setError(data.error || 'Invalid or expired signing link');
@@ -1002,6 +1005,22 @@ const EsignSignPage: React.FC = () => {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+      </div>
+    );
+  }
+
+  if (outOfTurnMessage) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-violet-50 border border-violet-200 mb-4">
+            <svg className="w-8 h-8 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Waiting for your turn</h2>
+          <p className="text-slate-600 text-sm">{outOfTurnMessage}</p>
+        </div>
       </div>
     );
   }

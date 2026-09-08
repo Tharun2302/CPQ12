@@ -279,7 +279,8 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
   const handleSaveRecipientsAndContinue = async () => {
     if (!uploadedDocumentId) return;
     const valid = recipientInputs.filter((r) => r.email.trim());
-    if (valid.length > 0) {
+    // Save with no recipients too, or a ticked signing order is lost on the way out.
+    if (valid.length > 0 || signingOrderEnabled) {
       setSavingRecipients(true);
       try {
         const res = await fetch(`${BACKEND_URL}/api/esign/documents/${uploadedDocumentId}/recipients`, {
@@ -291,6 +292,7 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
               email: r.email.trim(),
               role: 'signer',
             })),
+            signing_order_enforced: signingOrderEnabled,
           }),
         });
         const data = await res.json().catch(() => ({}));

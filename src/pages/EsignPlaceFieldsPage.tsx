@@ -217,7 +217,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
   const { documentId } = useParams<{ documentId: string }>();
   const navigate = useNavigate();
 
-  const [doc, setDoc] = useState<{ file_name: string; status: string } | null>(null);
+  const [doc, setDoc] = useState<{ file_name: string; status: string; signing_order_enforced?: boolean } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [signatureFields, setSignatureFields] = useState<PlacedField[]>([]);
@@ -1601,6 +1601,13 @@ const EsignPlaceFieldsPage: React.FC = () => {
               </section>
               </div>
 
+              {doc?.signing_order_enforced && recipients.length > 1 && (
+                <div className="shrink-0 border-t border-slate-200 bg-violet-50 px-3 py-2 text-xs text-violet-800">
+                  Signing order is on — only{' '}
+                  <span className="font-semibold">{recipients[0]?.name || recipients[0]?.email}</span>{' '}
+                  is emailed now. The next recipient is emailed after they finish.
+                </div>
+              )}
               {/* Footer action bar: Back · Review & Send */}
               <div className="shrink-0 border-t border-slate-200 bg-white p-3 flex items-center gap-2">
                 <button
