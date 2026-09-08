@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const { exec } = require('child_process');
 const { MongoClient } = require('mongodb');
+const { pickEsignCarriedFields } = require('./esign-field-carry.cjs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { spawn } = require('child_process');
@@ -7005,6 +7006,16 @@ function esignApplyReviewerMapToFieldValues(doc, fields, values) {
   }
 }
 
+/**
+ * Filled non-signature fields this recipient cannot see — typically assigned to a reviewer ahead of
+ * them. generate-signed builds from the original upload, not the review-merged copy, so without
+ * these the reviewer's entries are missing from the signed PDF. Same value rule as the review merge.
+ */
+async function esignFieldsCarriedFromOthers(db, docId, doc, visibleFields) {
+  const allFields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
+  return pickEsignCarriedFields(allFields, visibleFields, (f) => esignEffectivePrefillForField(doc, f));
+}
+
 /** Client-provided field value present (signatures: data URLs; typed/draw/upload all end as non-empty strings). */
 function esignSignatureFieldValueProvided(val) {
   if (val == null || val === '') return false;
@@ -9198,6 +9209,12 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
     /** Reviewers: same recipient-scoped fields as signers for name/title/date/text (no signature boxes). */
     if (recipientIsEsignReviewer(recipient)) {
       fields = fields.filter((f) => (f.type || 'signature').toLowerCase() !== 'signature');
+    } else {
+      // Show what a reviewer ahead of them already entered. Appended in the same order as
+      // generate-signed, so the client's value indices still line up on submit. They carry a
+      // prefill, which the sign page renders as static copy outside the guided field list.
+      const carried = await esignFieldsCarriedFromOthers(db, docId, doc, fields);
+      for (const { field } of carried) fields.push(field);
     }
     const prefillPayload = (f) => {
       const p = esignEffectivePrefillForField(doc, f);
@@ -10053,6 +10070,7 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
 
     let recipient = null;
     let fields;
+    const carriedValues = {};
     if (field_coords && field_coords.length) {
       fields = field_coords;
     } else if (signing_token) {
@@ -10075,11 +10093,22 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       const signRefusal = await esignOutOfTurnRefusal(doc, recipient);
       if (signRefusal) return res.status(403).json({ success: false, error: signRefusal, out_of_turn: true });
       fields = await getEsignFieldsForRecipient(db, docId, recipient._id.toString());
+      // A field assigned to a reviewer is invisible to this signer, so its filled value would never
+      // be drawn and the reviewer's entries would vanish from the signed PDF. Append those fields.
+      const docWithReviewerValues = (await db.collection('esign_documents').findOne({ _id: docId })) || doc;
+      const carried = await esignFieldsCarriedFromOthers(db, docId, docWithReviewerValues, fields);
+      for (const { field, value } of carried) {
+        const idx = String(fields.length);
+        fields.push(field);
+        carriedValues[idx] = value;
+        const fid = field._id?.toString();
+        if (fid) carriedValues[fid] = value;
+      }
     } else {
       fields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
     }
 
-    const values = { ...(field_values && typeof field_values === 'object' && !Array.isArray(field_values) ? field_values : {}) };
+    const values = { ...(field_values && typeof field_values === 'object' && !Array.isArray(field_values) ? field_values : {}), ...carriedValues };
     if (signature_data && !Object.keys(values).length && fields.length) {
       values['0'] = signature_data;
     }
