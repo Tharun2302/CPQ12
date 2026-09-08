@@ -350,9 +350,7 @@ const EsignSignPage: React.FC = () => {
             return;
           }
           if (!data.success) {
-            if (res.status === 403 && (data as any).out_of_turn) {
-              setOutOfTurnMessage(data.error || 'It is not your turn to sign yet.');
-            } else if ((res.status === 410 || (data as any).expired) && !data.error?.toLowerCase().includes('void')) {
+            if ((res.status === 410 || (data as any).expired) && !data.error?.toLowerCase().includes('void')) {
               setIsExpired(true);
             } else {
               setError(data.error || 'Invalid or expired signing link');
@@ -360,6 +358,7 @@ const EsignSignPage: React.FC = () => {
             setLoading(false);
             return;
           }
+          setOutOfTurnMessage((data as any).out_of_turn ? (data as any).out_of_turn_message || 'It is not your turn yet.' : null);
           setDocumentId(data.document.id);
           setSigningToken(documentIdOrToken);
           setRecipientName(data.recipient?.name || null);
@@ -482,6 +481,26 @@ const EsignSignPage: React.FC = () => {
       }
     })();
   }, [documentIdOrToken]);
+
+  /** While blocked by the signing order, watch for the turn passing so the page unlocks itself. */
+  useEffect(() => {
+    if (!outOfTurnMessage || !documentIdOrToken) return;
+    let cancelled = false;
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/esign/sign-by-token/${documentIdOrToken}`);
+        const data = await res.json().catch(() => ({}));
+        // Reload rather than patching state: the server also promotes pending -> viewed on a real open.
+        if (!cancelled && data?.success && !data.out_of_turn) window.location.reload();
+      } catch {
+        /* offline or transient: keep waiting */
+      }
+    }, 20000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [outOfTurnMessage, documentIdOrToken]);
 
   /** Scroll to first page that has a field once we know total pages (runs only when we have doc + main content; ref checked inside) */
   useEffect(() => {
@@ -1009,22 +1028,6 @@ const EsignSignPage: React.FC = () => {
     );
   }
 
-  if (outOfTurnMessage) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-violet-50 border border-violet-200 mb-4">
-            <svg className="w-8 h-8 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-2">Waiting for your turn</h2>
-          <p className="text-slate-600 text-sm">{outOfTurnMessage}</p>
-        </div>
-      </div>
-    );
-  }
-
   if (isExpired) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -1297,10 +1300,25 @@ const EsignSignPage: React.FC = () => {
     );
   }
 
+  // Read now, act later: the document is readable out of turn, but every action stays disabled
+  // until the recipient ahead finishes. The server refuses the writes regardless.
+  const outOfTurnBanner = outOfTurnMessage ? (
+    <div className="flex-shrink-0 bg-violet-50 border-b border-violet-200 px-4 py-2.5 flex items-start gap-2">
+      <svg className="w-4 h-4 mt-0.5 shrink-0 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <p className="text-xs text-violet-900">
+        <span className="font-semibold">You can read the document now, but not act on it yet.</span> {outOfTurnMessage}{' '}
+        <span className="text-violet-700">This page unlocks on its own — no need to reload.</span>
+      </p>
+    </div>
+  ) : null;
+
   if (recipientRole === 'reviewer') {
     const fileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
     return (
       <div className="h-screen overflow-hidden bg-slate-50 flex flex-col">
+        {outOfTurnBanner}
         <div className="max-w-7xl w-full mx-auto flex-1 min-h-0 flex flex-col p-4 sm:p-6 gap-4">
           <div className="flex-shrink-0">
             <h1 className="text-xl font-bold text-slate-900 mb-2">Review document</h1>
@@ -1526,7 +1544,7 @@ const EsignSignPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleReviewAction('approve')}
-                  disabled={markingReviewed || savingReviewerFields || (fields.length > 0 && !reviewerEntriesSaved)}
+                  disabled={!!outOfTurnMessage || markingReviewed || savingReviewerFields || (fields.length > 0 && !reviewerEntriesSaved)}
                   className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm whitespace-nowrap"
                   title={fields.length > 0 && !reviewerEntriesSaved ? 'Save field entries first' : undefined}
                 >
@@ -1545,7 +1563,7 @@ const EsignSignPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleReviewAction('deny')}
-                  disabled={markingReviewed}
+                  disabled={!!outOfTurnMessage || markingReviewed}
                   className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm whitespace-nowrap"
                 >
                   {markingReviewed ? (
@@ -1651,6 +1669,8 @@ const EsignSignPage: React.FC = () => {
             </span>
           )}
         </header>
+
+        {outOfTurnBanner}
 
         {/* ── Instruction banner ── */}
         <div className="flex-shrink-0 bg-indigo-50 border-b border-indigo-200 px-4 py-2 flex items-center gap-2">
@@ -1798,7 +1818,9 @@ const EsignSignPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSignerChoice('approve')}
-                className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm whitespace-nowrap"
+                disabled={!!outOfTurnMessage}
+                title={outOfTurnMessage || undefined}
+                className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm whitespace-nowrap"
               >
                 <Check className="h-4 w-4 shrink-0" />
                 Approve &amp; Sign
@@ -1807,7 +1829,7 @@ const EsignSignPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleDenySigning}
-                disabled={denyingSign}
+                disabled={!!outOfTurnMessage || denyingSign}
                 className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm whitespace-nowrap"
               >
                 {denyingSign ? (
@@ -1829,6 +1851,7 @@ const EsignSignPage: React.FC = () => {
     <div
       className="h-screen overflow-hidden bg-slate-50 p-2 sm:p-4 flex flex-col"
     >
+      {outOfTurnBanner}
       <style>{`
         @keyframes esignActiveFieldPulse {
           0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.55), 0 0 0 6px rgba(99, 102, 241, 0.0); }
@@ -1897,7 +1920,8 @@ const EsignSignPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={submitting || fields.length === 0 || (recipientRole === 'signer' && remainingCount > 0)}
+                disabled={!!outOfTurnMessage || submitting || fields.length === 0 || (recipientRole === 'signer' && remainingCount > 0)}
+                title={outOfTurnMessage || undefined}
                 className="bg-violet-600 hover:bg-violet-700 text-white px-5 py-2 text-sm font-semibold rounded-md disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
               >
                 {submitting ? (

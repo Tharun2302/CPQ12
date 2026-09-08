@@ -9176,13 +9176,12 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
     if (doc.status === 'voided') {
       return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
     }
-    const openRefusal = await esignOutOfTurnRefusal(doc, recipient);
-    if (openRefusal) {
-      return res.status(403).json({ success: false, error: openRefusal, out_of_turn: true });
-    }
+    // Reading early is allowed; acting is not. Status must stay 'pending' while out of turn — a
+    // promotion to 'viewed' makes the hand-off skip them and their invite email never goes out.
+    const outOfTurnMessage = await esignOutOfTurnRefusal(doc, recipient);
     // Track first "viewed": when a recipient opens their signing link, promote pending → viewed
     // (never downgrade signed/reviewed/denied). Record viewed_at once for the activity timeline.
-    if (recipient.status === 'pending') {
+    if (!outOfTurnMessage && recipient.status === 'pending') {
       const now = new Date();
       await db.collection('esign_recipients').updateOne(
         { _id: recipient._id, status: 'pending' },
@@ -9206,6 +9205,8 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
     };
     res.json({
       success: true,
+      out_of_turn: !!outOfTurnMessage,
+      out_of_turn_message: outOfTurnMessage || null,
       recipient: {
         id: recipient._id.toString(),
         name: recipient.name,

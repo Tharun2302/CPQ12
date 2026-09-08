@@ -5,6 +5,7 @@ import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
 import EditDatesModal from '../components/EditDatesModal';
 import { SUPPRESS_PII } from '../analytics/privacy';
+import { esignRecipientRoleDisplay } from '../utils/esignRecipientLinks';
 
 interface EsignDocument {
   id: string;
@@ -22,6 +23,7 @@ interface Recipient {
   name: string;
   email: string;
   role?: string;
+  action?: string | null;
   status: 'pending' | 'signed' | 'reviewed' | 'denied';
   order?: number;
   comment?: string | null;
@@ -283,7 +285,7 @@ const EsignTrackingPage: React.FC = () => {
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-slate-800">
                           Recipient {idx + 1}: <span {...SUPPRESS_PII}>{rec.name || rec.email || 'Signer'}</span>{' '}
-                          <span className="text-slate-400">({rec.role || 'signer'})</span>
+                          <span className="text-slate-400">({esignRecipientRoleDisplay(rec)})</span>
                           {' — '}
                           {isForwarded ? (
                             <span className="text-purple-600 font-medium">Forwarded</span>

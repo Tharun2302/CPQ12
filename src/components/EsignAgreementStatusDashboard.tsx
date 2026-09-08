@@ -9,6 +9,15 @@ import { useAuth } from '../hooks/useAuth';
 import Navigation from './Navigation';
 import EditDatesModal from './EditDatesModal';
 import {
+  copyEsignSigningLink,
+  esignLinkRecipientIsReviewer,
+  esignLinkableRecipients,
+  esignRecipientLinkLabel,
+  esignRecipientLinkState,
+  esignRecipientRoleDisplay,
+  type EsignLinkRecipient,
+} from '../utils/esignRecipientLinks';
+import {
   buildCreatorIndex,
   filterCreators,
   creatorSelectionState,
@@ -261,6 +270,9 @@ const EsignAgreementStatusDashboard: React.FC = () => {
   const [cancelingId, setCancelingId] = useState<string | null>(null);
   const [copyingId, setCopyingId] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState(false);
+  const [copyMenu, setCopyMenu] = useState<{ agreementId: string; recipients: EsignLinkRecipient[] } | null>(null);
+  const [copyMenuPos, setCopyMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [copiedMenuRecipientId, setCopiedMenuRecipientId] = useState<string | null>(null);
   const [remindingId, setRemindingId] = useState<string | null>(null);
   const [extendingId, setExtendingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -593,8 +605,25 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     }
   };
 
-  const handleCopyLink = async (agreementId: string) => {
+  const closeCopyMenu = useCallback(() => {
+    setCopyMenu(null);
+    setCopyMenuPos(null);
+    setCopiedMenuRecipientId(null);
+  }, []);
+
+  const copyMenuRecipientLink = async (recipientId: string, signingToken: string | null | undefined) => {
+    if (!signingToken) return;
+    await copyEsignSigningLink(signingToken);
+    setCopiedMenuRecipientId(recipientId);
+    window.setTimeout(() => setCopiedMenuRecipientId((c) => (c === recipientId ? null : c)), 2000);
+  };
+
+  const handleCopyLink = async (agreementId: string, anchor: DOMRect) => {
     if (copyingId) return;
+    if (copyMenu?.agreementId === agreementId) {
+      closeCopyMenu();
+      return;
+    }
     setCopyingId(agreementId);
     try {
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/recipients`);
@@ -603,31 +632,20 @@ const EsignAgreementStatusDashboard: React.FC = () => {
         alert(data.error || 'Could not fetch signing link.');
         return;
       }
-      const recipients = Array.isArray(data.recipients) ? data.recipients : [];
-      // Prefer the recipient who still needs to act (pending/viewed), else any with a token.
-      const target =
-        recipients.find((r: { signing_token?: string | null; status?: string }) =>
-          r.signing_token && (r.status === 'pending' || r.status === 'viewed' || !r.status)
-        ) || recipients.find((r: { signing_token?: string | null }) => r.signing_token);
-      if (!target?.signing_token) {
+      const recipients = esignLinkableRecipients(data.recipients);
+      if (!recipients.length) {
         alert('No active signing link is available for this agreement.');
         return;
       }
-      const signingUrl = `${window.location.origin}/sign/${target.signing_token}`;
-      try {
-        await navigator.clipboard.writeText(signingUrl);
-      } catch {
-        const ta = document.createElement('textarea');
-        ta.value = signingUrl;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
+      // Every recipient holds a different token, so let the sender pick rather than guessing.
+      if (recipients.length === 1) {
+        await copyEsignSigningLink(recipients[0].signing_token as string);
+        setCopyToast(true);
+        window.setTimeout(() => setCopyToast(false), 3000);
+        return;
       }
-      setCopyToast(true);
-      window.setTimeout(() => setCopyToast(false), 3000);
+      setCopyMenu({ agreementId, recipients });
+      setCopyMenuPos({ top: anchor.bottom + 4, left: Math.max(8, anchor.right - 300) });
     } catch {
       alert('Could not copy signing link.');
     } finally {
@@ -1202,7 +1220,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={isCreator
-                                    ? () => handleCopyLink(ag.id)
+                                    ? (e) => handleCopyLink(ag.id, e.currentTarget.getBoundingClientRect())
                                     : () => alert('Only the agreement creator can copy the signing link.')}
                                   disabled={isCreator && copyingId === ag.id}
                                   className={`inline-flex items-center justify-center w-8 h-8 rounded-lg disabled:opacity-50 ${isCreator ? 'text-slate-500 hover:text-indigo-600 hover:bg-indigo-50' : 'text-slate-300 cursor-not-allowed'}`}
@@ -1249,7 +1267,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                                   <div key={rec.id} className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2">
                                     <div className="min-w-0">
                                       <p {...SUPPRESS_PII} className="text-sm font-medium text-slate-800 truncate">{rec.name || rec.email || 'Signer'}</p>
-                                      <p className="text-xs text-slate-500 truncate"><span {...SUPPRESS_PII}>{rec.email}</span><span className="capitalize"> · {rec.role || 'signer'}</span></p>
+                                      <p className="text-xs text-slate-500 truncate"><span {...SUPPRESS_PII}>{rec.email}</span><span> · {esignRecipientRoleDisplay(rec)}</span></p>
                                       {(rec.sent_at || rec.viewed_at || rec.signed_at) && (
                                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
                                           {rec.sent_at && <span className="inline-flex items-center gap-1"><Send className="h-3 w-3 text-blue-400" /> Sent {relativeTime(rec.sent_at)}</span>}
@@ -1502,7 +1520,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                                     <div className="min-w-0">
                                       <p {...SUPPRESS_PII} className="font-medium text-slate-900 truncate">{rec.name || rec.email || 'Signer'}</p>
                                       <p {...SUPPRESS_PII} className="text-xs text-slate-500 truncate">{rec.email}</p>
-                                      <p className="text-[11px] text-slate-400 mt-0.5 capitalize">{(rec.role || 'signer')}</p>
+                                      <p className="text-[11px] text-slate-400 mt-0.5">{esignRecipientRoleDisplay(rec)}</p>
                                     </div>
                                     {isForwarded ? (
                                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border bg-purple-100 text-purple-700 border-purple-200 shrink-0">
@@ -1610,6 +1628,67 @@ const EsignAgreementStatusDashboard: React.FC = () => {
             />
           );
         })()}
+
+        {/* Copy-link picker: one token per recipient, so the sender chooses whose link to send */}
+        {copyMenu &&
+          copyMenuPos &&
+          createPortal(
+            <>
+              <div className="fixed inset-0 z-[60]" aria-hidden onClick={closeCopyMenu} />
+              <div
+                className="fixed z-[65] w-[300px] max-h-[320px] overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                style={{ top: copyMenuPos.top, left: copyMenuPos.left }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <p className="px-3 py-2 text-xs font-semibold text-slate-500 border-b border-slate-100">
+                  Copy a link — each recipient has their own
+                </p>
+                {copyMenu.recipients.map((rec, index) => {
+                  const isReviewer = esignLinkRecipientIsReviewer(rec);
+                  const isSpent = esignRecipientLinkState(rec) === 'spent';
+                  const copied = copiedMenuRecipientId === rec.id;
+                  return (
+                    <div key={rec.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50">
+                      <span className="flex items-center justify-center w-5 h-5 shrink-0 rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">
+                        {typeof rec.order === 'number' ? rec.order + 1 : index + 1}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span {...SUPPRESS_PII} className="block text-sm font-medium text-slate-900 truncate">
+                          {rec.name || rec.email || (isReviewer ? 'Reviewer' : 'Signer')}
+                        </span>
+                        <span className="block text-xs text-slate-500 truncate">{esignRecipientLinkLabel(rec)}</span>
+                      </span>
+                      {isSpent ? (
+                        <span className="text-xs text-slate-400 shrink-0">link spent</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => copyMenuRecipientLink(rec.id, rec.signing_token)}
+                          title={isReviewer ? 'Copy review link' : 'Copy signing link'}
+                          aria-label={isReviewer ? 'Copy review link' : 'Copy signing link'}
+                          className={`inline-flex items-center gap-1 px-2 h-7 shrink-0 rounded-md border text-xs font-medium transition-colors ${
+                            copied
+                              ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                              : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-400'
+                          }`}
+                        >
+                          {copied ? (
+                            <>
+                              <Check className="h-3.5 w-3.5" />
+                              <span>Copied</span>
+                            </>
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>,
+            document.body
+          )}
 
         {/* Copy-link success toast */}
         {copyToast && (

@@ -6,6 +6,14 @@ import { BACKEND_URL } from '../config/api';
 import { SUPPRESS_PII } from '../analytics/privacy';
 import { useAuth } from '../hooks/useAuth';
 import { shouldAutoStartLandingTour, startEsignLandingTour } from '../utils/esignTour';
+import { isEsignReviewerRecipient } from '../utils/esignSendValidation';
+import {
+  copyEsignSigningLink,
+  esignLinkRecipientIsReviewer,
+  esignLinkableRecipients,
+  esignRecipientLinkLabel,
+  esignRecipientLinkState,
+} from '../utils/esignRecipientLinks';
 import { deleteEsignDocument } from '../services/esignDocumentService';
 
 interface RecipientRow {
@@ -45,6 +53,7 @@ interface StatusModalRecipient {
   order?: number;
   comment?: string | null;
   signing_token?: string | null;
+  sent_at?: string | null;
 }
 
 interface StatusModalDoc {
@@ -83,12 +92,12 @@ function statusModalInitials(name: string, email: string): string {
   return (parts[0]?.slice(0, 2) || '?').toUpperCase();
 }
 
+/** Delegates so a role-only "reviewer" is labelled the same way the server and sign page treat it. */
 function isStatusModalReviewer(rec: StatusModalRecipient): boolean {
-  const action = (rec.action || '').toLowerCase();
-  if (action === 'reviewer') return true;
-  if (action === 'signer') return false;
-  const role = (rec.role || '').trim();
-  return role === 'Technical Team' || role === 'Legal Team';
+  return isEsignReviewerRecipient({
+    action: (rec.action as 'signer' | 'reviewer' | null | undefined) ?? null,
+    role: rec.role,
+  });
 }
 
 function normalizeEmail(email: string | undefined | null): string {
@@ -162,6 +171,9 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
   const reminderToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
+  const [copyMenu, setCopyMenu] = useState<{ docId: string; recipients: StatusModalRecipient[] } | null>(null);
+  const [copyMenuPosition, setCopyMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const [copiedMenuRecipientId, setCopiedMenuRecipientId] = useState<string | null>(null);
   const [statusModalId, setStatusModalId] = useState<string | null>(null);
   const [statusModalDoc, setStatusModalDoc] = useState<StatusModalDoc | null>(null);
   const [statusModalRecipients, setStatusModalRecipients] = useState<StatusModalRecipient[]>([]);
@@ -426,8 +438,18 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
     }
   };
 
-  const handleCopySigningLink = async (docId: string) => {
+  const closeCopyMenu = useCallback(() => {
+    setCopyMenu(null);
+    setCopyMenuPosition(null);
+    setCopiedMenuRecipientId(null);
+  }, []);
+
+  const handleCopySigningLink = async (docId: string, anchor: DOMRect) => {
     if (copyingDocId) return;
+    if (copyMenu?.docId === docId) {
+      closeCopyMenu();
+      return;
+    }
     setCopyingDocId(docId);
     try {
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}/recipients`);
@@ -436,29 +458,20 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
         alert(data.error || 'Could not fetch signing link.');
         return;
       }
-      const recipients = Array.isArray(data.recipients) ? data.recipients : [];
-      const target = recipients.find((r: { signing_token?: string | null; status?: string }) =>
-        r.signing_token && (r.status === 'pending' || !r.status)
-      ) || recipients.find((r: { signing_token?: string | null }) => r.signing_token);
-      if (!target?.signing_token) {
+      const recipients = esignLinkableRecipients(data.recipients) as StatusModalRecipient[];
+      if (!recipients.length) {
         alert('No active signing link is available for this document.');
         return;
       }
-      const signingUrl = `${window.location.origin}/sign/${target.signing_token}`;
-      try {
-        await navigator.clipboard.writeText(signingUrl);
-      } catch {
-        const ta = document.createElement('textarea');
-        ta.value = signingUrl;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
+      // Each recipient has their own token, so one link is only unambiguous when there is one person.
+      if (recipients.length === 1) {
+        await copyEsignSigningLink(recipients[0].signing_token as string);
+        setCopiedDocId(docId);
+        setTimeout(() => setCopiedDocId((current) => (current === docId ? null : current)), 2000);
+        return;
       }
-      setCopiedDocId(docId);
-      setTimeout(() => setCopiedDocId((current) => (current === docId ? null : current)), 2000);
+      setCopyMenu({ docId, recipients });
+      setCopyMenuPosition({ top: anchor.bottom + 4, left: Math.max(8, anchor.right - 300) });
     } catch {
       alert('Could not copy signing link.');
     } finally {
@@ -527,23 +540,18 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
     setStatusModalCopyingRecipientId(null);
   }, []);
 
+  const handleCopyMenuRecipientLink = async (recipientId: string, signingToken: string | null | undefined) => {
+    if (!signingToken) return;
+    await copyEsignSigningLink(signingToken);
+    setCopiedMenuRecipientId(recipientId);
+    setTimeout(() => setCopiedMenuRecipientId((c) => (c === recipientId ? null : c)), 2000);
+  };
+
   const handleCopyRecipientLink = async (recipientId: string, signingToken: string | null | undefined) => {
     if (!signingToken || statusModalCopyingRecipientId) return;
     setStatusModalCopyingRecipientId(recipientId);
     try {
-      const url = `${window.location.origin}/sign/${signingToken}`;
-      try {
-        await navigator.clipboard.writeText(url);
-      } catch {
-        const ta = document.createElement('textarea');
-        ta.value = url;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-      }
+      await copyEsignSigningLink(signingToken);
       setStatusModalCopiedRecipientId(recipientId);
       setTimeout(
         () => setStatusModalCopiedRecipientId((c) => (c === recipientId ? null : c)),
@@ -1032,8 +1040,9 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
                             {doc.status === 'sent' && (
                               <button
                                 type="button"
-                                onClick={() => handleCopySigningLink(doc.id)}
+                                onClick={(e) => handleCopySigningLink(doc.id, e.currentTarget.getBoundingClientRect())}
                                 disabled={copyingDocId === doc.id}
+                                aria-expanded={copyMenu?.docId === doc.id}
                                 title={copiedDocId === doc.id ? 'Link copied!' : 'Copy signing link'}
                                 aria-label={copiedDocId === doc.id ? 'Link copied' : 'Copy signing link'}
                                 className={`inline-flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-lg border bg-white shrink-0 transition-colors ${
@@ -1150,6 +1159,68 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
             document.body
           );
         })()}
+
+      {/* Copy link picker: every recipient has their own token, so never guess which one is wanted */}
+      {copyMenu &&
+        copyMenuPosition &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-40" aria-hidden onClick={closeCopyMenu} />
+            <div
+              className="fixed z-50 w-[300px] max-h-[320px] overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+              style={{ top: copyMenuPosition.top, left: copyMenuPosition.left }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p className="px-3 py-2 text-xs font-semibold text-slate-500 border-b border-slate-100">
+                Copy a link — each recipient has their own
+              </p>
+              {copyMenu.recipients.map((rec, index) => {
+                const isReviewer = esignLinkRecipientIsReviewer(rec);
+                const isSpent = esignRecipientLinkState(rec) === 'spent';
+                const copied = copiedMenuRecipientId === rec.id;
+                const hint = esignRecipientLinkLabel(rec);
+                return (
+                  <div key={rec.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50">
+                    <span className="flex items-center justify-center w-5 h-5 shrink-0 rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">
+                      {typeof rec.order === 'number' ? rec.order + 1 : index + 1}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span {...SUPPRESS_PII} className="block text-sm font-medium text-slate-900 truncate">
+                        {rec.name || rec.email || (isReviewer ? 'Reviewer' : 'Signer')}
+                      </span>
+                      <span className="block text-xs text-slate-500 truncate">{hint}</span>
+                    </span>
+                    {isSpent ? (
+                      <span className="text-xs text-slate-400 shrink-0">link spent</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleCopyMenuRecipientLink(rec.id, rec.signing_token)}
+                        title={isReviewer ? 'Copy review link' : 'Copy signing link'}
+                        aria-label={isReviewer ? 'Copy review link' : 'Copy signing link'}
+                        className={`inline-flex items-center gap-1 px-2 h-7 shrink-0 rounded-md border text-xs font-medium transition-colors ${
+                          copied
+                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                            : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-400'
+                        }`}
+                      >
+                        {copied ? (
+                          <>
+                            <Check className="h-3.5 w-3.5" />
+                            <span>Copied</span>
+                          </>
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>,
+          document.body
+        )}
 
       {/* View status modal */}
       {statusModalId != null && (
