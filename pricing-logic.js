@@ -180,6 +180,60 @@ function lookupContentSprawlRate(gb) {
   return CONTENT_SPRAWL[CONTENT_SPRAWL.length - 1].rate;
 }
 
+const SPRAWL_TYPE_ORDER = ['Content', 'Message', 'Email'];
+
+function normalizeSprawlType(value) {
+  return (value === 'Content' || value === 'Message' || value === 'Email') ? value : undefined;
+}
+
+// Array-if-present, else the legacy single field, so pre-multi-select callers still price.
+function normalizeSprawlTypes(sprawlTypes, sprawlType) {
+  if (Array.isArray(sprawlTypes)) {
+    const picked = sprawlTypes.map(normalizeSprawlType).filter(Boolean);
+    return SPRAWL_TYPE_ORDER.filter(t => picked.indexOf(t) !== -1);
+  }
+  const legacy = normalizeSprawlType(sprawlType);
+  return legacy ? [legacy] : [];
+}
+
+// User count per type. Without the per-type map every type resolves to the shared count.
+function resolveSprawlUsers(usersByType, sharedUsers) {
+  const shared = Number.isFinite(sharedUsers) && sharedUsers > 0 ? sharedUsers : 0;
+  const pick = (t) => {
+    const raw = usersByType && typeof usersByType === 'object' ? Number(usersByType[t]) : NaN;
+    const value = Number.isFinite(raw) ? raw : shared;
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  };
+  return { Content: pick('Content'), Message: pick('Message'), Email: pick('Email') };
+}
+
+// Users the single licence prices on: the SUM of the selected types' counts. Without the
+// per-type map it stays the one shared count, so legacy callers are unchanged.
+function manageLicenceUsers(types, usersByType, sharedUsers) {
+  const shared = Number.isFinite(sharedUsers) && sharedUsers > 0 ? sharedUsers : 0;
+  if (types.length === 0) return shared;
+  if (!usersByType || typeof usersByType !== 'object') return shared;
+  const per = resolveSprawlUsers(usersByType, shared);
+  return types.reduce((sum, t) => sum + per[t], 0);
+}
+
+// One priced line per type, each on its own user count.
+function calcSprawlLines(types, users, gb, usersByType) {
+  const g = Number.isFinite(gb) && gb > 0 ? gb : 0;
+  const per = resolveSprawlUsers(usersByType, users);
+  return SPRAWL_TYPE_ORDER.filter(t => types.indexOf(t) !== -1).map(type => {
+    const isContent = type === 'Content';
+    const u = per[type];
+    return {
+      type,
+      basis: isContent ? 'gb' : 'user',
+      quantity: isContent ? g : u,
+      rate: isContent ? lookupContentSprawlRate(g) : lookupMessageSprawlRate(u),
+      cost: calcSprawlCost(type, u, g)
+    };
+  });
+}
+
 // Email uses the Message table. Full precision (round for display only).
 // Guards negative/non-finite inputs to 0 so quotes can never go negative.
 function calcSprawlCost(sprawlType, users, gb) {
@@ -351,22 +405,24 @@ function calcMigrateBundle({
  * @param {number} params.e100GB  — E100 (managed content data volume)
  * @returns {Object} manage structured pricing
  */
-function calcManage({ users, b56GB, e100GB, sprawlType }) {
+function calcManage({ users, b56GB, e100GB, sprawlType, sprawlTypes, usersByType }) {
   // Guard inputs (mirror src/utils/pricing.ts): non-negative finite; enum-guard sprawl type.
   const u = Number.isFinite(Number(users)) && Number(users) > 0 ? Number(users) : 0;
   const gb = Number.isFinite(Number(e100GB)) && Number(e100GB) > 0 ? Number(e100GB) : 0;
-  const type = (sprawlType === 'Content' || sprawlType === 'Message' || sprawlType === 'Email') ? sprawlType : undefined;
+  const types = normalizeSprawlTypes(sprawlTypes, sprawlType);
+  const type = types[0];
+  const licenceUsers = manageLicenceUsers(types, usersByType, u);
 
-  const B102 = manageUserCost(u);                        // license (K12) or 'CUSTOM'
+  const B102 = manageUserCost(licenceUsers);             // license (K12) or 'CUSTOM'
   const isCustom = (B102 === 'CUSTOM');
   const license = isCustom ? 0 : B102;
-  const B99 = isCustom || u === 0 ? null : B102 / u;
+  const B99 = isCustom || licenceUsers === 0 ? null : B102 / licenceUsers;
 
   // Data Sprawl mode: the data line IS the sprawl cost (Content → rate×GB, Message/Email → rate×users).
   // The standalone omits the license, so it stays quotable even when the license band is exceeded.
-  if (type) {
-    const sprawlCost = calcSprawlCost(type, u, gb);     // B103
-    const rate = type === 'Content' ? lookupContentSprawlRate(gb) : lookupMessageSprawlRate(u);
+  if (types.length > 0) {
+    const lines = calcSprawlLines(types, u, gb, usersByType);
+    const sprawlCost = lines.reduce((sum, line) => sum + line.cost, 0);   // B103
     return {
       total: isCustom ? 'CUSTOM' : license + sprawlCost, // MANAGE + Sprawl (B104)
       breakdown: {
@@ -374,11 +430,12 @@ function calcManage({ users, b56GB, e100GB, sprawlType }) {
         data: sprawlCost
       },
       // Standalone omits the license line — sprawl cost only.
-      sprawl: { type, standalone: { dataCost: sprawlCost, totalCost: sprawlCost } },
+      sprawl: { type, types, lines, standalone: { dataCost: sprawlCost, totalCost: sprawlCost } },
       meta: {
         perUserPerYear: B99,
-        sprawlRate: rate,
-        sprawlBasis: type === 'Content' ? 'gb' : 'user',
+        // First line's values; existing single-type consumers read these.
+        sprawlRate: lines[0].rate,
+        sprawlBasis: lines[0].basis,
         sprawlType: type,
         isCustom
       }
@@ -437,7 +494,9 @@ function calculatePricing(params) {
     users:   params.users,
     b56GB:   params.manageB56GB  != null ? params.manageB56GB  : params.dataGB,
     e100GB:  params.manageE100GB != null ? params.manageE100GB : 0,
-    sprawlType: params.manageSprawlType
+    sprawlType: params.manageSprawlType,
+    sprawlTypes: params.manageSprawlTypes,
+    usersByType: params.manageUsersByType
   });
 
   return {

@@ -166,6 +166,12 @@ class TemplateService {
     }
   }
 
+  // Remembers whether the server's DOCX preprocessor works for this session. It corrupts
+  // some structures (e.g. Combination Manager templates, whose headers carry floating image
+  // anchors), and the doomed attempt costs a full LibreOffice run — measured at ~7s on top
+  // of the ~7s successful one. Without this every generation pays that twice.
+  private preprocessorUsable: boolean | null = null;
+
   // Convert DOCX blob to PDF via backend.
   // Tries with preprocessing first (fixes floating logo layouts), then retries
   // without preprocessing if the first attempt fails (preprocessor can corrupt
@@ -178,10 +184,19 @@ class TemplateService {
       return fetch(url, { method: 'POST', body: form });
     };
 
-    let response = await tryConvert(false);
-    if (!response.ok) {
-      console.warn('⚠️ DOCX→PDF conversion failed with preprocessing, retrying without preprocessor...');
+    let response: Response;
+    if (this.preprocessorUsable === false) {
+      // Already known to fail here — go straight to the path that produced the PDF last time.
       response = await tryConvert(true);
+    } else {
+      response = await tryConvert(false);
+      if (!response.ok) {
+        console.warn('⚠️ DOCX→PDF conversion failed with preprocessing, retrying without preprocessor (skipping it for the rest of this session)...');
+        this.preprocessorUsable = false;
+        response = await tryConvert(true);
+      } else {
+        this.preprocessorUsable = true;
+      }
     }
     if (!response.ok) {
       const msg = await response.text().catch(() => 'Conversion failed');

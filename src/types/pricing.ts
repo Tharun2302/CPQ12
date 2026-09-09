@@ -1,3 +1,16 @@
+// Data Sprawl types (COST ESTIMATOR E101). Content is priced per GB, Message/Email per user.
+export type SprawlType = 'Content' | 'Message' | 'Email';
+
+// One priced Data Sprawl line — one per selected type.
+export interface SprawlLine {
+  type: SprawlType;
+  label: string;
+  basis: 'gb' | 'user';
+  quantity: number;
+  rate: number;
+  cost: number;
+}
+
 export interface UserLimits {
   from: number;
   to: number;
@@ -93,15 +106,32 @@ export interface ConfigurationData {
   }>;
   // Manage Standalone (servicePlan === 'Manage') — separate from Migrate B51/B56.
   // Maps to COST ESTIMATOR E99 (managed users) and E100 (managed data GB).
+  // Aggregate user count. With manageUsersByType present this is kept in sync as the SUM
+  // of the selected types' counts, so legacy read paths and the licence still work.
   manageUsers?: number;
+  // Independent user count per sprawl type. Absent on quotes written before per-type
+  // counts existed — those fall back to the single manageUsers value.
+  manageUsersByType?: Partial<Record<SprawlType, number>>;
   manageDataGB?: number;
+  // Captured for the quote and printed in the agreement row description. NOT a pricing
+  // basis — Message/Email price at rate x manageUsers off MESSAGE_SPRAWL.
+  manageMessageCount?: number;
+  manageEmailCount?: number;
+  // Label of the selected Manage agreement, e.g. "Data Sprawl" or "MANAGE + Sprawl".
+  // The dropdown's underlying value is admin-defined and opaque, so the label is what
+  // decides which pricing card applies.
+  manageAgreementLabel?: string;
   // Driven by the selected agreement's requiresUsers flag (set in CombinationManager).
   // false = hide Number of Users field and user cost rows in pricing display.
   manageRequiresUsers?: boolean;
-  // Data Sprawl mode inside Manage (COST ESTIMATOR E101). When set, the Manage
-  // "data" line is the Data Sprawl cost: Content → rate × manageDataGB (E100),
-  // Message/Email → rate × manageUsers (E99). undefined = legacy $0.13/GB Manage.
-  manageSprawlType?: 'Content' | 'Message' | 'Email';
+  // Data Sprawl mode inside Manage (COST ESTIMATOR E101). Each selected type adds a
+  // priced line: Content → rate × manageDataGB (E100), Message/Email → rate × manageUsers
+  // (E99, the SAME count for both). Empty/absent = legacy $0.13/GB Manage.
+  // Canonical multi-select field; order normalized to SPRAWL_TYPE_ORDER.
+  manageSprawlTypes?: SprawlType[];
+  // Legacy single-value mirror, always manageSprawlTypes[0]. Never removed — persisted
+  // MongoDB quotes and sessionStorage snapshots predate the array.
+  manageSprawlType?: SprawlType;
 }
 
 export interface PricingCalculation {
@@ -161,10 +191,14 @@ export interface PricingCalculation {
     instanceCost: number;
     totalCost: number;
   }>;
-  // Data Sprawl (Manage mode) — present only when config.manageSprawlType is set.
+  // Data Sprawl (Manage mode) — present only when at least one sprawl type is selected.
   // Top-level userCost/dataCost/totalCost carry "MANAGE + Sprawl" (dataCost === sprawlCost;
-  // userCost is the Manage license). sprawlStandalone is the sprawl-only figure (no license).
-  sprawlType?: 'Content' | 'Message' | 'Email';
+  // userCost is the single Manage license). sprawlStandalone is the sprawl-only figure.
+  sprawlTypes?: SprawlType[];
+  sprawlLines?: SprawlLine[];
+  // Legacy single-value mirror, always sprawlTypes[0]; existing truthiness gates key off it.
+  sprawlType?: SprawlType;
+  // Sum of sprawlLines[].cost, full precision.
   sprawlCost?: number;
   sprawlStandalone?: { dataCost: number; totalCost: number };
   // Manage Standalone — set to 'custom' when users > 5000 (slab returns CUSTOM).

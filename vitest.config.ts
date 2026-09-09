@@ -26,6 +26,8 @@ export default mergeConfig(
           'src/utils/pricing.ts': { statements: 80, branches: 70, functions: 80 },
           'src/utils/configDuration.ts': { statements: 90, branches: 80, functions: 100 },
           'src/utils/tierScenario.ts': { statements: 90, branches: 80, functions: 100 },
+          'src/utils/scopeAttachment.ts': { statements: 90, branches: 90, functions: 100 },
+          'src/utils/docxMerger.ts': { statements: 60, branches: 45, functions: 70 },
         },
       },
     },

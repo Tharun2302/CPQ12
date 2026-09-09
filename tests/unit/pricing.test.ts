@@ -17,6 +17,19 @@ import {
   BUNDLE_DATA_ADDON,
   getRegionMultiplier,
   overagePerServerPerMonth,
+  normalizeSprawlType,
+  sprawlRowLabel,
+  manageDataLineCost,
+  manageUserLineCost,
+  normalizeSprawlTypes,
+  withSprawlTypes,
+  calcSprawlLines,
+  sumSprawlLines,
+  sprawlDisplayTotal,
+  SPRAWL_TYPE_ORDER,
+  resolveSprawlUsers,
+  manageLicenceUsers,
+  calcSprawlLinesFromConfig,
 } from '../../src/utils/pricing';
 import type { ConfigurationData, PricingCalculation } from '../../src/types/pricing';
 // Backend pricing engine (CommonJS) — must stay in lock-step with src/utils/pricing.ts.
@@ -1137,5 +1150,524 @@ describe('overagePerServerPerMonth — region multiplier in Overage Charges', ()
     expect(overagePerServerPerMonth(config, 'Standard', { instanceCost: 800 }, 0, 0)).toBeCloseTo(800, 6);
     expect(overagePerServerPerMonth(config, 'Standard', { instanceCost: 0 }, 1, 1)).toBeCloseTo(800, 6);
     expect(overagePerServerPerMonth(config, 'Standard', undefined, 1, 1)).toBeCloseTo(800, 6);
+  });
+});
+
+describe('Data Sprawl — agreement row helpers', () => {
+  function manageConfig(overrides: Partial<ConfigurationData> = {}): ConfigurationData {
+    return makeConfig({
+      servicePlan: 'Manage',
+      migrationType: 'Datasprawl',
+      manageUsers: 32,
+      manageDataGB: 0,
+      customerLocation: '1',
+      ...overrides,
+    });
+  }
+
+  it('normalizeSprawlType accepts only the three known types', () => {
+    expect(normalizeSprawlType('Content')).toBe('Content');
+    expect(normalizeSprawlType('Message')).toBe('Message');
+    expect(normalizeSprawlType('Email')).toBe('Email');
+    expect(normalizeSprawlType('Bogus')).toBeUndefined();
+    expect(normalizeSprawlType(undefined)).toBeUndefined();
+    expect(normalizeSprawlType('')).toBeUndefined();
+    expect(normalizeSprawlType(null)).toBeUndefined();
+  });
+
+  it('sprawlRowLabel matches the agreement reference wording', () => {
+    expect(sprawlRowLabel('Content')).toBe('Data Sprawl');
+    expect(sprawlRowLabel('Email')).toBe('Email Sprawl');
+    expect(sprawlRowLabel('Message')).toBe('Message Sprawl');
+    // No sprawl type (or an unknown one) keeps the neutral label
+    expect(sprawlRowLabel(undefined)).toBe('Data Sprawl');
+    expect(sprawlRowLabel('Bogus')).toBe('Data Sprawl');
+  });
+
+  it('regression: Message/Email no longer price the row at $0 when GB is 0', () => {
+    // The bug: the row was computed as manageDataGB × 0.13, and Message/Email
+    // deliberately clear manageDataGB, so it always rendered $0.00.
+    expect(manageDataLineCost(manageConfig({ manageSprawlType: 'Message' }))).toBeCloseTo(128, 6);
+    expect(manageDataLineCost(manageConfig({ manageSprawlType: 'Email' }))).toBeCloseTo(128, 6);
+  });
+
+  it('row cost equals the engine dataCost for every sprawl type', () => {
+    const cases: Array<Partial<ConfigurationData>> = [
+      { manageSprawlType: 'Message', manageUsers: 32 },
+      { manageSprawlType: 'Email', manageUsers: 897 },
+      { manageSprawlType: 'Message', manageUsers: 1022 },
+      { manageSprawlType: 'Content', manageUsers: 32, manageDataGB: 345 },
+      { manageSprawlType: 'Content', manageUsers: 3001, manageDataGB: 222 },
+    ];
+    for (const overrides of cases) {
+      const config = manageConfig(overrides);
+      const calc = calculatePricing(config, PRICING_TIERS[0]);
+      expect(manageDataLineCost(config)).toBeCloseTo(calc.dataCost, 6);
+    }
+  });
+
+  it('reproduces the reference agreement figures', () => {
+    // Email Sprawl: 897 users → $2.50 band
+    expect(manageDataLineCost(manageConfig({ manageSprawlType: 'Email', manageUsers: 897 })))
+      .toBeCloseTo(2242.5, 6);
+    // Message Sprawl: 1022 users → $2.20 band
+    expect(manageDataLineCost(manageConfig({ manageSprawlType: 'Message', manageUsers: 1022 })))
+      .toBeCloseTo(2248.4, 6);
+  });
+
+  it('non-sprawl Manage keeps the legacy flat per-GB line', () => {
+    expect(manageDataLineCost(manageConfig({ manageDataGB: 345 })))
+      .toBeCloseTo(345 * MANAGE_STANDALONE_DATA_RATE, 6);
+    expect(manageDataLineCost(manageConfig({ manageDataGB: 0 }))).toBe(0);
+  });
+
+  it('guards missing and negative inputs to 0', () => {
+    expect(manageDataLineCost({} as ConfigurationData)).toBe(0);
+    expect(manageDataLineCost(manageConfig({ manageSprawlType: 'Message', manageUsers: -5 }))).toBe(0);
+    expect(manageDataLineCost(manageConfig({ manageSprawlType: 'Content', manageDataGB: -10 }))).toBe(0);
+    expect(manageDataLineCost(manageConfig({ manageDataGB: Number.NaN }))).toBe(0);
+  });
+});
+
+describe('Data Sprawl — agreement license line', () => {
+  function manageConfig(overrides: Partial<ConfigurationData> = {}): ConfigurationData {
+    return makeConfig({
+      servicePlan: 'Manage',
+      migrationType: 'Datasprawl',
+      manageUsers: 32,
+      manageDataGB: 0,
+      customerLocation: '1',
+      ...overrides,
+    });
+  }
+
+  it('regression: standalone Data Sprawl keeps the license at 0', () => {
+    // PricingComparison zeroes userCost for the standalone plan; only the calculation
+    // records that choice, so recomputing from manageUsers must not re-add the license.
+    const standalone = { sprawlType: 'Message' as const, userCost: 0 };
+    expect(manageUserLineCost(manageConfig({ manageSprawlType: 'Message' }), standalone)).toBe(0);
+  });
+
+  it('MANAGE + Sprawl charges the license from the live user count', () => {
+    const combined = { sprawlType: 'Message' as const, userCost: 2499 };
+    expect(manageUserLineCost(manageConfig({ manageSprawlType: 'Message' }), combined)).toBe(2499);
+    // Editing users after picking the plan re-derives the license instead of going stale
+    const config = manageConfig({ manageSprawlType: 'Message', manageUsers: 897 });
+    expect(manageUserLineCost(config, combined)).toBe(17940);
+  });
+
+  it('regression: sprawl always carries a license, even when manageRequiresUsers is false', () => {
+    // The flag comes from the combination admin checkbox; the engine ignores it for sprawl.
+    const config = manageConfig({ manageSprawlType: 'Message', manageRequiresUsers: false });
+    expect(manageUserLineCost(config, { sprawlType: 'Message', userCost: 2499 })).toBe(2499);
+    expect(calculatePricing(config, PRICING_TIERS[0]).userCost).toBe(2499);
+  });
+
+  it('non-sprawl Manage still honours manageRequiresUsers === false', () => {
+    expect(manageUserLineCost(manageConfig({ manageRequiresUsers: false }), null)).toBe(0);
+    expect(manageUserLineCost(manageConfig({ manageRequiresUsers: true }), null)).toBe(2499);
+  });
+
+  it('license line matches the engine userCost for every sprawl type', () => {
+    const cases: Array<Partial<ConfigurationData>> = [
+      { manageSprawlType: 'Message', manageUsers: 32 },
+      { manageSprawlType: 'Email', manageUsers: 897 },
+      { manageSprawlType: 'Message', manageUsers: 1022 },
+      { manageSprawlType: 'Content', manageUsers: 32, manageDataGB: 345 },
+    ];
+    for (const overrides of cases) {
+      const config = manageConfig(overrides);
+      const calc = calculatePricing(config, PRICING_TIERS[0]);
+      expect(manageUserLineCost(config, calc)).toBeCloseTo(calc.userCost, 6);
+      // The agreement total must equal the two lines it prints
+      expect(manageUserLineCost(config, calc) + manageDataLineCost(config))
+        .toBeCloseTo(calc.totalCost, 6);
+    }
+  });
+
+  it('CUSTOM license (>5000 users) falls back to the calculation', () => {
+    const config = manageConfig({ manageSprawlType: 'Message', manageUsers: 6000 });
+    const calc = calculatePricing(config, PRICING_TIERS[0]);
+    // Engine reports a zeroed license plus status "custom"; the row must not invent a price
+    expect(calc.status).toBe('custom');
+    expect(manageUserLineCost(config, calc)).toBe(0);
+    expect(manageUserLineCost(manageConfig({ manageUsers: 6000 }), { userCost: 1234 } as any)).toBe(1234);
+  });
+
+  it('guards missing inputs to 0', () => {
+    expect(manageUserLineCost({} as ConfigurationData, null)).toBe(0);
+    expect(manageUserLineCost(manageConfig({ manageUsers: -5 }), null)).toBe(0);
+    expect(manageUserLineCost(manageConfig({ manageUsers: Number.NaN }), null)).toBe(0);
+  });
+});
+
+describe('Data Sprawl (Standalone) — reference agreement rows', () => {
+  // Agreed spec: the standalone plan prints one row (sprawl cost only, no license line),
+  // so the row price and the Total Price are the same figure.
+  const REFERENCE = [
+    { label: 'Data Sprawl', type: 'Content' as const, users: 32, gb: 345, price: 55.2 },
+    { label: 'Email Sprawl', type: 'Email' as const, users: 897, gb: 0, price: 2242.5 },
+    { label: 'Message Sprawl', type: 'Message' as const, users: 1022, gb: 0, price: 2248.4 },
+  ];
+
+  for (const row of REFERENCE) {
+    it(`renders "${row.label}" at ${formatCurrency(row.price)}`, () => {
+      const config = makeConfig({
+        servicePlan: 'Manage',
+        migrationType: 'Datasprawl',
+        manageSprawlType: row.type,
+        manageUsers: row.users,
+        manageDataGB: row.gb,
+        customerLocation: '1',
+      });
+      const engine = calculatePricing(config, PRICING_TIERS[0]);
+      // Standalone selection zeroes the license (PricingComparison spreads userCost: 0)
+      const selected = { sprawlType: engine.sprawlType, userCost: 0 };
+
+      expect(sprawlRowLabel(row.type)).toBe(row.label);
+      expect(manageDataLineCost(config)).toBeCloseTo(row.price, 6);
+      expect(manageUserLineCost(config, selected)).toBe(0);
+      // Total Price equals the single printed row
+      expect(manageUserLineCost(config, selected) + manageDataLineCost(config))
+        .toBeCloseTo(row.price, 6);
+      expect(engine.sprawlStandalone?.totalCost).toBeCloseTo(row.price, 6);
+    });
+  }
+});
+
+describe('Data Sprawl — multi-select', () => {
+  const MANAGE = PRICING_TIERS[0];
+
+  function cfg(overrides: Partial<ConfigurationData> = {}): ConfigurationData {
+    return makeConfig({
+      servicePlan: 'Manage',
+      migrationType: 'Datasprawl',
+      manageUsers: 1022,
+      manageDataGB: 0,
+      customerLocation: '1',
+      ...overrides,
+    });
+  }
+
+  describe('normalizeSprawlTypes', () => {
+    it('prefers the array, in canonical order, deduped', () => {
+      expect(normalizeSprawlTypes(cfg({ manageSprawlTypes: ['Message', 'Content'] })))
+        .toEqual(['Content', 'Message']);
+      expect(normalizeSprawlTypes(cfg({ manageSprawlTypes: ['Email', 'Email'] }))).toEqual(['Email']);
+      expect(SPRAWL_TYPE_ORDER).toEqual(['Content', 'Message', 'Email']);
+    });
+
+    it('an empty array means None and beats the legacy field', () => {
+      const c = cfg({ manageSprawlTypes: [], manageSprawlType: 'Message' });
+      expect(normalizeSprawlTypes(c)).toEqual([]);
+      expect(calculatePricing(c, MANAGE).sprawlType).toBeUndefined();
+    });
+
+    it('falls back to the legacy single field when no array exists', () => {
+      expect(normalizeSprawlTypes(cfg({ manageSprawlType: 'Email' }))).toEqual(['Email']);
+      expect(normalizeSprawlTypes(cfg())).toEqual([]);
+    });
+
+    it('drops out-of-enum members', () => {
+      expect(normalizeSprawlTypes(cfg({ manageSprawlTypes: ['Bogus'] as never }))).toEqual([]);
+      expect(normalizeSprawlTypes(cfg({ manageSprawlTypes: ['Bogus', 'Message'] as never })))
+        .toEqual(['Message']);
+    });
+  });
+
+  describe('withSprawlTypes', () => {
+    it('writes both fields so no read path sees them disagree', () => {
+      const next = withSprawlTypes(cfg(), ['Message', 'Content']);
+      expect(next.manageSprawlTypes).toEqual(['Content', 'Message']);
+      expect(next.manageSprawlType).toBe('Content');
+    });
+
+    it('clears GB when Content is not selected, keeps it when it is', () => {
+      expect(withSprawlTypes(cfg({ manageDataGB: 345 }), ['Message']).manageDataGB).toBe(0);
+      expect(withSprawlTypes(cfg({ manageDataGB: 345 }), ['Content']).manageDataGB).toBe(345);
+      expect(withSprawlTypes(cfg({ manageDataGB: 345 }), []).manageDataGB).toBe(0);
+    });
+
+    it('clearing the selection leaves the legacy mirror undefined', () => {
+      const next = withSprawlTypes(cfg({ manageSprawlType: 'Message' }), []);
+      expect(next.manageSprawlTypes).toEqual([]);
+      expect(next.manageSprawlType).toBeUndefined();
+    });
+  });
+
+  it('single-type stays byte-identical to the pre-feature numbers', () => {
+    const msg = calculatePricing(
+      cfg({ manageUsers: 3001, manageDataGB: 222, manageSprawlTypes: ['Message'] }), MANAGE);
+    expect(msg.userCost).toBe(60020);
+    expect(msg.dataCost).toBeCloseTo(4801.6, 6);
+    expect(msg.totalCost).toBeCloseTo(64821.6, 6);
+    expect(msg.sprawlLines).toHaveLength(1);
+    expect(msg.sprawlType).toBe('Message');
+    expectInvariant(msg);
+
+    const legacy = calculatePricing(
+      cfg({ manageUsers: 3001, manageDataGB: 222, manageSprawlType: 'Message' }), MANAGE);
+    expect(legacy.dataCost).toBe(msg.dataCost);
+    expect(legacy.totalCost).toBe(msg.totalCost);
+  });
+
+  it('Content + Message sums one line per type', () => {
+    const calc = calculatePricing(
+      cfg({ manageUsers: 1022, manageDataGB: 345, manageSprawlTypes: ['Content', 'Message'] }),
+      MANAGE
+    );
+    expect(calc.sprawlLines?.map(l => l.type)).toEqual(['Content', 'Message']);
+    expect(calc.sprawlLines?.[0].cost).toBeCloseTo(55.2, 6);
+    expect(calc.sprawlLines?.[1].cost).toBeCloseTo(2248.4, 6);
+    expect(calc.sprawlCost).toBeCloseTo(2303.6, 6);
+    expect(calc.sprawlStandalone?.totalCost).toBeCloseTo(2303.6, 6);
+    expect(calc.userCost).toBe(20440);
+    expect(calc.totalCost).toBeCloseTo(22743.6, 6);
+    expectInvariant(calc);
+  });
+
+  it('Message + Email bills the shared user count twice (product decision)', () => {
+    const calc = calculatePricing(cfg({ manageUsers: 897, manageSprawlTypes: ['Message', 'Email'] }), MANAGE);
+    expect(calc.sprawlLines?.map(l => l.cost)).toEqual([2242.5, 2242.5]);
+    expect(calc.sprawlLines?.every(l => l.quantity === 897)).toBe(true);
+    expect(calc.sprawlCost).toBeCloseTo(4485, 6);
+    expectInvariant(calc);
+  });
+
+  it('all three types produce three lines', () => {
+    const calc = calculatePricing(
+      cfg({ manageUsers: 897, manageDataGB: 345, manageSprawlTypes: ['Content', 'Message', 'Email'] }),
+      MANAGE
+    );
+    expect(calc.sprawlLines).toHaveLength(3);
+    expect(calc.sprawlCost).toBeCloseTo(55.2 + 2242.5 + 2242.5, 6);
+    expectInvariant(calc);
+  });
+
+  it('line metadata reports the basis, quantity and rate', () => {
+    const calc = calculatePricing(
+      cfg({ manageUsers: 1022, manageDataGB: 345, manageSprawlTypes: ['Content', 'Message'] }),
+      MANAGE
+    );
+    expect(calc.sprawlLines?.[0]).toMatchObject({
+      type: 'Content', label: 'Data Sprawl', basis: 'gb', quantity: 345, rate: 0.16,
+    });
+    expect(calc.sprawlLines?.[1]).toMatchObject({
+      type: 'Message', label: 'Message Sprawl', basis: 'user', quantity: 1022, rate: 2.2,
+    });
+  });
+
+  it('multi-select is region-flat, like single-type', () => {
+    const base = { manageUsers: 1022, manageDataGB: 345, manageSprawlTypes: ['Content', 'Message'] as never };
+    const r1 = calculatePricing(cfg({ ...base, customerLocation: '1' }), MANAGE);
+    const r2 = calculatePricing(cfg({ ...base, customerLocation: '0.8' }), MANAGE);
+    const r3 = calculatePricing(cfg({ ...base, customerLocation: '0.65' }), MANAGE);
+    expect(r2.totalCost).toBe(r1.totalCost);
+    expect(r3.totalCost).toBe(r1.totalCost);
+  });
+
+  it('every line stays quotable above the CUSTOM license band', () => {
+    const calc = calculatePricing(cfg({ manageUsers: 8000, manageSprawlTypes: ['Message', 'Email'] }), MANAGE);
+    expect(calc.status).toBe('custom');
+    expect(calc.userCost).toBe(0);
+    expect(calc.sprawlStandalone?.totalCost).toBeCloseTo(24000, 6);
+    expectInvariant(calc);
+  });
+
+  it('sprawlDisplayTotal sums rounded rows so the printed column adds up', () => {
+    const lines = calcSprawlLines(['Content', 'Message'], 1022, 345);
+    expect(sprawlDisplayTotal(lines)).toBeCloseTo(2303.6, 6);
+    expect(sumSprawlLines(lines)).toBeCloseTo(sprawlDisplayTotal(lines), 2);
+  });
+
+  it('agreement row cost equals the sum of the selected lines', () => {
+    const config = cfg({ manageUsers: 1022, manageDataGB: 345, manageSprawlTypes: ['Content', 'Message'] });
+    expect(manageDataLineCost(config)).toBeCloseTo(2303.6, 6);
+    expect(manageUserLineCost(config, calculatePricing(config, MANAGE))).toBe(20440);
+  });
+
+  it('backend mirror matches the frontend for multi-select', () => {
+    const mg = pricingLogic.calcManage({
+      users: 1022, e100GB: 345, sprawlTypes: ['Content', 'Message'],
+    });
+    const fe = calculatePricing(
+      cfg({ manageUsers: 1022, manageDataGB: 345, manageSprawlTypes: ['Content', 'Message'] }),
+      MANAGE
+    );
+    expect(mg.total).toBeCloseTo(fe.totalCost, 6);
+    expect(mg.sprawl.standalone.totalCost).toBeCloseTo(fe.sprawlCost!, 6);
+    expect(mg.sprawl.types).toEqual(['Content', 'Message']);
+    expect(mg.sprawl.lines.map((l: { cost: number }) => l.cost))
+      .toEqual(fe.sprawlLines!.map(l => l.cost));
+
+    const legacy = pricingLogic.calcManage({ users: 1022, e100GB: 345, sprawlType: 'Content' });
+    expect(legacy.sprawl.types).toEqual(['Content']);
+    expect(legacy.meta.sprawlBasis).toBe('gb');
+  });
+});
+
+describe('Data Sprawl — independent user count per type', () => {
+  const MANAGE = PRICING_TIERS[0];
+
+  function cfg(overrides: Partial<ConfigurationData> = {}): ConfigurationData {
+    return makeConfig({
+      servicePlan: 'Manage',
+      migrationType: 'Datasprawl',
+      manageDataGB: 0,
+      customerLocation: '1',
+      ...overrides,
+    });
+  }
+
+  it('regression: editing one type does not change another', () => {
+    const config = cfg({
+      manageSprawlTypes: ['Message', 'Email'],
+      manageUsersByType: { Message: 424, Email: 100 },
+      manageUsers: 524,
+    });
+    const lines = calcSprawlLinesFromConfig(config);
+    expect(lines.map(l => l.quantity)).toEqual([424, 100]);
+    // 424 -> $2.80 band ; 100 -> $3.60 band
+    expect(lines.map(l => l.rate)).toEqual([2.8, 3.6]);
+    lines.map(l => l.cost).forEach((c, i) => expect(c).toBeCloseTo([1187.2, 360][i], 6));
+  });
+
+  it('resolveSprawlUsers falls back to the shared count only when NO map exists', () => {
+    expect(resolveSprawlUsers(cfg({ manageUsers: 62 })))
+      .toEqual({ Content: 62, Message: 62, Email: 62 });
+    // Once a map exists a missing key is 0, not the shared sum — charging the aggregate
+    // to a type that has no count of its own silently doubles the licence.
+    expect(resolveSprawlUsers(cfg({ manageUsers: 62, manageUsersByType: { Message: 10 } })))
+      .toEqual({ Content: 0, Message: 10, Email: 0 });
+  });
+
+  it('regression: a selected type missing from the map does not inherit the aggregate', () => {
+    const config = cfg({
+      manageSprawlTypes: ['Message', 'Email'],
+      manageUsersByType: { Message: 424 },
+      manageUsers: 424,
+    });
+    // Email has no count, so it must contribute 0 rather than another 424
+    expect(manageLicenceUsers(config)).toBe(424);
+    expect(calculatePricing(config, MANAGE).userCost).toBe(9999);
+  });
+
+  it('regression: ticking a second type does not inflate the price', () => {
+    // Reproduces the reported walkthrough: Message 424, then tick Email.
+    const first = withSprawlTypes(cfg({ manageUsers: 0 }), ['Message']);
+    const withCount = { ...first, manageUsersByType: { Message: 424 }, manageUsers: 424 };
+    const second = withSprawlTypes(withCount, ['Message', 'Email']);
+    // Email seeds empty, so the licence stays on 424 until a count is entered
+    expect(second.manageUsersByType).toEqual({ Message: 424, Email: 0 });
+    expect(second.manageUsers).toBe(424);
+    expect(calculatePricing(second, MANAGE).userCost).toBe(9999);
+  });
+
+  it('withSprawlTypes keeps manageUsers equal to the sum of the selected counts', () => {
+    const base = cfg({ manageUsersByType: { Message: 424, Email: 100 }, manageUsers: 0 });
+    const both = withSprawlTypes(base, ['Message', 'Email']);
+    expect(both.manageUsers).toBe(524);
+    // Untick Email: the aggregate must drop too, or a phantom count keeps being charged
+    const onlyMessage = withSprawlTypes(both, ['Message']);
+    expect(onlyMessage.manageUsers).toBe(424);
+    expect(manageLicenceUsers(onlyMessage)).toBe(424);
+  });
+
+  it('a legacy config with no map seeds every selected type from the shared count', () => {
+    const upgraded = withSprawlTypes(cfg({ manageUsers: 300 }), ['Message']);
+    expect(upgraded.manageUsersByType).toEqual({ Message: 300 });
+    expect(upgraded.manageUsers).toBe(300);
+    expect(calculatePricing(upgraded, MANAGE).userCost).toBe(9999);
+  });
+
+  it('guards missing, zero and negative per-type counts to 0', () => {
+    const per = resolveSprawlUsers(cfg({
+      manageUsers: 0,
+      manageUsersByType: { Content: -5, Message: 0, Email: Number.NaN },
+    }));
+    expect(per).toEqual({ Content: 0, Message: 0, Email: 0 });
+  });
+
+  it('the licence prices on the SUM of the selected types', () => {
+    const config = cfg({
+      manageSprawlTypes: ['Message', 'Email'],
+      manageUsersByType: { Message: 424, Email: 100 },
+      manageUsers: 524,
+    });
+    // 524 falls in the 501-5,000 band -> 20 x 524
+    expect(manageLicenceUsers(config)).toBe(524);
+    expect(calculatePricing(config, MANAGE).userCost).toBe(10480);
+  });
+
+  it('the sum only counts SELECTED types', () => {
+    const config = cfg({
+      manageSprawlTypes: ['Message'],
+      manageUsersByType: { Message: 30, Email: 9000 },
+      manageUsers: 30,
+    });
+    expect(manageLicenceUsers(config)).toBe(30);
+    expect(calculatePricing(config, MANAGE).userCost).toBe(2499);
+  });
+
+  it('a config without the per-type map is unchanged (legacy quotes)', () => {
+    const legacy = cfg({ manageSprawlTypes: ['Message', 'Email'], manageUsers: 424 });
+    const calc = calculatePricing(legacy, MANAGE);
+    // Licence stays on the single 424, NOT 424 x 2
+    expect(manageLicenceUsers(legacy)).toBe(424);
+    expect(calc.userCost).toBe(9999);
+    // Both lines still price on the shared count
+    calc.sprawlLines?.forEach(l => expect(l.cost).toBeCloseTo(1187.2, 6));
+    expectInvariant(calc);
+  });
+
+  it('non-sprawl Manage still prices the licence on manageUsers', () => {
+    expect(manageLicenceUsers(cfg({ manageUsers: 100, manageDataGB: 345 }))).toBe(100);
+  });
+
+  it('Content carries a user count for the licence but is still priced per GB', () => {
+    const config = cfg({
+      manageSprawlTypes: ['Content'],
+      manageUsersByType: { Content: 62 },
+      manageUsers: 62,
+      manageDataGB: 345,
+    });
+    const calc = calculatePricing(config, MANAGE);
+    expect(calc.userCost).toBe(5999);              // 62 users -> 51-200 band
+    expect(calc.dataCost).toBeCloseTo(55.2, 6);    // 0.16 x 345, GB-based
+    expect(calc.sprawlLines?.[0].basis).toBe('gb');
+    expectInvariant(calc);
+  });
+
+  it('withSprawlTypes seeds and prunes the per-type counts', () => {
+    // No map yet, so both selected types inherit the single shared count
+    const start = withSprawlTypes(cfg({ manageUsers: 62 }), ['Message', 'Email']);
+    expect(start.manageUsersByType).toEqual({ Message: 62, Email: 62 });
+    // Deselecting Email drops its count so it cannot feed the licence sum
+    const next = withSprawlTypes({ ...start, manageUsersByType: { Message: 424, Email: 100 } }, ['Message']);
+    expect(next.manageUsersByType).toEqual({ Message: 424 });
+    expect(manageLicenceUsers(next)).toBe(424);
+  });
+
+  it('backend mirror matches the frontend for per-type counts', () => {
+    const config = cfg({
+      manageSprawlTypes: ['Message', 'Email'],
+      manageUsersByType: { Message: 424, Email: 100 },
+      manageUsers: 524,
+    });
+    const fe = calculatePricing(config, MANAGE);
+    const mg = pricingLogic.calcManage({
+      users: 524,
+      e100GB: 0,
+      sprawlTypes: ['Message', 'Email'],
+      usersByType: { Message: 424, Email: 100 },
+    });
+    expect(mg.breakdown.user).toBe(fe.userCost);
+    expect(mg.sprawl.standalone.totalCost).toBeCloseTo(fe.sprawlCost!, 6);
+    mg.sprawl.lines.forEach((l: { cost: number }, i: number) =>
+      expect(l.cost).toBeCloseTo(fe.sprawlLines![i].cost, 6));
+    // Legacy caller with no map keeps the shared-count behaviour
+    const legacy = pricingLogic.calcManage({ users: 424, e100GB: 0, sprawlTypes: ['Message', 'Email'] });
+    expect(legacy.breakdown.user).toBe(9999);
+    legacy.sprawl.lines.forEach((l: { cost: number }) => expect(l.cost).toBeCloseTo(1187.2, 6));
   });
 });

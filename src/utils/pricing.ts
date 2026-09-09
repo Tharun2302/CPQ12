@@ -1,4 +1,4 @@
-import { PricingTier, ConfigurationData, PricingCalculation } from '../types/pricing';
+import { PricingTier, ConfigurationData, PricingCalculation, SprawlType, SprawlLine } from '../types/pricing';
 
 /** Ensures total = userCost + dataCost + migrationCost + instanceCost (used when $2500 minimum is applied). */
 function assertPricingInvariant(
@@ -176,6 +176,196 @@ export function calcSprawlCost(type: 'Content' | 'Message' | 'Email', users: num
     : lookupMessageSprawlRate(u) * u;
 }
 
+// Enum-guard the sprawl type so a stale/unknown value can never reach the rate tables.
+export function normalizeSprawlType(value: unknown): SprawlType | undefined {
+  return value === 'Content' || value === 'Message' || value === 'Email' ? value : undefined;
+}
+
+export const SPRAWL_TYPE_ORDER: readonly SprawlType[] = ['Content', 'Message', 'Email'];
+
+// The selected sprawl types, canonical order. The legacy single field is the fallback so
+// MongoDB quotes and sessionStorage snapshots written before multi-select still price.
+export function normalizeSprawlTypes(config: ConfigurationData): SprawlType[] {
+  const raw = (config as { manageSprawlTypes?: unknown })?.manageSprawlTypes;
+  if (Array.isArray(raw)) {
+    // An empty array is a real answer ("None"), so it must win over the legacy field.
+    const picked = raw.map(normalizeSprawlType).filter((t): t is SprawlType => !!t);
+    return SPRAWL_TYPE_ORDER.filter(t => picked.includes(t));
+  }
+  const legacy = normalizeSprawlType(config?.manageSprawlType);
+  return legacy ? [legacy] : [];
+}
+
+// Writers must set both fields together so no read path ever sees them disagree.
+export function withSprawlTypes(config: ConfigurationData, types: SprawlType[]): ConfigurationData {
+  const normalized = SPRAWL_TYPE_ORDER.filter(t => types.map(normalizeSprawlType).includes(t));
+  const hasMap = !!config?.manageUsersByType && typeof config.manageUsersByType === 'object';
+  const usersByType = SPRAWL_TYPE_ORDER.reduce((acc, t) => {
+    // A newly ticked type starts empty; without a map at all (a legacy config) every
+    // selected type inherits the single shared count. Seeding from the aggregate would
+    // charge the running sum again for each new type.
+    if (normalized.includes(t)) {
+      acc[t] = config.manageUsersByType?.[t] ?? (hasMap ? 0 : (config.manageUsers ?? 0));
+    }
+    return acc;
+  }, {} as Partial<Record<SprawlType, number>>);
+  const total = normalized.reduce((sum, t) => sum + (Number(usersByType[t]) || 0), 0);
+  return {
+    ...config,
+    manageSprawlTypes: normalized,
+    manageSprawlType: normalized[0],
+    // Each quantity belongs to one type; clear the others so a stale value cannot leak
+    // into a price (GB) or into the printed row description (the counts).
+    manageDataGB: normalized.includes('Content') ? config.manageDataGB : 0,
+    manageMessageCount: normalized.includes('Message') ? config.manageMessageCount : 0,
+    manageEmailCount: normalized.includes('Email') ? config.manageEmailCount : 0,
+    manageUsersByType: usersByType,
+    // Aggregate stays the sum so the licence and every legacy reader agree.
+    manageUsers: normalized.length > 0 ? total : config.manageUsers
+  };
+}
+
+// User count per sprawl type. A config without the per-type map (written before per-type
+// counts existed) resolves every type to the single shared manageUsers value.
+export function resolveSprawlUsers(config: ConfigurationData): Record<SprawlType, number> {
+  const map = config?.manageUsersByType;
+  const hasMap = !!map && typeof map === 'object';
+  const shared = Number(config?.manageUsers ?? 0);
+  const safeShared = Number.isFinite(shared) && shared > 0 ? shared : 0;
+  const pick = (t: SprawlType): number => {
+    // Per-key fallback would silently charge a missing type the shared sum, so the
+    // fallback applies only when the whole map is absent (a pre-per-type config).
+    if (!hasMap) return safeShared;
+    const raw = Number(map![t] ?? 0);
+    return Number.isFinite(raw) && raw > 0 ? raw : 0;
+  };
+  return { Content: pick('Content'), Message: pick('Message'), Email: pick('Email') };
+}
+
+// Users the single Manage licence is priced on: the SUM of the selected types' counts.
+// Without the per-type map it stays the one shared count, so legacy quotes are unchanged.
+export function manageLicenceUsers(config: ConfigurationData): number {
+  const types = normalizeSprawlTypes(config);
+  const shared = Number(config?.manageUsers ?? 0);
+  const safeShared = Number.isFinite(shared) && shared > 0 ? shared : 0;
+  if (types.length === 0) return safeShared;
+  const map = config?.manageUsersByType;
+  if (!map || typeof map !== 'object') return safeShared;
+  const per = resolveSprawlUsers(config);
+  return types.reduce((sum, t) => sum + per[t], 0);
+}
+
+// Lines for a config, each type priced on its own user count.
+export function calcSprawlLinesFromConfig(config: ConfigurationData): SprawlLine[] {
+  const types = normalizeSprawlTypes(config);
+  const per = resolveSprawlUsers(config);
+  const rawGB = Number(config?.manageDataGB ?? 0);
+  const gb = Number.isFinite(rawGB) && rawGB > 0 ? rawGB : 0;
+  return SPRAWL_TYPE_ORDER.filter(t => types.includes(t)).flatMap(
+    type => calcSprawlLines([type], per[type], gb)
+  );
+}
+
+// One priced line per type. Cost delegates to calcSprawlCost, still the only place the
+// rate tables are multiplied. Message and Email deliberately share one user count.
+export function calcSprawlLines(types: SprawlType[], users: number, gb: number): SprawlLine[] {
+  const u = Number.isFinite(users) && users > 0 ? users : 0;
+  const g = Number.isFinite(gb) && gb > 0 ? gb : 0;
+  return SPRAWL_TYPE_ORDER.filter(t => types.includes(t)).map(type => {
+    const isContent = type === 'Content';
+    return {
+      type,
+      label: sprawlRowLabel(type),
+      basis: isContent ? 'gb' : 'user',
+      quantity: isContent ? g : u,
+      rate: isContent ? lookupContentSprawlRate(g) : lookupMessageSprawlRate(u),
+      cost: calcSprawlCost(type, users, gb)
+    };
+  });
+}
+
+export function sumSprawlLines(lines: SprawlLine[]): number {
+  return lines.reduce((sum, line) => sum + line.cost, 0);
+}
+
+// Which Manage pricing card the chosen agreement corresponds to. The Manage dropdown is
+// the plan selector: "Data Sprawl" sells sprawl only, "MANAGE + Sprawl" sells the licence
+// plus sprawl. The label is preferred because the dropdown's value is admin-defined.
+export function manageAgreementCard(
+  config: ConfigurationData | undefined
+): 'combined' | 'standalone' | 'both' {
+  if (config?.servicePlan !== 'Manage') return 'both';
+  const slug = String(config.manageAgreementLabel || config.migrationType || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  if (!slug.includes('sprawl')) return 'both';
+  return slug.includes('manage') ? 'combined' : 'standalone';
+}
+
+// A selectedTier restored from sessionStorage or MongoDB predates sprawlLines, so
+// synthesize a single line from the legacy mirror rather than rendering nothing.
+export function resolveSprawlLines(calc: PricingCalculation | null | undefined): SprawlLine[] {
+  if (calc?.sprawlLines?.length) return calc.sprawlLines;
+  const type = normalizeSprawlType(calc?.sprawlType);
+  if (!type) return [];
+  return [{
+    type,
+    label: sprawlRowLabel(type),
+    basis: type === 'Content' ? 'gb' : 'user',
+    quantity: 0,
+    rate: 0,
+    cost: calc?.sprawlCost ?? calc?.dataCost ?? 0
+  }];
+}
+
+// Agreements must print a column that adds up, so the total is the sum of the ROUNDED
+// rows rather than the rounding of the full-precision sum (they can differ by a cent).
+export function sprawlDisplayTotal(lines: SprawlLine[]): number {
+  return lines.reduce((sum, line) => sum + Math.round(line.cost * 100) / 100, 0);
+}
+
+// Description cell for the Data Sprawl agreement row. Content has no prefix.
+export function sprawlRowLabel(value: unknown): string {
+  const type = normalizeSprawlType(value);
+  if (type === 'Email') return 'Email Sprawl';
+  if (type === 'Message') return 'Message Sprawl';
+  return 'Data Sprawl';
+}
+
+function manageDataGBInput(config: ConfigurationData): number {
+  const rawGB = Number(config?.manageDataGB ?? 0);
+  return Number.isFinite(rawGB) && rawGB > 0 ? rawGB : 0;
+}
+
+// The Manage "data" line as agreements must render it. Derived from the config, not a
+// stored calculation, because the selected tier is a snapshot that goes stale when the
+// sprawl type changes after a plan is picked.
+// Sprawl branch is identical to calculateManagePricing. The non-sprawl branch is the
+// legacy flat per-GB line and is deliberately region- and CUSTOM-agnostic, unlike the
+// engine — kept byte-for-byte as agreements have always rendered it.
+export function manageDataLineCost(config: ConfigurationData): number {
+  const types = normalizeSprawlTypes(config);
+  const gb = manageDataGBInput(config);
+  return types.length > 0
+    ? sprawlDisplayTotal(calcSprawlLinesFromConfig(config))
+    : gb * MANAGE_STANDALONE_DATA_RATE;
+}
+
+// The Manage license line as agreements must render it. Everything comes from the config
+// except the standalone-vs-combined choice, which only the calculation records.
+export function manageUserLineCost(
+  config: ConfigurationData,
+  calc?: Pick<PricingCalculation, 'sprawlType' | 'userCost'> | null
+): number {
+  const hasSprawl = normalizeSprawlTypes(config).length > 0;
+  // Standalone Data Sprawl zeroes the license; recomputing it here would re-add it.
+  if (hasSprawl && normalizeSprawlType(calc?.sprawlType) && (calc?.userCost || 0) === 0) return 0;
+  // Every sprawl type carries a license, so the no-users flag applies only without sprawl.
+  if (!hasSprawl && config?.manageRequiresUsers === false) return 0;
+  const raw = manageUserCost(manageLicenceUsers(config));
+  return raw === 'CUSTOM' ? (Number(calc?.userCost) || 0) : raw;
+}
+
 function lookupBundleUserAddon(users: number): number {
   for (let i = 0; i < BUNDLE_USER_ADDON.length; i++) {
     if (users <= BUNDLE_USER_ADDON[i].max) return BUNDLE_USER_ADDON[i].addon;
@@ -233,25 +423,23 @@ export function getManageDataRatePerGB(_dataGB: number): number {
 function calculateManagePricing(config: ConfigurationData, tier: PricingTier): PricingCalculation {
   // Guard inputs: coerce to non-negative finite numbers (TS types erase at runtime,
   // and quotes can be reloaded from stored data — defend the money math directly).
-  const rawUsers = Number(config.manageUsers ?? 0);
   const rawGB = Number(config.manageDataGB ?? 0);
-  const users = Number.isFinite(rawUsers) && rawUsers > 0 ? rawUsers : 0;
   const dataGB = Number.isFinite(rawGB) && rawGB > 0 ? rawGB : 0;
-  // Enum-guard the sprawl type; anything outside the allow-list is treated as no sprawl.
-  const sprawlType: 'Content' | 'Message' | 'Email' | undefined =
-    config.manageSprawlType === 'Content' || config.manageSprawlType === 'Message' || config.manageSprawlType === 'Email'
-      ? config.manageSprawlType
-      : undefined;
+  // The licence is single, so it prices on the SUM of the selected types' user counts.
+  const users = manageLicenceUsers(config);
+  // Enum-guard the selection; anything outside the allow-list is treated as no sprawl.
+  const sprawlTypes = normalizeSprawlTypes(config);
 
   const userCostRaw = manageUserCost(users);
   const isCustom = userCostRaw === 'CUSTOM';
 
-  // Data Sprawl mode: the "data" line IS the sprawl cost (Content → rate×GB,
-  // Message/Email → rate×users). Manage/Sprawl is FLAT — region multiplier does NOT
-  // apply. Full precision; round for display. The standalone figure omits the license,
-  // so it stays quotable even when the license band is exceeded (>5000 users → combined CUSTOM).
-  if (sprawlType) {
-    const sprawlCost = calcSprawlCost(sprawlType, users, dataGB);   // B103, flat
+  // Data Sprawl mode: the "data" line IS the sprawl cost, one priced line per selected
+  // type (Content → rate×GB, Message/Email → rate×users). Manage/Sprawl is FLAT — region
+  // multiplier does NOT apply. Full precision; round for display. The standalone figure
+  // omits the license, so it stays quotable when the band is exceeded (>5000 → CUSTOM).
+  if (sprawlTypes.length > 0) {
+    const sprawlLines = calcSprawlLinesFromConfig(config);            // B103, flat
+    const sprawlCost = sumSprawlLines(sprawlLines);
     const license = isCustom ? 0 : (userCostRaw as number);         // K12 license (0 when CUSTOM)
 
     const sprawlResult: PricingCalculation = {
@@ -261,7 +449,9 @@ function calculateManagePricing(config: ConfigurationData, tier: PricingTier): P
       instanceCost: 0,
       totalCost: license + sprawlCost,                             // MANAGE + Sprawl (B104)
       tier,
-      sprawlType,
+      sprawlTypes,
+      sprawlLines,
+      sprawlType: sprawlTypes[0],
       sprawlCost,
       // Standalone omits the license line — sprawl cost only (rows 106–110).
       sprawlStandalone: { dataCost: sprawlCost, totalCost: sprawlCost }

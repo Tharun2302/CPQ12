@@ -115,6 +115,17 @@ export interface DocxTemplateData {
   '{{cloudfuze_manage_user_total_bundled}}'?: string;
   '{{cfm_user_bundled}}'?: string;
   
+  // Data Sprawl rows for the {{#sprawlRows}} table loop — one row per selected type
+  sprawlRows?: Array<{
+    sprawlJobRequirement: string;
+    sprawlLabel: string;
+    sprawlPrice: string;
+    sprawlRate?: string;
+    sprawlBasis?: string;
+    sprawlQty?: string;
+    isLast?: boolean;
+  }>;
+
   // Servers array for dynamic table loops
   servers?: Array<{
     serverDescription: string;
@@ -164,6 +175,15 @@ export interface DocxTemplateValidation {
 /**
  * DOCX Template Processor using docxtemplater
  */
+// A row/paragraph is the Discount LINE only if it starts with "discount" and is short
+// enough to be a label. The previous `includes('discount')` test deleted any content
+// merely mentioning a discount — e.g. a custom line item named "Loyalty discount" —
+// from every quote that had no discount applied.
+export function isDiscountOnlyBlock(strippedText: string): boolean {
+  const text = String(strippedText || '').trim().toLowerCase();
+  return /^discount(?![a-z])/.test(text) && text.length <= 60;
+}
+
 export class DocxTemplateProcessor {
   private static instance: DocxTemplateProcessor;
   
@@ -946,15 +966,13 @@ export class DocxTemplateProcessor {
             // Remove any table row that contains the word "discount" even when split across multiple runs
             const rowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
             let newXml = originalXml.replace(rowRegex, (row) => {
-              const text = stripTags(row);
-              return text.includes('discount') ? '' : row;
+              return isDiscountOnlyBlock(stripTags(row)) ? '' : row;
             });
 
             // Also remove standalone paragraphs that contain the word "discount"
             const paraRegex = /<w:p[\s\S]*?<\/w:p>/gi;
             newXml = newXml.replace(paraRegex, (para) => {
-              const text = stripTags(para);
-              return text.includes('discount') ? '' : para;
+              return isDiscountOnlyBlock(stripTags(para)) ? '' : para;
             });
 
             // Additionally, remove any table row that is effectively empty (e.g., when cells are only tokens that resolved to empty
@@ -2301,6 +2319,20 @@ export class DocxTemplateProcessor {
       processedData.servers = [];
       console.log('ℹ️ DOCX PROCESSOR: No servers array found; defaulting to []');
     }
+
+    // CRITICAL: Pass through sprawlRows for the Data Sprawl loop ({{#sprawlRows}} ... {{/sprawlRows}})
+    // Unknown array keys are dropped, and a dropped loop array renders ZERO rows with no error.
+    const sprawlRows = (data as any)?.sprawlRows;
+    if (Array.isArray(sprawlRows)) {
+      processedData.sprawlRows = sprawlRows;
+      console.log('✅ DOCX PROCESSOR: sprawlRows array copied to processedData', {
+        length: sprawlRows.length,
+        sample: sprawlRows[0]
+      });
+    } else {
+      processedData.sprawlRows = [];
+      console.log('ℹ️ DOCX PROCESSOR: No sprawlRows array found; defaulting to []');
+    }
     
     // Extract core values with fallbacks - EXACT tokens from template
     console.log('🔍 DOCX PROCESSOR: Company name sources:');
@@ -2819,7 +2851,7 @@ export class DocxTemplateProcessor {
     // This ensures that any fields set in QuoteGenerator but not in tokenMappings are still passed through
     Object.keys(data).forEach(key => {
       // Only copy fields that look like template tokens (start with {{) or are known data fields
-      if (key.startsWith('{{') || key === 'exhibits' || key === 'servers') {
+      if (key.startsWith('{{') || key === 'exhibits' || key === 'servers' || key === 'sprawlRows') {
         if (!(key in processedData) || processedData[key] === undefined || processedData[key] === null) {
           processedData[key] = (data as any)[key];
         }

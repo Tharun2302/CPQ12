@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { ConfigurationData, PricingTier } from '../types/pricing';
-import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X, Mail, ChevronDown, Plus } from 'lucide-react';
+import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X, Mail, ChevronDown, Plus, Layers } from 'lucide-react';
 import { trackConfiguration } from '../analytics/clarity';
 import ExhibitSelector from './ExhibitSelector';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
-import { PRICING_TIERS, calculateCombinationPricing, formatCurrency } from '../utils/pricing';
+import { PRICING_TIERS, calculateCombinationPricing, formatCurrency, normalizeSprawlTypes, withSprawlTypes, SPRAWL_TYPE_ORDER, sprawlRowLabel } from '../utils/pricing';
 import { getContentTimelineByServerType, formatServerTypeLabel, type SourceEnvironment, type ContentMigrationType } from '../utils/timelineProjection';
 import { BACKEND_URL } from '../config/api';
 import { SUPPRESS_PII } from '../analytics/privacy';
@@ -831,8 +831,16 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           emailConfig: parsed.emailConfig,
           // Restore other fields
           startDate: parsed.startDate,
-          endDate: parsed.endDate
+          endDate: parsed.endDate,
+          // Upgrade a pre-multi-select snapshot so the rest of the form only sees arrays.
+          manageSprawlTypes: normalizeSprawlTypes(parsed)
         } as ConfigurationData;
+
+        // Seed per-type user counts from the old shared count, otherwise a restored legacy
+        // quote shows blank user fields and validation blocks submit. Only for sprawl
+        // configs — running a plain Manage config through this would clear its GB/users.
+        const restoredTypes = normalizeSprawlTypes(merged);
+        const upgraded = restoredTypes.length > 0 ? withSprawlTypes(merged, restoredTypes) : merged;
         
         // Initialize shared instance type from first available config
         if (parsed.messagingConfigs && parsed.messagingConfigs.length > 0 && parsed.messagingConfigs[0].instanceType) {
@@ -850,10 +858,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         console.log('📋 Full merged config:', merged);
         console.log('📋 ========================');
         
-        setConfig(merged);
+        setConfig(upgraded);
         // Use setTimeout to avoid React warning about updating parent during render
         setTimeout(() => {
-          onConfigurationChange(merged);
+          onConfigurationChange(upgraded);
           console.log('📋 Configuration set and parent notified');
         }, 0);
         
@@ -1095,11 +1103,28 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
   }, [dealData]); // Removed onContactInfoChange from dependencies
 
-  // Clear stored discount on mount - user must explicitly enter it each time
+  // A discount must not carry into a NEW session, but it also must survive navigating
+  // Configure -> Pricing -> Configure. This form remounts on every such navigation, so
+  // clearing unconditionally deleted a discount the user had just entered — from both
+  // stores, which silently dropped it from the pricing card and the agreement too.
+  // sessionStorage is per-tab and dies with it, so the sentinel gives the intended
+  // "fresh start" on a new session while restoring within one.
   useEffect(() => {
+    try {
+      if (sessionStorage.getItem('cpq_discount_session_started')) {
+        const saved = sessionStorage.getItem('cpq_discount_session') || '';
+        setDiscountValue(saved);
+        if (saved) localStorage.setItem('cpq_discount', saved);
+        window.dispatchEvent(new CustomEvent('discountUpdated'));
+        return;
+      }
+      sessionStorage.setItem('cpq_discount_session_started', '1');
+      sessionStorage.removeItem('cpq_discount_session');
+      localStorage.removeItem('cpq_discount');
+    } catch (err) {
+      console.warn('Could not restore discount from sessionStorage:', err);
+    }
     setDiscountValue('');
-    sessionStorage.removeItem('cpq_discount_session');
-    localStorage.removeItem('cpq_discount');
   }, []);
 
   // Sync combination with config (only use sessionStorage, no localStorage fallback)
@@ -1219,6 +1244,257 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
   };
 
+  // One Discount (%) card shared by every plan. The value is global (cpq_discount_session
+  // + cpq_discount), which is why Manage totals already discounted before this field existed.
+  // Manage plan inputs live in their own full-width section below the top cards, matching
+  // the Migrate flow — nested inside the narrow "Choose one" card the labels wrapped.
+  // Full-width section below the top cards, one group per selected type. Each type owns
+  // its user count; the single Manage licence prices on their sum.
+  const renderManagePlanInputs = () => {
+    const options = apiCombinations.filter(c => c.migrationType === 'Manage');
+    const selectedOption = options.find(o => o.value === config.migrationType);
+    const showUsersField = selectedOption ? selectedOption.requiresUsers !== false : true;
+    const sprawlTypes = normalizeSprawlTypes(config);
+
+    const QUANTITY = {
+      Content: { key: 'manageDataGB' as const, label: 'Content data size in GB', grad: 'from-emerald-500 to-emerald-600', ph: 'Enter data size in GB' },
+      Message: { key: 'manageMessageCount' as const, label: 'Messages Count', grad: 'from-teal-500 to-teal-600', ph: 'Enter messages count' },
+      Email: { key: 'manageEmailCount' as const, label: 'Emails Count', grad: 'from-amber-500 to-amber-600', ph: 'Enter emails count' },
+    };
+
+    const quantityIcon = (type: 'Content' | 'Message' | 'Email') =>
+      type === 'Content' ? <Database className="w-4 h-4 text-white" />
+      : type === 'Message' ? <MessageSquare className="w-4 h-4 text-white" />
+      : <Mail className="w-4 h-4 text-white" />;
+
+    const numberField = (
+      key: 'manageUsers' | 'manageDataGB' | 'manageMessageCount' | 'manageEmailCount',
+      label: string,
+      grad: string,
+      icon: React.ReactNode,
+      placeholder: string,
+      note?: string
+    ) => (
+      <div className="group">
+        <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+          <div className={'w-8 h-8 bg-gradient-to-br ' + grad + ' rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200'}>
+            {icon}
+          </div>
+          {label}
+          {note && <span className="text-xs font-normal text-gray-500">({note})</span>}
+        </label>
+        <input
+          type="number"
+          min="0"
+          step="1"
+          value={config[key] || ''}
+          onChange={(e) => {
+            const v = e.target.value;
+            handleChange(key, v === '' ? 0 : (parseInt(v) || 0));
+          }}
+          className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
+          placeholder={placeholder}
+          autoComplete="off"
+        />
+      </div>
+    );
+
+    // Legacy Manage (no sprawl type) keeps the single shared field.
+    const usersField = () => numberField(
+      'manageUsers', 'Number of Users', 'from-blue-500 to-blue-600',
+      <Users className="w-4 h-4 text-white" />, 'Enter number of users'
+    );
+
+    // Each type owns its user count. manageUsers is kept in sync as the SUM because the
+    // single Manage licence prices on it, and legacy read paths still use it.
+    const setUsersForType = (type: 'Content' | 'Message' | 'Email', value: number) => {
+      const per = { ...(config.manageUsersByType || {}) };
+      per[type] = value;
+      const total = sprawlTypes.reduce((sum, t) => sum + (Number(per[t] ?? 0) || 0), 0);
+      const newConfig = { ...config, manageUsersByType: per, manageUsers: total };
+      setConfig(newConfig);
+      onConfigurationChange(newConfig);
+      try {
+        sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+        // Only update an EXISTING navState: creating one here would omit `timestamp`,
+        // and Dashboard's freshness check would then silently refuse every restore.
+        const existing = sessionStorage.getItem('cpq_navigation_state');
+        if (existing) {
+          const navState = JSON.parse(existing);
+          if (!navState.sessionState) navState.sessionState = {};
+          navState.sessionState.configuration = newConfig;
+          sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+        }
+      } catch (err) { console.warn('Could not save to sessionStorage:', err); }
+    };
+
+    const usersFieldFor = (type: 'Content' | 'Message' | 'Email') => (
+      <div className="group">
+        <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+            <Users className="w-4 h-4 text-white" />
+          </div>
+          Number of Users
+        </label>
+        <input
+          type="number"
+          min="0"
+          step="1"
+          value={config.manageUsersByType?.[type] ?? config.manageUsers ?? ''}
+          onChange={(e) => {
+            const v = e.target.value;
+            setUsersForType(type, v === '' ? 0 : (parseInt(v) || 0));
+          }}
+          className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
+          placeholder="Enter number of users"
+          autoComplete="off"
+        />
+      </div>
+    );
+
+    return (
+      <>
+        <fieldset className="group mb-8">
+          <legend className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+            <div className="w-8 h-8 bg-gradient-to-br from-violet-500 to-violet-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+              <Layers className="w-4 h-4 text-white" />
+            </div>
+            Data Sprawl Types
+          </legend>
+          <p className="text-sm text-gray-600 mb-3">
+            Select one or more. Each type is priced on its own user count.
+          </p>
+          <div className="flex flex-wrap gap-6 px-5 py-4 border-2 border-gray-200 rounded-xl bg-white/80 backdrop-blur-sm">
+            {SPRAWL_TYPE_ORDER.map((type) => (
+              <label key={type} className="flex items-center gap-2 text-lg font-medium text-gray-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={sprawlTypes.includes(type)}
+                  onChange={(e) => {
+                    const next = e.target.checked
+                      ? [...sprawlTypes, type]
+                      : sprawlTypes.filter((t) => t !== type);
+                    const newConfig = withSprawlTypes(config, next);
+                    setConfig(newConfig);
+                    onConfigurationChange(newConfig);
+                    try {
+                      sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                      const existing = sessionStorage.getItem('cpq_navigation_state');
+                      if (existing) {
+                        const navState = JSON.parse(existing);
+                        if (!navState.sessionState) navState.sessionState = {};
+                        navState.sessionState.configuration = newConfig;
+                        sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+                      }
+                    } catch (err) { console.warn('Could not save to sessionStorage:', err); }
+                  }}
+                  className="w-5 h-5 rounded border-2 border-gray-300 text-blue-600 focus:ring-4 focus:ring-blue-500/20 cursor-pointer"
+                />
+                {type}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        {/* One group per selected type, each asking for users plus that type's quantity. */}
+        {sprawlTypes.map((type) => (
+          <div key={type} className="rounded-xl border-2 border-gray-200 bg-white/60 px-6 py-6 mb-6">
+            <h4 className="text-base font-bold text-gray-900 mb-5">{sprawlRowLabel(type)}</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {usersFieldFor(type)}
+              {numberField(QUANTITY[type].key, QUANTITY[type].label, QUANTITY[type].grad, quantityIcon(type), QUANTITY[type].ph)}
+            </div>
+          </div>
+        ))}
+
+        {/* No sprawl type selected — legacy Manage keeps the agreement's own field rules. */}
+        {sprawlTypes.length === 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {showUsersField && usersField()}
+            {numberField('manageDataGB', 'Content data size in GB', 'from-emerald-500 to-emerald-600',
+              <Database className="w-4 h-4 text-white" />, '0 is valid (no data cost)')}
+          </div>
+        )}
+
+        <div className="mt-8">
+          {renderDiscountField()}
+        </div>
+      </>
+    );
+  };
+
+  const renderDiscountField = () => (
+    <>
+    {/* Discount - now visible in UI */}
+    <div className="group">
+      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+        <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-600 rounded-lg flex items-center justify-center">
+          <Percent className="w-4 h-4 text-white" />
+        </div>
+        Discount (%)
+      </label>
+      <input
+        type="number"
+        min={0}
+        step={0.01}
+        value={discountValue}
+        onChange={(e) => {
+          const raw = e.target.value;
+
+          // Allow empty value for clearing
+          if (raw === '') {
+            setDiscountValue('');
+            try {
+              localStorage.setItem('cpq_discount', '');
+              window.dispatchEvent(new CustomEvent('discountUpdated'));
+            } catch {}
+            return;
+          }
+
+          const numValue = Number(raw);
+
+          // Ensure value is not negative
+          if (numValue < 0) {
+            setDiscountValue('0');
+            try { 
+              sessionStorage.setItem('cpq_discount_session', '0');
+              window.dispatchEvent(new CustomEvent('discountUpdated'));
+            } catch {}
+            return;
+          }
+          
+          // Update the display value immediately
+          setDiscountValue(raw);
+          
+          // Save to sessionStorage + localStorage (source-of-truth used by QuoteGenerator),
+          // and notify other components
+          try { 
+            sessionStorage.setItem('cpq_discount_session', raw);
+            localStorage.setItem('cpq_discount', raw);
+            window.dispatchEvent(new CustomEvent('discountUpdated'));
+          } catch {}
+        }}
+       className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
+       placeholder={`Enter discount percentage`}
+      />
+      <button
+        type="button"
+        onClick={() => setShowDiscountRules(!showDiscountRules)}
+        className="text-xs text-blue-600 hover:text-blue-700 font-medium mt-2 cursor-pointer flex items-center gap-1"
+      >
+        {showDiscountRules ? '▼' : '▶'} Discount Rules
+      </button>
+      {showDiscountRules && (
+        <p className="text-xs text-gray-600 mt-2 ml-4 border-l-2 border-blue-300 pl-3">
+          • Discount available at any amount (no minimum)
+          <br />• No maximum limit
+          <br />• Discounts above 15% require additional approval (Team Lead, Technical, Legal)
+        </p>
+      )}
+    </div>
+    </>
+  );
+
   const handleContactInfoChange = (field: keyof typeof contactInfo, value: string) => {
     let processedValue = value;
     
@@ -1309,24 +1585,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       // Data Sprawl mode (E101) changes the required basis: Message/Email are priced
       // per user (E99), Content is priced per GB (E100). Fall back to the agreement's
       // requiresUsers rule when no sprawl type is selected.
-      const sprawlType = config.manageSprawlType;
-      if (sprawlType === 'Message' || sprawlType === 'Email') {
-        const mu = config.manageUsers;
-        if (mu === undefined || mu === null || mu <= 0) {
-          alert('Please enter the number of users for the Data Sprawl plan');
+      const sprawlTypes = normalizeSprawlTypes(config);
+      if (sprawlTypes.length > 0) {
+        // Every sprawl type carries its own user count (E99); Content adds a per-GB basis (E100).
+        const missingUsers = sprawlTypes.find(
+          t => !((config.manageUsersByType?.[t] ?? config.manageUsers ?? 0) > 0)
+        );
+        if (missingUsers) {
+          alert(`Please enter the number of users for ${sprawlRowLabel(missingUsers)}`);
           return;
         }
-      } else if (sprawlType === 'Content') {
-        // Content sprawl carries a per-user license (E99) AND a per-GB sprawl basis (E100).
-        const mu = config.manageUsers;
-        if (mu === undefined || mu === null || mu <= 0) {
-          alert('Please enter the number of users for the Data Sprawl plan');
-          return;
-        }
-        const gb = config.manageDataGB;
-        if (gb === undefined || gb === null || gb <= 0) {
-          alert('Please enter the data size in GB for the Data Sprawl plan');
-          return;
+        if (sprawlTypes.includes('Content')) {
+          const gb = config.manageDataGB;
+          if (gb === undefined || gb === null || gb <= 0) {
+            alert('Please enter the data size in GB for the Data Sprawl plan');
+            return;
+          }
         }
       } else if (showUsersField) {
         const mu = config.manageUsers;
@@ -1965,18 +2239,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 const selectedOption = options.find(o => o.value === config.migrationType);
                 const showUsersField = selectedOption ? selectedOption.requiresUsers !== false : true;
                 // Data Sprawl (E101) drives which basis input is collected:
-                // Message/Email → Number of Users (E99); Content → Data Size GB (E100).
-                // No sprawl type → keep the agreement's default behavior (manageRequiresUsers).
-                const sprawlType = config.manageSprawlType;
-                // Every sprawl type carries a per-user Manage license, so Users always shows
-                // when a sprawl type is selected. GB shows only for Content (the sprawl basis).
-                const showUsersInput = sprawlType ? true : showUsersField;
-                const showDataInput =
-                  sprawlType === 'Content'
-                    ? true
-                    : sprawlType === 'Message' || sprawlType === 'Email'
-                    ? false
-                    : true;
+                // Field visibility now lives in renderManagePlanInputs, which computes it
+                // from the config; this block only renders the agreement dropdown.
                 return (
                   <>
                     <select
@@ -1988,6 +2252,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         const newConfig = {
                           ...config,
                           migrationType: newMigrationType as any,
+                          manageAgreementLabel: selected?.label || '',
                           combination: 'manage-standalone',
                           timelineProjection: '',
                           servicePlan: 'Manage' as const,
@@ -2013,84 +2278,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         <option key={o.value} value={o.value}>{o.label}</option>
                       ))}
                     </select>
-                    <div className="rounded-xl border-2 border-slate-200 bg-white px-6 py-6 mt-4">
-                      <p className="text-sm font-semibold text-slate-800 mb-4">Manage plan inputs</p>
-                      <div className="mb-4">
-                        <label className="block text-xs font-semibold text-gray-700 mb-2">
-                          Data Sprawl Type
-                        </label>
-                        <select
-                          aria-label="Data Sprawl Type"
-                          value={config.manageSprawlType ?? ''}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            const next = v === '' ? undefined : (v as 'Content' | 'Message' | 'Email');
-                            const newConfig = { ...config, manageSprawlType: next };
-                            // Message/Email hide the GB input — clear any stale leftover value.
-                            if (next === 'Message' || next === 'Email') {
-                              newConfig.manageDataGB = 0;
-                            }
-                            setConfig(newConfig);
-                            onConfigurationChange(newConfig);
-                            try {
-                              sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                              const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
-                              if (!navState.sessionState) navState.sessionState = {};
-                              navState.sessionState.configuration = newConfig;
-                              sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
-                            } catch (err) { console.warn('Could not save to sessionStorage:', err); }
-                          }}
-                          className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 bg-white text-base"
-                        >
-                          <option value="">None</option>
-                          <option value="Content">Content</option>
-                          <option value="Message">Message</option>
-                          <option value="Email">Email</option>
-                        </select>
-                      </div>
-                      <div className={`grid grid-cols-1 ${showUsersInput && showDataInput ? 'md:grid-cols-2' : ''} gap-4`}>
-                        {showUsersInput && (
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-2">
-                              Number of Users
-                            </label>
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={config.manageUsers ?? ''}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                handleChange('manageUsers', v === '' ? 0 : (parseInt(v) || 0));
-                              }}
-                              className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 bg-white text-base"
-                              placeholder="Enter number of users"
-                              autoComplete="off"
-                            />
-                          </div>
-                        )}
-                        {showDataInput && (
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-2">
-                              Content data size in GB
-                            </label>
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={config.manageDataGB || ''}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                handleChange('manageDataGB', v === '' ? 0 : (parseInt(v) || 0));
-                              }}
-                              className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 bg-white text-base"
-                              placeholder={config.manageSprawlType === 'Content' ? 'Enter data size in GB' : '0 is valid (no data cost)'}
-                              autoComplete="off"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </div>
                   </>
                 );
               })()}
@@ -3805,6 +3992,17 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
+          {/* MANAGE PLAN: its own full-width section, same shell as Project Configuration below */}
+          {migrationOrTimeline === 'migration' && config.servicePlan === 'Manage' && !!config.migrationType && (
+            <div data-section="project-configuration" className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 rounded-2xl shadow-2xl border border-blue-100/50 p-8 backdrop-blur-sm mb-8">
+              <div className="text-center mb-8">
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Manage plan inputs</h3>
+                <p className="text-gray-600">Configure your Manage plan requirements</p>
+              </div>
+              {renderManagePlanInputs()}
+            </div>
+          )}
+
           {/* OTHER MIGRATION TYPES: Standard single configuration (excluding Manage plan) */}
           {config.migrationType && config.migrationType !== 'Multi combination' && config.servicePlan !== 'Manage' && !!config.combination && (
             <div data-section="project-configuration" className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 rounded-2xl shadow-2xl border border-blue-100/50 p-8 backdrop-blur-sm">
@@ -4018,73 +4216,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   </div>
                 )}
 
-                {/* Discount - now visible in UI */}
-                <div className="group">
-                  <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                    <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-600 rounded-lg flex items-center justify-center">
-                      <Percent className="w-4 h-4 text-white" />
-                    </div>
-                    Discount (%)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={discountValue}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-
-                      // Allow empty value for clearing
-                      if (raw === '') {
-                        setDiscountValue('');
-                        try {
-                          localStorage.setItem('cpq_discount', '');
-                          window.dispatchEvent(new CustomEvent('discountUpdated'));
-                        } catch {}
-                        return;
-                      }
-
-                      const numValue = Number(raw);
-
-                      // Ensure value is not negative
-                      if (numValue < 0) {
-                        setDiscountValue('0');
-                        try { 
-                          sessionStorage.setItem('cpq_discount_session', '0');
-                          window.dispatchEvent(new CustomEvent('discountUpdated'));
-                        } catch {}
-                        return;
-                      }
-                      
-                      // Update the display value immediately
-                      setDiscountValue(raw);
-                      
-                      // Save to sessionStorage + localStorage (source-of-truth used by QuoteGenerator),
-                      // and notify other components
-                      try { 
-                        sessionStorage.setItem('cpq_discount_session', raw);
-                        localStorage.setItem('cpq_discount', raw);
-                        window.dispatchEvent(new CustomEvent('discountUpdated'));
-                      } catch {}
-                    }}
-                   className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
-                   placeholder={`Enter discount percentage`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowDiscountRules(!showDiscountRules)}
-                    className="text-xs text-blue-600 hover:text-blue-700 font-medium mt-2 cursor-pointer flex items-center gap-1"
-                  >
-                    {showDiscountRules ? '▼' : '▶'} Discount Rules
-                  </button>
-                  {showDiscountRules && (
-                    <p className="text-xs text-gray-600 mt-2 ml-4 border-l-2 border-blue-300 pl-3">
-                      • Discount available at any amount (no minimum)
-                      <br />• No maximum limit
-                      <br />• Discounts above 15% require additional approval (Team Lead, Technical, Legal)
-                    </p>
-                  )}
-                </div>
+                {renderDiscountField()}
 
                 {/* Messages Field - Show for Messaging, Hide for Content and overage agreement */}
                 {config.migrationType === 'Messaging' && config.combination !== 'overage-agreement' && (
