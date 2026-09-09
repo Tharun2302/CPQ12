@@ -6,6 +6,7 @@ import { BACKEND_URL } from '../config/api';
 import { SUPPRESS_PII } from '../analytics/privacy';
 import EsignPdfPageView from '../components/EsignPdfPageView';
 import { cssStackForEsignTextFont, normalizeEsignTextColor } from '../utils/esignTextFieldStyle';
+import { esignFieldRenderMode, isEsignFieldValuePrefilled } from '../utils/esignFieldRender';
 
 const PDF_SCALE = 2.0;
 
@@ -66,10 +67,9 @@ function getInitialFieldValues(fieldList: SignatureField[]): Record<number, stri
   return out;
 }
 
-/** Creator typed text in Place Fields → show as static copy on the sign page (not an editable box). */
+/** Creator typed text in Place Fields, or a reviewer's saved entry → static copy, not an editable box. */
 function isEsignTextPrefilled(f: SignatureField): boolean {
-  const p = f.prefill;
-  return typeof p === 'string' && p.trim().length > 0;
+  return isEsignFieldValuePrefilled(f);
 }
 
 /** Name/title stay one line; box grows horizontally while typing (sign + review UIs). */
@@ -1333,7 +1333,7 @@ const EsignSignPage: React.FC = () => {
                 <div
                   key={pageNum}
                   data-page={pageNum}
-                  className="flex flex-col items-center py-4 first:pt-4 last:pb-4"
+                  className="flex flex-col items-center py-4 first:pt-4 last:pb-4 w-full max-w-4xl mx-auto px-2"
                 >
                   <span className="text-xs font-medium text-slate-500 mb-2">Page {pageNum} of {totalPages}</span>
                   <div className="rounded-lg overflow-hidden shadow-sm w-full max-w-full">
@@ -2086,6 +2086,7 @@ const EsignSignPage: React.FC = () => {
                           .filter(({ f }) => (f.page || 1) === pageNum)
                           .map(({ f, globalIdx }) => {
                             const isSignature = f.type === 'signature';
+                            const renderMode = esignFieldRenderMode(f);
                             const growNt = !isSignature && isGrowNameTitleField(f);
                             const baseSt = getFieldStyle(f);
                             const fieldVal = fieldValues[globalIdx];
@@ -2147,36 +2148,34 @@ const EsignSignPage: React.FC = () => {
                                       Sign Here
                                     </button>
                                   )
-                                ) : f.type === 'text' ? (
-                                  isEsignTextPrefilled(f) ? (
-                                    <div
-                                      className="w-full h-full min-h-0 flex items-start justify-start overflow-y-auto text-xs leading-snug whitespace-pre-wrap select-none"
-                                      style={{
-                                        color: normalizeEsignTextColor(f.text_color ?? undefined),
-                                        fontFamily: cssStackForEsignTextFont(f.text_font ?? undefined),
-                                      }}
-                                    >
-                                      {fieldValues[globalIdx] ?? f.prefill ?? ''}
-                                    </div>
-                                  ) : (
-                                    <textarea
-                                      value={fieldValues[globalIdx] ?? ''}
-                                      onFocus={() => setActiveFieldIdx(globalIdx)}
-                                      onChange={(e) =>
-                                        setFieldValues((prev) => ({
-                                          ...prev,
-                                          [globalIdx]: e.target.value.slice(0, 4000),
-                                        }))
-                                      }
-                                      placeholder="Type notes or extra text for this document"
-                                      rows={3}
-                                      className="w-full min-h-[4.5rem] max-h-full text-xs border border-slate-300 rounded px-1 py-0.5 bg-white/95 resize-none overflow-y-auto leading-snug placeholder:opacity-45"
-                                      style={{
-                                        color: normalizeEsignTextColor(f.text_color ?? undefined),
-                                        fontFamily: cssStackForEsignTextFont(f.text_font ?? undefined),
-                                      }}
-                                    />
-                                  )
+                                ) : renderMode === 'static' ? (
+                                  <div
+                                    className="w-full h-full min-h-0 flex items-start justify-start overflow-y-auto text-xs leading-snug whitespace-pre-wrap select-none"
+                                    style={{
+                                      color: normalizeEsignTextColor(f.text_color ?? undefined),
+                                      fontFamily: cssStackForEsignTextFont(f.text_font ?? undefined),
+                                    }}
+                                  >
+                                    {fieldValues[globalIdx] ?? f.prefill ?? ''}
+                                  </div>
+                                ) : renderMode === 'textarea' ? (
+                                  <textarea
+                                    value={fieldValues[globalIdx] ?? ''}
+                                    onFocus={() => setActiveFieldIdx(globalIdx)}
+                                    onChange={(e) =>
+                                      setFieldValues((prev) => ({
+                                        ...prev,
+                                        [globalIdx]: e.target.value.slice(0, 4000),
+                                      }))
+                                    }
+                                    placeholder="Type notes or extra text for this document"
+                                    rows={3}
+                                    className="w-full min-h-[4.5rem] max-h-full text-xs border border-slate-300 rounded px-1 py-0.5 bg-white/95 resize-none overflow-y-auto leading-snug placeholder:opacity-45"
+                                    style={{
+                                      color: normalizeEsignTextColor(f.text_color ?? undefined),
+                                      fontFamily: cssStackForEsignTextFont(f.text_font ?? undefined),
+                                    }}
+                                  />
                                 ) : (
                                   <input
                                     type={f.type === 'date' ? 'date' : 'text'}
