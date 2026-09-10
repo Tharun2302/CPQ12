@@ -119,6 +119,13 @@ const {
   actorIsEsignDocumentCreator,
 } = require('./esign-creator-utils.cjs');
 
+const {
+  summarizeEsignRecipientProgress,
+  esignRecipientDisplayLabel,
+  formatEsignProgressLine,
+  esignProgressActionLabel,
+} = require('./esign-progress-utils.cjs');
+
 /** Email to notify for creator-facing e-sign events (matches list "Created by" when uploaded_by is not an address). */
 function getEsignDocumentCreatorNotifyEmail(doc) {
   return esignDocumentCreatorEmail(doc);
@@ -1285,31 +1292,6 @@ async function sendEsignDeniedNotificationToCreator(doc, recipient, comment, den
   }
 }
 
-// Notify document creator when all recipients have signed or reviewed (envelope completed).
-async function sendEsignCompletedNotificationToCreator(doc) {
-  const creatorEmail = getEsignDocumentCreatorNotifyEmail(doc);
-  if (!creatorEmail || !creatorEmail.includes('@')) return;
-  if (!process.env.SENDGRID_API_KEY) {
-    console.warn('📧 E-sign completion notification: SENDGRID_API_KEY not set — creator not emailed.');
-    return;
-  }
-  const fileName = doc.file_name || 'Document';
-  const safe = String(fileName).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const subject = `E-sign completed: ${sanitizeEsignEmailSubjectFileName(fileName)}`;
-  const html = `
-    <p>All recipients have finished signing or reviewing your document.</p>
-    <p><strong>Document:</strong> ${safe}</p>
-    <p>You can open <strong>e sign</strong> or <strong>e sign status</strong> in the app to download the signed PDF.</p>
-  `;
-  try {
-    const result = await sendEmail(creatorEmail, subject, html);
-    if (result.success) console.log('✅ E-sign completion notification sent to creator', creatorEmail);
-    else console.warn('❌ E-sign completion notification not sent to creator', creatorEmail, result.error);
-  } catch (err) {
-    console.warn('E-sign completion notification to creator failed', creatorEmail, err?.message || err);
-  }
-}
-
 async function sendEsignForwardedNotificationToCreator(doc, previousRecipient, nextRecipient, comment) {
   const creatorEmail = getEsignDocumentCreatorNotifyEmail(doc);
   if (!creatorEmail || !creatorEmail.includes('@')) return;
@@ -1337,6 +1319,43 @@ async function sendEsignForwardedNotificationToCreator(doc, previousRecipient, n
     else console.warn('❌ E-sign forwarded notification not sent to creator', creatorEmail, result.error);
   } catch (err) {
     console.warn('E-sign forwarded notification to creator failed', creatorEmail, err?.message || err);
+  }
+}
+
+// Notify document creator each time one recipient reviews or signs (envelope not yet finished).
+async function sendEsignProgressNotificationToCreator(doc, recipient, action) {
+  const creatorEmail = getEsignDocumentCreatorNotifyEmail(doc);
+  if (!creatorEmail || !creatorEmail.includes('@')) return;
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('📧 E-sign progress notification: SENDGRID_API_KEY not set — creator not emailed.');
+    return;
+  }
+  if (!db) return;
+  // Re-read the recipient list here so the counts and the outstanding names come from one consistent snapshot.
+  const recipients = await db.collection('esign_recipients')
+    .find(esignRecipientsDocumentFilter(doc._id))
+    .sort({ order: 1, _id: 1 })
+    .toArray();
+  const progress = summarizeEsignRecipientProgress(recipients);
+  const fileName = doc.file_name || 'Document';
+  const subject = progress.total === 0
+    ? `E-sign progress: ${sanitizeEsignEmailSubjectFileName(fileName)}`
+    : `E-sign progress (${progress.completed} of ${progress.total}): ${sanitizeEsignEmailSubjectFileName(fileName)}`;
+  const actorLabel = esignRecipientDisplayLabel(recipient || {});
+  const html = `
+    <p>A recipient has acted on your e-sign document.</p>
+    <p><strong>Document:</strong> ${escapeHtml(fileName)}</p>
+    <p><strong>Recipient:</strong> ${escapeHtml(actorLabel)}${recipient?.email ? ` (${escapeHtml(recipient.email)})` : ''}</p>
+    <p><strong>Action:</strong> ${escapeHtml(esignProgressActionLabel(action))}</p>
+    <p><strong>Progress:</strong> ${escapeHtml(formatEsignProgressLine(progress))}</p>
+    <p>You can track the full status in e sign status in the app.</p>
+  `;
+  try {
+    const result = await sendEmail(creatorEmail, subject, html);
+    if (result.success) console.log('✅ E-sign progress notification sent to creator', creatorEmail);
+    else console.warn('❌ E-sign progress notification not sent to creator', creatorEmail, result.error);
+  } catch (err) {
+    console.warn('E-sign progress notification to creator failed', creatorEmail, err?.message || err);
   }
 }
 
@@ -8365,6 +8384,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
 }
 
 const {
+  ESIGN_RECIPIENT_DONE_STATUSES,
   esignSequentialAdvanceAllowed,
   pickNextEsignSequentialRecipient,
   resolveEsignSigningOrderEnforced,
@@ -9557,6 +9577,14 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
         }
       }
     }
+    const esignCompletionEmailSent = envelopeComplete && !esignEnvelopeWasAlreadyCompleted;
+    if (!esignCompletionEmailSent) {
+      try {
+        await sendEsignProgressNotificationToCreator(doc, recipient, 'reviewed');
+      } catch (progressNotifyErr) {
+        console.warn('E-sign progress email failed (non-fatal):', progressNotifyErr?.message || progressNotifyErr);
+      }
+    }
     let nextRecipientEmailed = null;
     if (!envelopeComplete) {
       nextRecipientEmailed = await advanceEsignSequentialSigning(docId, recipient.email || null);
@@ -10295,6 +10323,8 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
     const signedFileData = Buffer.from(signedBytes).toString('base64');
 
     if (signing_token) {
+      const esignActingRecipient = recipient || await db.collection('esign_recipients').findOne({ signing_token });
+      const esignRecipientAlreadyActed = ESIGN_RECIPIENT_DONE_STATUSES.includes(String(esignActingRecipient?.status || ''));
       await db.collection('esign_recipients').updateOne(
         { signing_token },
         { $set: { status: 'signed', signed_at: new Date() } }
@@ -10305,7 +10335,8 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
         ...recipientFilter,
         status: { $in: ['signed', 'reviewed'] },
       });
-      if (totalCount > 0 && completedCount >= totalCount) {
+      const envelopeComplete = totalCount > 0 && completedCount >= totalCount;
+      if (envelopeComplete) {
         await db.collection('esign_documents').updateOne(
           { _id: docId },
           { $set: { status: 'completed', signed_file_path: outPath, signed_file_data: signedFileData, signed_at: new Date() } }
@@ -10323,6 +10354,14 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
           { _id: docId },
           { $set: { signed_file_path: outPath, signed_file_data: signedFileData, signed_at: new Date(), signer_email: signer_email || null } }
         );
+      }
+      const esignCompletionEmailSent = envelopeComplete && !esignDocWasAlreadyCompleted;
+      if (!esignCompletionEmailSent && !esignRecipientAlreadyActed) {
+        try {
+          await sendEsignProgressNotificationToCreator(doc, esignActingRecipient, 'signed');
+        } catch (progressNotifyErr) {
+          console.warn('E-sign progress email failed (non-fatal):', progressNotifyErr?.message || progressNotifyErr);
+        }
       }
     } else {
       await db.collection('esign_documents').updateOne(
