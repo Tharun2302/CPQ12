@@ -66,20 +66,54 @@ const BUG_LINES = [
 // layer existed) and committed as a fixture, so the regression check does not depend on git
 // still holding the pre-change file. This is requirement F4: with the AI layer off the Teams
 // text must stay byte-identical to what the team sees today.
-describe('buildMessage() byte-identity against the pre-change implementation', () => {
-  it('reproduces every captured case exactly', () => {
+// The Teams payload is now redacted (the AI path always was; the raw-line path was not, so a
+// stack trace or a stray credential went to Power Automate verbatim). The captured fixture is
+// still the pre-change output, and the LAYOUT must still reproduce it byte for byte — only the
+// bullet CONTENT is allowed to change. The leak check below is written from independent shapes,
+// not from the production redaction table, so it can actually fail.
+const skeleton = (text: string) => text.split('\n')
+  .map((l) => (l.startsWith('• ') ? '• ' : l)).join('\n');
+const LEAK_SHAPES: Array<[RegExp, string]> = [
+  [/\b(?:\d{1,3}\.){3}\d{1,3}\b/, 'IPv4 address'],
+  [/[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}/, 'email address'],
+  [/mongodb\.net/, 'Atlas cluster host'],
+  [/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i, 'UUID'],
+];
+
+describe('buildMessage() layout is byte-identical to the pre-change implementation', () => {
+  it('reproduces the layout of every captured case exactly', () => {
     expect(buildMessageGolden.length).toBeGreaterThan(80);
     const mismatches: string[] = [];
     for (const c of buildMessageGolden) {
       const actual = buildMessage(c.summary, c.userLines, c.bugLines);
-      if (actual !== c.expected) mismatches.push(c.name);
+      if (skeleton(actual) !== skeleton(c.expected)) mismatches.push(c.name);
     }
     expect(mismatches).toEqual([]);
   });
+
+  it('lets no address, email, cluster host or UUID reach the Teams payload', () => {
+    const leaked: string[] = [];
+    for (const c of buildMessageGolden) {
+      const actual = buildMessage(c.summary, c.userLines, c.bugLines);
+      for (const [shape, label] of LEAK_SHAPES) {
+        if (shape.test(actual)) leaked.push(`${c.name}: ${label}`);
+      }
+    }
+    expect(leaked).toEqual([]);
+  });
 });
 
-describe('buildMessage() fallback — snapshot of pre-change behaviour', () => {
-  it('renders user and bug sections exactly as before', () => {
+// Hand-written literals, not values computed from redact(): these pin the exact bytes the team
+// sees in Teams, so a change to the redaction table shows up here as a diff to read.
+const REDACTED_BUG_LINES = [
+  '{"timestamp":"2026-09-09T06:11:02.399Z","level":"error","source":"server",'
+  + '"message":"X E-sign expiry reminder job failed: connect ETIMEDOUT [IP]"}',
+  '{"timestamp":"2026-09-09T06:11:02.400Z","level":"error","source":"server",'
+  + '"message":"X Auto-reminder job failed: connect ETIMEDOUT [IP]"}',
+];
+
+describe('buildMessage() fallback — snapshot, with the Teams payload redacted', () => {
+  it('renders user and bug sections in the same shape, with the address masked', () => {
     expect(buildMessage(SUMMARY, [USER_LINE], BUG_LINES)).toBe(
       '🔎 CPQ12 User & Error Monitor\n'
       + 'Time: 2026-09-09T06:11:30.000Z\n'
@@ -91,12 +125,12 @@ describe('buildMessage() fallback — snapshot of pre-change behaviour', () => {
       + `• ${USER_LINE}\n`
       + '\n'
       + 'GENERIC ERRORS (why):\n'
-      + `• ${BUG_LINES[0]}\n`
-      + `• ${BUG_LINES[1]}`,
+      + `• ${REDACTED_BUG_LINES[0]}\n`
+      + `• ${REDACTED_BUG_LINES[1]}`,
     );
   });
 
-  it('renders a bugs-only message exactly as before', () => {
+  it('renders a bugs-only message in the same shape', () => {
     expect(buildMessage({ ...SUMMARY, userCount: 0 }, [], BUG_LINES)).toBe(
       '🔎 CPQ12 User & Error Monitor\n'
       + 'Time: 2026-09-09T06:11:30.000Z\n'
@@ -105,8 +139,8 @@ describe('buildMessage() fallback — snapshot of pre-change behaviour', () => {
       + 'User-activity events: 0\n'
       + '\n'
       + 'GENERIC ERRORS (why):\n'
-      + `• ${BUG_LINES[0]}\n`
-      + `• ${BUG_LINES[1]}`,
+      + `• ${REDACTED_BUG_LINES[0]}\n`
+      + `• ${REDACTED_BUG_LINES[1]}`,
     );
   });
 
@@ -123,8 +157,25 @@ describe('buildMessage() fallback — snapshot of pre-change behaviour', () => {
   });
 
   it('still truncates a long line at 280 chars with an ellipsis', () => {
+    // Spaced so the base64/blob rule does not mask it first — this test is about truncation.
+    const long = 'E '.repeat(200);
+    const out = buildMessage({ ...SUMMARY, bugCount: 1, userCount: 0 }, [], [long]);
+    expect(out.endsWith('• ' + long.slice(0, 280) + '…')).toBe(true);
+  });
+
+  it('masks a 300-char blob rather than shipping 280 chars of it', () => {
     const out = buildMessage({ ...SUMMARY, bugCount: 1, userCount: 0 }, [], ['E'.repeat(300)]);
-    expect(out.endsWith('• ' + 'E'.repeat(280) + '…')).toBe(true);
+    expect(out.endsWith('• [BLOB]')).toBe(true);
+  });
+
+  it('masks a stack trace instead of sending the disk layout to Power Automate', () => {
+    const line = 'Error: Not allowed by CORS: https://167.71.227.231 at origin '
+      + '(/app/server.cjs:1349:42) at /app/node_modules/cors/lib/index.js:219:13';
+    const out = buildMessage({ ...SUMMARY, bugCount: 1, userCount: 0 }, [], [line]);
+    expect(out).toContain('• Error: Not allowed by CORS: https://[IP] at origin '
+      + '([SRC:server.cjs]) at [DEP:cors]');
+    expect(out).not.toContain('/app/');
+    expect(out).not.toContain('167.71.227.231');
   });
 });
 
@@ -1049,7 +1100,7 @@ describe('explainErrors', () => {
     log.mockRestore();
   });
 
-  it('aborts before any request is built when the guard trips', async () => {
+  it('aborts before any request is built when the guard trips on every group', async () => {
     // The guard is a redundant net: with the current table nothing survives redaction to trip it,
     // so a future unmasked shape is simulated here. What matters is that a trip stops the call.
     let requested = 0;
@@ -1060,14 +1111,45 @@ describe('explainErrors', () => {
     expect(res.aiStatus).toBe('failed_redaction_guard');
     expect(res.ai).toBeNull();
     expect(requested).toBe(0);
-    expect(warn.mock.calls.flat().join(' ')).toContain('redaction guard tripped');
+    expect(warn.mock.calls.flat().join(' ')).toContain('redaction guard dropped');
+  });
+
+  it('drops only the offending group instead of losing the whole window', async () => {
+    // One dirty group used to cost every group in the window its explanation. e2 is the
+    // auto-reminder group; the fixture answers for e1 only, which is exactly what gets sent.
+    const oneGroup = path.join(dir, 'one-group.json');
+    fs.writeFileSync(oneGroup, JSON.stringify({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            overallSummary: 'Atlas was unreachable.',
+            worstSeverity: 'high',
+            explanations: [{
+              id: 'e1', whatBroke: 'The expiry reminder job could not run.',
+              likelyCause: 'Atlas connect timed out.', affectedArea: 'e-signature',
+              severity: 'high', nextStep: 'Check the Atlas IP access list.', confidence: 'high',
+            }],
+          }),
+        },
+        finish_reason: 'stop',
+      }],
+    }));
+    const res = await explainErrors(fixtureLines(), ctx(okEnv({ AI_FIXTURE_FILE: oneGroup }), {
+      guardFn: (t: string) => t.includes('Auto-reminder'),
+    }));
+    expect(res.aiStatus).toBe('ok_guard_dropped');
+    expect(res.ai).not.toBeNull();
+    expect((res.ai as AiResult).explanations.map((e) => e.id)).toEqual(['e1']);
+    expect(warn.mock.calls.flat().join(' ')).toContain('redaction guard dropped 1 of 2');
   });
 
   it('proceeds when the guard is clean, and the guard sees the fully redacted payload', async () => {
     const seen: string[] = [];
     const res = await explainErrors(fixtureLines(), ctx(okEnv(), { guardFn: (t: string) => { seen.push(t); return false; } }));
     expect(res.aiStatus).toBe('ok');
-    expect(seen).toHaveLength(1);
+    // Once per group, then once more on the whole assembled prompt as the fail-closed backstop.
+    expect(seen.length).toBeGreaterThan(1);
+    seen.splice(0, seen.length - 1);
     // The system prompt legitimately names the .mongodb.net suffix; the log content must not
     // carry a real cluster host, an address or an IP.
     const userPart = seen[0].split('Scan window:')[1];

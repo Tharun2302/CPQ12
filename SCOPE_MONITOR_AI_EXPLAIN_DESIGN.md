@@ -79,7 +79,7 @@ The layer calls an LLM once per scan, only when the scan is dirty, on a deduplic
 | 37–48 | `GENERIC_PATTERNS` (12 regexes) and `USER_ACTIVITY_PATTERNS` (10 regexes). |
 | 51–53 | `NOISE_PATTERNS` — one entry, the zenop.ai CORS line. |
 | 58–62 | `classify(line)` — substring regex test against the **whole raw line**, including the JSON envelope. |
-| 64–78 | `getContainerLogs()` — `docker logs --since 16m cpq-application`, split on newlines. Returns `[]` on failure. |
+| 64–78 | `getContainerLogs()` — `docker logs --since 16m cpq-application`, split on newlines. Returns `[]` on failure. **Superseded — see §17.** |
 | 80–108 | `postToTeams(payload)` — plain `https`/`http`, resolves `false` on any error. Never rejects. Good model to copy. |
 | **110–131** | **`buildMessage()` — the gap.** Prints raw lines under `USER-ACTIVITY (why):` and `GENERIC ERRORS (why):`. There is no "why" anywhere in this function. |
 | 135–189 | `main()` — scan, write report, build message, post. |
@@ -841,7 +841,7 @@ Other design points:
 The flow consumes `message`, `bugCount`, `userCount`, `generatedAt`, `healthy`. All five keep their exact names, types and semantics — `message` is still a plain string, it just contains better text. Power Automate ignores unrecognised JSON properties as long as the flow's schema does not reject extras. Two caveats for the DevOps handover:
 
 1. If the flow's **Parse JSON** action has `additionalProperties: false` in its schema, adding fields **will** break it. Verify before the first production run. The fix is to relax that constraint or regenerate the schema from a sample — not to drop the fields.
-2. `healthy` must keep meaning "no errors found", **not** "AI succeeded". An AI failure on a dirty scan is still `healthy: false`; an AI failure on a clean scan is still `healthy: true`.
+2. `healthy` must keep meaning "no errors found", **not** "AI succeeded". An AI failure on a dirty scan is still `healthy: false`; an AI failure on a clean scan is still `healthy: true`. **Amended — see §17: a scan that could not read the logs is now `healthy: false` too, because it cannot substantiate the claim.**
 
 Note that `bugCount` will drop once `❌ Errors: 0` joins `NOISE_PATTERNS` (§3.3b). If anyone has built a threshold or chart on that number, it will step down — worth mentioning when handing over.
 
@@ -1104,3 +1104,69 @@ fix already recorded in §16.1.
 - **`postToTeams` never passed the URL port**, so any webhook URL with an explicit port was sent to :80/:443. Pre-existing, present in the original committed file, invisible in production only because Teams webhook URLs use the default port. Fixed with `port: url.port || undefined` — behaviour-identical for a default-port URL. This required touching `postToTeams`, which the fix brief placed off-limits; without it the item 15 cron-safety tests cannot reach a local webhook stub at all.
 - **An unwritable `REPORT_DIR` killed the alert.** `ensureDir` and the report write sat outside every try/catch, so a full disk or a permissions change meant exit 1 and no Teams post — the same availability class as item 1. Both are now non-fatal and the run still posts.
 - **`buildMessage()` byte-identity is now a committed test.** 90 cases captured from the pre-change implementation live in `tests/fixtures/buildMessageGolden.json`; the check no longer depends on an ad-hoc script or on git still holding the original file. Verified by mutation to fail on a one-character change to the fallback text.
+
+---
+
+## 17. Amendments from the stderr-capture bug fix (2026-09-10)
+
+The sections above describe the design as written. This section records where the shipped code now differs, following a production bug and two fix passes. Where they conflict, this section is correct.
+
+### 17.1 The bug that forced these changes
+
+`getContainerLogs()` read logs with `execFileSync`, which returns **stdout only** — Node forwards the child's **stderr** to the parent instead. `server/logger.cjs` sends `error` and `warn` to stderr, so **100% of error-level lines were never scanned**. Measured on production over a 24-hour window: 0 error lines on stdout, 2 on stderr, while the monitor reported `bugCount=6` (all info-level OnlyOffice `forcesave` noise) and posted `✅ HEALTHY`.
+
+This also explains why the AI layer appeared to work but never produced output: `isAiEligible` requires `level === 'error' || 'warn'`, and no such line ever reached it. Every scan returned `skipped_not_eligible`.
+
+Consequence for anyone reading historical data: **`bugCount` is not comparable across this fix**, and no "HEALTHY" message predating it is evidence of a healthy server.
+
+### 17.2 `getContainerLogs()` — new contract
+
+Returns `{ok, lines, reason}`, not `string[]`. Uses `spawnSync` and concatenates **stderr first, then stdout** — stderr leads deliberately, because `buildMessage()` samples only the first `MAX_SAMPLE_LINES` bullets and stdout noise would otherwise crowd real errors out of the alert. Chronological interleaving between the two streams is therefore not preserved; every line carries its own `timestamp` and nothing downstream depends on order.
+
+`maxBuffer` is `DOCKER_MAX_BUFFER_BYTES`, default 8 MB, applied **per stream** (so the real ceiling is twice that). 64 MB was rejected: on the 1 GB production droplet the merge-and-split cost measured ~3× the log size, and an unauthenticated bad-`Origin` CORS flood can drive that buffer, risking the OOM killer taking mongo or `cpq-application`.
+
+`DOCKER_TIMEOUT_MS` (default 60 s) bounds a wedged daemon.
+
+### 17.3 New payload keys and the `healthy` amendment
+
+Additive, so the "CPQ Server Alerts" Power Automate flow needs no edit — the five original keys keep their names and types:
+
+| Key | Meaning |
+|---|---|
+| `scanOk` | `false` when the logs could not be read at all |
+| `scanError` | redacted reason for the failed read |
+
+`healthy` is now `false` on a read failure, and the message is `⚠️ MONITOR DEGRADED` rather than `✅ HEALTHY`. **This is a visible behaviour change**: a flow that alerts on `!healthy` will now alert on docker read failures where it was previously silent. That is intended — the old behaviour asserted "All working good" during the exact incidents the monitor exists to catch.
+
+The §11.2 clearance ("no flow changes needed") was given against the pre-amendment contract and does not cover this. The flow owner has been informed.
+
+### 17.4 New `aiStatus` values, beyond the §9 matrix
+
+| Status | Meaning |
+|---|---|
+| `failed_log_read` | logs unreadable; the AI layer is skipped rather than run on a partial window |
+| `ok_guard_dropped` | at least one error group tripped the redaction guard and was dropped; the rest were explained |
+
+### 17.5 Line capping and the ReDoS fix
+
+The email rules in `fingerprint()`, `REDACTIONS` and `RESIDUAL_SHAPES`, and both `.mongodb.net` rules, had unbounded leading quantifiers and were quadratic. Measured before the fix: a 128 KB line took 15.5 s end-to-end and a 3 MB line extrapolated to roughly 2.5 hours — a hang, not a crash, which no test could catch. Latent until this fix, then reachable, because stderr carries whole-object `console.error` dumps as single lines and the buffer had been raised.
+
+Fixed on both axes: quantifiers bounded to RFC 5321 limits, **and** `capScanLine()` caps every scanned line at 8192 characters in `getContainerLogs()`, covering both the docker and `MONITOR_LOG_FILE` branches. `hasResidualSecret()` is deliberately **not** capped — it guards the whole assembled prompt, so truncating its input would be a hole — but is now linear.
+
+### 17.6 Stack-trace normalization
+
+The §7 redaction table was calibrated on "314 production log messages" that, by construction, came only from stdout — so the corpus contained **zero stack traces** and the entropy threshold was never valid for them. Three rules now normalize frames before the IPv4 rule: `[DEP:<module>]`, `[SRC:<basename>]`, `[NODE_INTERNAL]`. The guard also runs **per group**, dropping only offenders, with the whole-payload guard retained as a fail-closed backstop.
+
+### 17.7 Known-open items
+
+Tracked, not fixed in this change. **The first four must be closed before `AI_PROVIDER` is set on any host** — all are dormant while it is empty:
+
+1. `renderAiMessage()` emits **raw, unredacted** lines to Teams (`bullet()` in `buildMessage()` redacts; the AI renderer does not). Verified to leak passwords, customer emails and JWTs.
+2. A group dropped by the per-group guard disappears from the alert entirely — no explanation, no raw line, no notice. Worse in combination with item 3.
+3. The `MONGO_HOST` rule requires a 6+ character middle label; real Atlas project ids are 5, so real cluster hostnames are not masked — they then trip the guard and vanish via item 2.
+4. `capScanLine`'s 8192 cap runs before `JSON.parse`, so an oversized `/api/client-log` body fails to parse, loses its `source: 'client'` tag, and reaches the AI prompt via the generic-pattern fallback — defeating the client-log exclusion by padding.
+5. `server.cjs` concatenates the raw `Origin` header into CORS errors, giving an unauthenticated caller a text channel into the logs.
+6. `capFrames()` is a no-op on the standard V8 `at fn (/path:1:1)` frame format; its tests only exercise the anonymous form.
+7. `resolveConfig` still uses bare `parseInt` for seven live `AI_*` variables, so exponent notation silently truncates (`AI_MAX_TOKENS=4e3` → 4).
+8. `partitionCliErrors` matches three known docker CLI wordings and is `^`-anchored; a fourth wording, or one preceded by whitespace, is scanned as an application error. Fails toward a false alert, never a false green — the anchor is load-bearing and must not be loosened to a substring match.
+9. `spawn` + `readline` with a bounded ring buffer remains the better design than a `maxBuffer` ceiling: on ENOBUFS the whole window is currently discarded, and a log storm is exactly when the window matters.

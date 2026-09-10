@@ -19,6 +19,10 @@ const MAX_TIMEOUT_MS = 60000;
 const MAX_BUDGET_MS = 120000;
 
 const FIELD_LIMITS = { whatBroke: 140, likelyCause: 220, nextStep: 180 };
+// One log line is never worth more than this: the alert samples 280 chars and the prompt 400, so
+// anything past 8 KB is pure regex work on text nothing downstream will ever show.
+const MAX_SCAN_LINE_CHARS = 8192;
+const MAX_PROMPT_FRAMES = 2;
 const AFFECTED_AREAS = ['e-signature', 'pdf-generation', 'email', 'database', 'pricing-quotes',
   'authentication', 'integrations', 'infrastructure', 'unknown'];
 const SEVERITIES = ['critical', 'high', 'medium', 'low'];
@@ -101,6 +105,39 @@ const RESPONSE_SCHEMA = {
   },
 };
 
+// ---- Line bounding --------------------------------------------------------
+
+/** Truncates one log line to MAX_SCAN_LINE_CHARS, keeping the drop visible. */
+function capScanLine(text, maxChars) {
+  const value = String(text == null ? '' : text);
+  const ok = Number.isFinite(maxChars) && maxChars > 0;
+  const cap = ok ? Math.floor(maxChars) : MAX_SCAN_LINE_CHARS;
+  if (value.length <= cap) return value;
+  return `${value.slice(0, cap)}…[+${value.length - cap} chars truncated]`;
+}
+
+/**
+ * Keeps the first `maxFrames` stack frames of a message and drops the rest.
+ * Frames past the top two add nothing the model can use, and every one of them is a path.
+ */
+function capFrames(text, maxFrames) {
+  const value = String(text == null ? '' : text);
+  const ok = Number.isFinite(maxFrames) && maxFrames >= 0;
+  const limit = ok ? Math.floor(maxFrames) : MAX_PROMPT_FRAMES;
+  let from = 0;
+  let seen = 0;
+  for (;;) {
+    const at = value.indexOf(' at ', from);
+    if (at === -1) return value;
+    from = at + 4;
+    // " at " also occurs in prose, so only a token carrying a path or call site is a frame.
+    const token = value.slice(from, from + 80).split(/\s/)[0];
+    if (!/[/\(]/.test(token)) continue;
+    seen += 1;
+    if (seen > limit) return `${value.slice(0, at).trimEnd()} …`;
+  }
+}
+
 // ---- Parsing, eligibility, grouping ---------------------------------------
 
 /**
@@ -117,7 +154,7 @@ function toIsoOrNull(value) {
 }
 
 function parseLogLine(raw) {
-  const line = typeof raw === 'string' ? raw : String(raw == null ? '' : raw);
+  const line = capScanLine(typeof raw === 'string' ? raw : String(raw == null ? '' : raw));
   const entry = { timestamp: null, level: null, source: null, message: line, raw: line, parsed: false };
   const start = line.indexOf('{');
   if (start === -1) return entry;
@@ -142,6 +179,9 @@ function parseLogLine(raw) {
  */
 function isAiEligible(entry, genericPatterns) {
   if (!entry || typeof entry !== 'object') return false;
+  // /api/client-log is unauthenticated, so a browser-reported line is attacker-authored text: it
+  // must never reach the prompt, nor occupy one of the eight slots real faults compete for.
+  if (entry.source === 'client') return false;
   if (entry.parsed) return entry.level === 'error' || entry.level === 'warn';
   const patterns = Array.isArray(genericPatterns) ? genericPatterns : [];
   return patterns.some((p) => p instanceof RegExp && p.test(entry.raw));
@@ -151,13 +191,15 @@ function isAiEligible(entry, genericPatterns) {
  * Normalises a message so the same fault with varying detail collapses to one group key.
  */
 function fingerprint(message) {
-  return String(message == null ? '' : message)
+  // Bounded before the regexes run: an unbounded line made these rules quadratic, and every
+  // quantifier below is now bounded for the same reason.
+  return capScanLine(String(message == null ? '' : message))
     .toLowerCase()
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g, '<id>')
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1,4}\b/g, '<id>')
     .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b/g, '<ip>')
-    .replace(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.mongodb\.net\b/g, '<mongohost>')
-    .replace(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g, '<email>')
+    .replace(/\b[a-z0-9-]{1,64}(?:\.[a-z0-9-]{1,64}){0,8}\.mongodb\.net\b/g, '<mongohost>')
+    .replace(/[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,255}\.[a-z]{2,24}/g, '<email>')
     .replace(/-?\d+/g, '<n>')
     .replace(/\s+/g, ' ')
     .trim()
@@ -200,6 +242,13 @@ function groupErrors(entries, maxGroups) {
 
 // ---- Redaction (§7) -------------------------------------------------------
 
+// Bounded segment counts and lengths keep these linear: an unbounded leading path made them
+// quadratic on the long single-line stack traces stderr carries.
+const DEP_FRAME =
+  /[\w./@-]{0,200}\/node_modules\/((?:@[\w.-]{1,64}\/)?[\w.-]{1,64})\/[^\s),]{0,200}/g;
+const SRC_FRAME = /[\w./-]{0,200}\/([\w.-]{1,64}\.[cm]?js):\d{1,7}:\d{1,7}/g;
+const NODE_FRAME = /\bnode:internal\/[\w/]{1,120}:\d{1,7}:\d{1,7}/g;
+
 // Order matters: URI credentials before whole-URI masking, specific key shapes before generic
 // ones, and the full-UUID rule before the truncated-UUID rule.
 const REDACTIONS = [
@@ -220,9 +269,16 @@ const REDACTIONS = [
   [/\/esign-inbox\?[^\s"']+/g, '/esign-inbox?[TOKEN]'],
   [/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '[UUID]'],
   [/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{0,4}\b/gi, '[UUID]'],
-  [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[EMAIL]'],
+  // Bounded to RFC 5321's real limits: unbounded, this rule was O(n^2) on a long stderr line.
+  [/[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}/g, '[EMAIL]'],
   [/\b[0-9a-f]{24}\b/g, '[OBJECTID]'],
-  [/\b[a-z0-9-]+\.[a-z0-9]{6,}\.mongodb\.net\b/gi, '[MONGO_HOST]'],
+  [/\b[a-z0-9-]{1,64}\.[a-z0-9]{6,64}\.mongodb\.net\b/gi, '[MONGO_HOST]'],
+  // Stack frames. The entropy guard was calibrated on stdout, which carried none, so these three
+  // rules are what keep a CORS stack from either tripping the guard or leaking the disk layout.
+  // Every quantifier is bounded: these run on the same lines finding 1 is about.
+  [DEP_FRAME, '[DEP:$1]'],
+  [SRC_FRAME, '[SRC:$1]'],
+  [NODE_FRAME, '[NODE_INTERNAL]'],
   [/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b/g, '[IP]'],
   [/\b[A-Za-z0-9+/]{60,}={0,2}\b/g, '[BLOB]'],
 ];
@@ -244,7 +300,7 @@ const RESIDUAL_SHAPES = [
   /\bsk-[A-Za-z0-9_-]{16,}/,
   /\bSG\.[A-Za-z0-9_-]{16,}\./,
   /\bAKIA[0-9A-Z]{16}\b/,
-  /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/,
+  /[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}/,
   // Shapes no redaction rule masks.
   /\bgh[pousr]_[A-Za-z0-9]{16,}/,
   /\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{10,}/,
@@ -328,6 +384,11 @@ function hasResidualSecret(text) {
 
 // ---- Prompt assembly ------------------------------------------------------
 
+/** The exact text one group contributes to the prompt. The guard checks this, byte for byte. */
+function promptSample(group, perError) {
+  return redact(capFrames(group ? group.sample : '', MAX_PROMPT_FRAMES)).slice(0, perError);
+}
+
 /**
  * @returns {{system: string, user: string, idMap: object}} idMap keys are the ids sent to the model
  */
@@ -340,7 +401,7 @@ function buildPrompt(groups, ctx) {
   let used = 0;
   groups.forEach((group, index) => {
     const id = group.id || `e${index + 1}`;
-    const sample = redact(group.sample).slice(0, perError);
+    const sample = promptSample(group, perError);
     if (used + sample.length > totalCap && rows.length) return;
     used += sample.length;
     idMap[id] = group;
@@ -898,18 +959,49 @@ async function explainErrors(rawLines, ctx) {
   }
 }
 
-async function callAndMerge(config, options, groups, misses, state) {
-  const prompt = buildPrompt(misses, {
+/**
+ * One dirty group must not cost the whole window its explanation, so the guard runs per group and
+ * only the offending groups are dropped. Fails closed: a group that trips it is never sent.
+ */
+function guardGroups(misses, guard, perError) {
+  const kept = [];
+  for (const group of misses) {
+    if (guard(promptSample(group, perError))) continue;
+    kept.push(group);
+  }
+  return kept;
+}
+
+/**
+ * Guards each group, drops the offenders, and assembles the prompt from what survives.
+ * @returns {?{prompt: object, dropped: number}} null when nothing safe is left to send
+ */
+function guardedPrompt(config, options, misses) {
+  // guardFn is an override point for tests only; production always uses hasResidualSecret.
+  const guard = typeof options.guardFn === 'function' ? options.guardFn : hasResidualSecret;
+  const safe = guardGroups(misses, guard, config.limits.maxCharsPerError);
+  const dropped = misses.length - safe.length;
+  if (dropped) {
+    console.error(`[ai] redaction guard dropped ${dropped} of ${misses.length} group(s)`);
+  }
+  if (!safe.length) return null;
+  const prompt = buildPrompt(safe, {
     generatedAt: options.generatedAt, container: options.container,
     windowMinutes: options.windowMinutes, maxCharsPerError: config.limits.maxCharsPerError,
     maxTotalChars: config.limits.maxTotalChars,
   });
-  // guardFn is an override point for tests only; production always uses hasResidualSecret.
-  const guard = typeof options.guardFn === 'function' ? options.guardFn : hasResidualSecret;
+  // Backstop for what a per-group check cannot see: the container name and the system prompt.
   if (guard(prompt.system + '\n' + prompt.user)) {
-    console.error('[ai] redaction guard tripped — skipping API call');
-    return fail('failed_redaction_guard', groups.length, config);
+    console.error('[ai] redaction guard tripped on the assembled prompt — skipping API call');
+    return null;
   }
+  return { prompt, dropped };
+}
+
+async function callAndMerge(config, options, groups, misses, state) {
+  const guarded = guardedPrompt(config, options, misses);
+  if (!guarded) return fail('failed_redaction_guard', groups.length, config);
+  const { prompt, dropped } = guarded;
   const res = await runProviderCall(config, prompt, { requestFn: options.requestFn });
   if (res.billable) {
     state.aiCallsToday += 1;
@@ -950,7 +1042,8 @@ async function callAndMerge(config, options, groups, misses, state) {
     if (!cacheHit(entry, config, now, config.limits.cacheTtlMin)) continue;
     cached.set(group.id, Object.assign({}, entry.explanation, { id: group.id }));
   }
-  return merged(config, groups, cached, fresh, validated.overallSummary, 'ok');
+  return merged(config, groups, cached, fresh, validated.overallSummary,
+    dropped ? 'ok_guard_dropped' : 'ok');
 }
 
 /**
@@ -980,5 +1073,6 @@ module.exports = {
   parseLogLine, isAiEligible, fingerprint, groupErrors,
   redact, hasResidualSecret, buildPrompt, resolveConfig, callProvider,
   validateResponse, loadState, saveState, explainErrors, renderAiMessage,
-  SYSTEM_PROMPT, RESPONSE_SCHEMA, FIELD_LIMITS,
+  capScanLine, capFrames, promptSample,
+  SYSTEM_PROMPT, RESPONSE_SCHEMA, FIELD_LIMITS, MAX_SCAN_LINE_CHARS,
 };
