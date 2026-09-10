@@ -1,0 +1,12 @@
+{"timestamp":"2026-09-09T05:12:10.001Z","level":"info","source":"server","message":"✅ Exhibit folder sync complete"}
+{"timestamp":"2026-09-09T05:12:10.002Z","level":"info","source":"server","message":"   ❌ Errors: 0"}
+{"timestamp":"2026-09-09T05:12:13.514Z","level":"error","source":"server","message":"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net"}
+{"timestamp":"2026-09-09T05:12:14.036Z","level":"error","source":"server","message":"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net"}
+{"timestamp":"2026-09-09T05:30:00.000Z","level":"info","source":"server","message":"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today"}
+{"timestamp":"2026-09-09T06:11:00.000Z","level":"info","source":"server","message":"   ❌ Errors: 0"}
+{"timestamp":"2026-09-09T06:11:02.399Z","level":"error","source":"server","message":"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017"}
+{"timestamp":"2026-09-09T06:11:02.400Z","level":"error","source":"server","message":"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017"}
+{"timestamp":"2026-09-09T06:12:00.000Z","level":"info","source":"server","message":"   ❌ Errors: 0"}
+{"timestamp":"2026-09-09T10:23:13.828Z","level":"warn","source":"server","message":"⚠️ Gotenberg request error: fetch failed"}
+{"timestamp":"2026-09-09T10:24:00.000Z","level":"info","source":"server","message":"PDF generated in 310ms"}
+TypeError: Cannot read properties of undefined (reading 'quote')

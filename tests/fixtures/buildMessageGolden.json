@@ -1,0 +1,1710 @@
+[
+  {
+    "name": "empty",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 0\n\nNo issues found in scanned window."
+  },
+  {
+    "name": "bug-only-0",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}"
+  },
+  {
+    "name": "user-only-0",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}"
+  },
+  {
+    "name": "bug-only-1",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+  },
+  {
+    "name": "user-only-1",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+  },
+  {
+    "name": "bug-only-2",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+  },
+  {
+    "name": "user-only-2",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+  },
+  {
+    "name": "bug-only-3",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+  },
+  {
+    "name": "user-only-3",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+  },
+  {
+    "name": "bug-only-4",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}"
+  },
+  {
+    "name": "user-only-4",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}"
+  },
+  {
+    "name": "bug-only-5",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+  },
+  {
+    "name": "user-only-5",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+  },
+  {
+    "name": "bug-only-6",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+  },
+  {
+    "name": "user-only-6",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+  },
+  {
+    "name": "bug-only-7",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+  },
+  {
+    "name": "user-only-7",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+  },
+  {
+    "name": "bug-only-8",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+  },
+  {
+    "name": "user-only-8",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+  },
+  {
+    "name": "bug-only-9",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}"
+  },
+  {
+    "name": "user-only-9",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}"
+  },
+  {
+    "name": "bug-only-10",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}"
+  },
+  {
+    "name": "user-only-10",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}"
+  },
+  {
+    "name": "bug-only-11",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "TypeError: Cannot read properties of undefined (reading 'quote')"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• TypeError: Cannot read properties of undefined (reading 'quote')"
+  },
+  {
+    "name": "user-only-11",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "TypeError: Cannot read properties of undefined (reading 'quote')"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• TypeError: Cannot read properties of undefined (reading 'quote')"
+  },
+  {
+    "name": "bug-only-12",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "plain text line"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• plain text line"
+  },
+  {
+    "name": "user-only-12",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "plain text line"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• plain text line"
+  },
+  {
+    "name": "bug-only-13",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "TypeError: boom"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• TypeError: boom"
+  },
+  {
+    "name": "user-only-13",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "TypeError: boom"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• TypeError: boom"
+  },
+  {
+    "name": "bug-only-14",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+    "name": "user-only-14",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+    "name": "bug-only-15",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+  },
+  {
+    "name": "user-only-15",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+  },
+  {
+    "name": "bug-only-16",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz…"
+  },
+  {
+    "name": "user-only-16",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz…"
+  },
+  {
+    "name": "bug-only-17",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww…"
+  },
+  {
+    "name": "user-only-17",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww…"
+  },
+  {
+    "name": "bug-only-18",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "line with \" quote and  backslash"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• line with \" quote and  backslash"
+  },
+  {
+    "name": "user-only-18",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "line with \" quote and  backslash"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• line with \" quote and  backslash"
+  },
+  {
+    "name": "bug-only-19",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "emoji ❌ ⚠️ ✅ line"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• emoji ❌ ⚠️ ✅ line"
+  },
+  {
+    "name": "user-only-19",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "emoji ❌ ⚠️ ✅ line"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• emoji ❌ ⚠️ ✅ line"
+  },
+  {
+    "name": "bug-only-20",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "   leading spaces"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n•    leading spaces"
+  },
+  {
+    "name": "user-only-20",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "   leading spaces"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n•    leading spaces"
+  },
+  {
+    "name": "bug-only-21",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "tabs\tinside"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• tabs\tinside"
+  },
+  {
+    "name": "user-only-21",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "tabs\tinside"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• tabs\tinside"
+  },
+  {
+    "name": "many-bugs-1",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}"
+  },
+  {
+    "name": "many-users-1",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 1
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}"
+  },
+  {
+    "name": "both-1",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 1,
+      "userCount": 1
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}"
+    ],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 1\nUser-activity events: 1\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}"
+  },
+  {
+    "name": "many-bugs-2",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 2,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 2\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+  },
+  {
+    "name": "many-users-2",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 2
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 2\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+  },
+  {
+    "name": "both-2",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 2,
+      "userCount": 2
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 2\nUser-activity events: 2\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+  },
+  {
+    "name": "many-bugs-3",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 3,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 3\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+  },
+  {
+    "name": "many-users-3",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 3
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 3\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+  },
+  {
+    "name": "both-3",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 3,
+      "userCount": 3
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+    ],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 3\nUser-activity events: 3\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+  },
+  {
+    "name": "many-bugs-4",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 4,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 4\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+  },
+  {
+    "name": "many-users-4",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 4
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 4\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+  },
+  {
+    "name": "both-4",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 4,
+      "userCount": 4
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+    ],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 4\nUser-activity events: 4\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}"
+  },
+  {
+    "name": "many-bugs-5",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 5,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 5\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}"
+  },
+  {
+    "name": "many-users-5",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 5
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 5\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}"
+  },
+  {
+    "name": "both-5",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 5,
+      "userCount": 5
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}"
+    ],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 5\nUser-activity events: 5\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}"
+  },
+  {
+    "name": "many-bugs-6",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 6,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 6\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+  },
+  {
+    "name": "many-users-6",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 6
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 6\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+  },
+  {
+    "name": "both-6",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 6,
+      "userCount": 6
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 6\nUser-activity events: 6\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+  },
+  {
+    "name": "many-bugs-7",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 7,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 7\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+  },
+  {
+    "name": "many-users-7",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 7
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 7\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+  },
+  {
+    "name": "both-7",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 7,
+      "userCount": 7
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+    ],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 7\nUser-activity events: 7\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+  },
+  {
+    "name": "many-bugs-8",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 8,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 8\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+  },
+  {
+    "name": "many-users-8",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 8
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 8\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+  },
+  {
+    "name": "both-8",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 8,
+      "userCount": 8
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+    ],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 8\nUser-activity events: 8\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}"
+  },
+  {
+    "name": "many-bugs-9",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 9,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 9\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+  },
+  {
+    "name": "many-users-9",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 9
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 9\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+  },
+  {
+    "name": "both-9",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 9,
+      "userCount": 9
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 9\nUser-activity events: 9\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}"
+  },
+  {
+    "name": "many-bugs-10",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 10,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 10\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}"
+  },
+  {
+    "name": "many-users-10",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 10
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 10\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}"
+  },
+  {
+    "name": "both-10",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 10,
+      "userCount": 10
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}"
+    ],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 10\nUser-activity events: 10\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}"
+  },
+  {
+    "name": "many-bugs-11",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 11,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 11\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}"
+  },
+  {
+    "name": "many-users-11",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 11
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 11\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}"
+  },
+  {
+    "name": "both-11",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 11,
+      "userCount": 11
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}"
+    ],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 11\nUser-activity events: 11\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}"
+  },
+  {
+    "name": "many-bugs-12",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 12,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 12\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')"
+  },
+  {
+    "name": "many-users-12",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 12
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 12\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')"
+  },
+  {
+    "name": "both-12",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 12,
+      "userCount": 12
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')"
+    ],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 12\nUser-activity events: 12\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')"
+  },
+  {
+    "name": "many-bugs-13",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 13,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')",
+      "plain text line"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 13\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')"
+  },
+  {
+    "name": "many-users-13",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 13
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')",
+      "plain text line"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 13\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')"
+  },
+  {
+    "name": "both-13",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 13,
+      "userCount": 13
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')",
+      "plain text line"
+    ],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')",
+      "plain text line"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 13\nUser-activity events: 13\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')"
+  },
+  {
+    "name": "many-bugs-14",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 14,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')",
+      "plain text line",
+      "TypeError: boom"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 14\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')"
+  },
+  {
+    "name": "many-users-14",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 14
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')",
+      "plain text line",
+      "TypeError: boom"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 14\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')"
+  },
+  {
+    "name": "both-14",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 14,
+      "userCount": 14
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')",
+      "plain text line",
+      "TypeError: boom"
+    ],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')",
+      "plain text line",
+      "TypeError: boom"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 14\nUser-activity events: 14\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')"
+  },
+  {
+    "name": "many-bugs-15",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 15,
+      "userCount": 0
+    },
+    "userLines": [],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')",
+      "plain text line",
+      "TypeError: boom",
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 15\nUser-activity events: 0\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')"
+  },
+  {
+    "name": "many-users-15",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 0,
+      "userCount": 15
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')",
+      "plain text line",
+      "TypeError: boom",
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ],
+    "bugLines": [],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 0\nUser-activity events: 15\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')"
+  },
+  {
+    "name": "both-15",
+    "summary": {
+      "generatedAt": "2026-09-09T06:11:30.000Z",
+      "container": "cpq-application",
+      "bugCount": 15,
+      "userCount": 15
+    },
+    "userLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')",
+      "plain text line",
+      "TypeError: boom",
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ],
+    "bugLines": [
+      "{\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}",
+      "{\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}",
+      "{\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}",
+      "{\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}",
+      "{\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}",
+      "TypeError: Cannot read properties of undefined (reading 'quote')",
+      "plain text line",
+      "TypeError: boom",
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ],
+    "expected": "🔎 CPQ12 User & Error Monitor\nTime: 2026-09-09T06:11:30.000Z\nContainer: cpq-application\nNew bug/error lines: 15\nUser-activity events: 15\n\nUSER-ACTIVITY (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')\n\nGENERIC ERRORS (why):\n• {\"timestamp\":\"2026-09-09T05:12:10.001Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"✅ Exhibit folder sync complete\"}\n• {\"timestamp\":\"2026-09-09T05:12:10.002Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T05:12:13.514Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:12:14.036Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: getaddrinfo ENOTFOUND ac-example-shard-00-00.abcdefg.mongodb.net\"}\n• {\"timestamp\":\"2026-09-09T05:30:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"ℹ️ User 8f14e45f-ceea-467a-9c2b-1d2e3f4a5b6c (sample.user@example.test) already logged in today\"}\n• {\"timestamp\":\"2026-09-09T06:11:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.399Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ E-sign expiry reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:11:02.400Z\",\"level\":\"error\",\"source\":\"server\",\"message\":\"❌ Auto-reminder job failed: connect ETIMEDOUT 203.0.113.10:27017\"}\n• {\"timestamp\":\"2026-09-09T06:12:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"   ❌ Errors: 0\"}\n• {\"timestamp\":\"2026-09-09T10:23:13.828Z\",\"level\":\"warn\",\"source\":\"server\",\"message\":\"⚠️ Gotenberg request error: fetch failed\"}\n• {\"timestamp\":\"2026-09-09T10:24:00.000Z\",\"level\":\"info\",\"source\":\"server\",\"message\":\"PDF generated in 310ms\"}\n• TypeError: Cannot read properties of undefined (reading 'quote')"
+  }
+]

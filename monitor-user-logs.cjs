@@ -15,6 +15,7 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 const { execFileSync } = require('child_process');
+const aiExplain = require('./monitor-ai-explain.cjs');
 
 // ---- Config --------------------------------------------------------------
 const ENV_FILE = process.env.MONITOR_ENV_FILE || '/root/.cpq-monitor/monitor.env';
@@ -32,6 +33,7 @@ const SCAN_LABEL = process.env.SCAN_LABEL || 'CPQ12 User & Error Monitor';
 const MAX_SAMPLE_LINES = parseInt(process.env.MAX_SAMPLE_LINES || '12', 10);
 const SCAN_WINDOW_MINUTES = parseInt(process.env.SCAN_WINDOW_MINUTES || '16', 10);
 const FORCE_ALERT = process.env.FORCE_ALERT === '1';
+const MONITOR_LOG_FILE = process.env.MONITOR_LOG_FILE || '';
 
 // Bug patterns. User-activity failures are tagged separately in the alert.
 const GENERIC_PATTERNS = [
@@ -50,6 +52,7 @@ const USER_ACTIVITY_PATTERNS = [
 // Known-noisy lines to ignore (avoid alert storms on benign/repeating issues).
 const NOISE_PATTERNS = [
   /Not allowed by CORS: https:\/\/www\.zenop\.ai/i,
+  /❌ Errors: 0(?!\d)/,
 ];
 
 // ---- Helpers -------------------------------------------------------------
@@ -67,6 +70,14 @@ function getContainerLogs() {
   // only the logs from the last SCAN_WINDOW_MINUTES (default 16, covering
   // the 15-min cron gap plus a small overlap to avoid missing a boundary).
   const windowMin = parseInt(process.env.SCAN_WINDOW_MINUTES || '16', 10);
+  if (MONITOR_LOG_FILE) {
+    try {
+      return fs.readFileSync(MONITOR_LOG_FILE, 'utf8').split(/\r?\n/).filter(l => l.trim().length);
+    } catch (e) {
+      console.error('Failed to read MONITOR_LOG_FILE', MONITOR_LOG_FILE, e.message);
+      return [];
+    }
+  }
   try {
     const out = execFileSync('docker', ['logs', '--since', `${windowMin}m`, CONTAINER], { encoding: 'utf8' });
     const lines = out.split(/\r?\n/).filter(l => l.trim().length);
@@ -92,6 +103,9 @@ function postToTeams(payload) {
   const opts = {
     method: 'POST',
     hostname: url.hostname,
+    // Pre-existing bug: without this a webhook URL carrying an explicit port was sent to :80/:443.
+    // No effect on production URLs, where url.port is '' and this stays undefined.
+    port: url.port || undefined,
     path: url.pathname + url.search,
     headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
   };
@@ -133,13 +147,25 @@ function buildMessage(summary, userLines, bugLines) {
 
 // ---- Main -----------------------------------------------------------------
 async function main() {
-  ensureDir(REPORT_DIR);
+  // A full disk or a permissions change must not cost us the alert — the same availability rule
+  // that applies to the AI layer applies to the report.
+  let reportUsable = true;
+  try {
+    ensureDir(REPORT_DIR);
+  } catch (e) {
+    reportUsable = false;
+    console.error('Could not create the report directory:', e.message);
+  }
   const lines = FORCE_ALERT ? ['FORCE TEST LINE'] : getContainerLogs();
   let bugCount = 0, userCount = 0;
   const userLines = [], bugLines = [];
+  // The AI layer must see the same filtered view the counts are built from: a suppressed line
+  // that still reached the API would burn a group slot and a paid call.
+  const scannedLines = [];
 
   for (const line of lines) {
     if (NOISE_PATTERNS.some(p => p.test(line))) continue; // skip known-noisy lines
+    scannedLines.push(line);
     const { isUser, isBug } = classify(line);
     if (isUser) { userCount++; userLines.push(line); }
     if (isBug) { bugCount++; bugLines.push(line); }
@@ -163,16 +189,49 @@ async function main() {
     '--- Generic bug lines (why) ---',
     bugLines.length ? bugLines.join('\n') : '(none)',
   ].join('\n');
-  fs.writeFileSync(reportPath, report);
+  try {
+    if (reportUsable) fs.writeFileSync(reportPath, report);
+  } catch (e) {
+    reportUsable = false;
+    console.error('Could not write the report:', e.message);
+  }
 
-  console.log(`Report written: ${reportPath}`);
+  if (reportUsable) console.log(`Report written: ${reportPath}`);
   console.log(`bugCount=${bugCount} userCount=${userCount}`);
+
+  const idleStatus = FORCE_ALERT ? 'skipped_force_alert' : 'skipped_clean';
+  let ai = { ai: null, aiStatus: idleStatus, errorGroups: 0, provider: null, model: null, groups: [] };
+  if (!FORCE_ALERT && (bugCount > 0 || userCount > 0)) {
+    try {
+      ai = await aiExplain.explainErrors(scannedLines, {
+        generatedAt, container: CONTAINER, windowMinutes: SCAN_WINDOW_MINUTES,
+        genericPatterns: GENERIC_PATTERNS,
+      });
+    } catch (e) {
+      console.error('[ai] layer threw — falling back to raw lines:', e.message);
+      ai = { ai: null, aiStatus: 'failed_internal', errorGroups: 0, provider: null, model: null, groups: [] };
+    }
+  }
 
   // Always send a heartbeat to Teams: a health summary when clean,
   // or the bug report (with the "why") when issues are found.
   let message;
   if (FORCE_ALERT) {
     message = `🔔 ${SCAN_LABEL} TEST ALERT\nThis is a forced test message to verify Teams delivery.`;
+  } else if (ai.ai) {
+    // Rendering must not be the one unguarded step: a malformed cached explanation used to throw
+    // past main()'s catch and exit 1 with no Teams alert at all.
+    try {
+      message = aiExplain.renderAiMessage(
+        { generatedAt, container: CONTAINER, bugCount, userCount, label: SCAN_LABEL,
+          maxMessageChars: parseInt(process.env.AI_MAX_MESSAGE_CHARS || '8000', 10) },
+        ai.ai, ai.groups,
+      );
+    } catch (e) {
+      console.error('[ai] could not render the explanation — falling back to raw lines:', e.message);
+      ai = { ai: null, aiStatus: 'failed_render', errorGroups: ai.errorGroups, provider: null, model: null, groups: [] };
+      message = buildMessage(summary, userLines, bugLines);
+    }
   } else if (bugCount > 0 || userCount > 0) {
     message = buildMessage(summary, userLines, bugLines);
   } else {
@@ -183,9 +242,37 @@ async function main() {
       `Status: All working good. No errors or user-activity issues in the last scan window.`,
     ].join('\n');
   }
-  const payload = { message, bugCount, userCount, generatedAt, healthy: (bugCount === 0 && userCount === 0) };
+  // Additive only: the five existing keys keep their names, types and meaning so the existing
+  // Power Automate flow keeps working. `healthy` still means "no errors", not "AI succeeded".
+  const payload = {
+    message, bugCount, userCount, generatedAt,
+    healthy: (bugCount === 0 && userCount === 0),
+    aiExplained: Boolean(ai.ai),
+    aiStatus: ai.aiStatus,
+    severity: ai.ai ? ai.ai.worstSeverity : null,
+    aiSummary: ai.ai ? ai.ai.overallSummary : null,
+    errorGroups: ai.errorGroups,
+    aiProvider: ai.ai ? ai.provider : null,
+    aiModel: ai.ai ? ai.model : null,
+  };
+
+  try {
+    if (reportUsable) fs.appendFileSync(reportPath, ['', '--- AI explanation ---',
+      `Status: ${ai.aiStatus}`,
+      `Provider/model: ${ai.ai ? `${ai.provider} / ${ai.model}` : '(none)'}`,
+      ai.ai ? message : '(no explanation this scan — see Status above)', ''].join('\n'));
+  } catch (e) {
+    console.error('Could not append the AI section to the report:', e.message);
+  }
+
   const ok = await postToTeams(payload);
   console.log(`[teams] notification sent: ${ok}`);
+  return payload;
 }
 
-main().catch(e => { console.error('FATAL', e); process.exit(1); });
+if (require.main === module) {
+  main().catch(e => { console.error('FATAL', e); process.exit(1); });
+}
+
+module.exports = { buildMessage, classify, getContainerLogs, main,
+  GENERIC_PATTERNS, USER_ACTIVITY_PATTERNS, NOISE_PATTERNS };

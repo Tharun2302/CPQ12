@@ -1,0 +1,19 @@
+{
+  "id": "chatcmpl-fixture",
+  "object": "chat.completion",
+  "model": "gpt-5.6-terra",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"overallSummary\": \"Both e-sign reminder background jobs failed because MongoDB Atlas was unreachable.\", \"worstSeverity\": \"high\", \"explanations\": [{\"id\": \"e1\", \"whatBroke\": \"The e-sign expiry reminder job could not run.\", \"likelyCause\": \"The job opened a MongoDB Atlas connection and the TCP connect timed out on port 27017. Atlas was unreachable from the droplet.\", \"affectedArea\": \"e-signature\", \"severity\": \"high\", \"nextStep\": \"Check the Atlas IP access list still contains the droplet IP, then curl /api/database/health.\", \"confidence\": \"high\"}, {\"id\": \"e2\", \"whatBroke\": \"The auto-reminder job could not run.\", \"likelyCause\": \"Same Atlas connectivity failure as the expiry reminder job; the two jobs share a connection path.\", \"affectedArea\": \"e-signature\", \"severity\": \"medium\", \"nextStep\": \"Re-run the reminder job manually once Atlas connectivity is confirmed.\", \"confidence\": \"medium\"}]}"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1700,
+    "completion_tokens": 2500
+  }
+}
