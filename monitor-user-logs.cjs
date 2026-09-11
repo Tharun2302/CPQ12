@@ -75,10 +75,13 @@ const USER_ACTIVITY_PATTERNS = [
 
 // `docker logs` can give up mid-stream and still exit 0, writing its own diagnostic onto the same
 // stderr the container uses. Scanning that text manufactures a fake application bug.
+// Stay anchored and docker-specific. A match forces DEGRADED and skips the AI layer, so a generic
+// wording like "context canceled" would report a real app fault as a broken monitor — server.cjs
+// has 212 console.error and 72 console.warn calls whose text reaches stderr unwrapped.
 const DOCKER_CLI_STREAM_ERRORS = [
-  /^error from daemon in stream:/i,
-  /^error grabbing logs:/i,
-  /^error reading log stream:/i,
+  /^\s*error from daemon in stream:/i,
+  /^\s*error grabbing logs:/i,
+  /^\s*error reading log stream:/i,
 ];
 
 // Known-noisy lines to ignore (avoid alert storms on benign/repeating issues).
@@ -101,9 +104,12 @@ function scanResult(ok, lines, reason) {
   return { ok, lines, reason: reason || null };
 }
 
+// Deliberately NOT capped here. Capping before parseLogLine destroyed the JSON of an oversized
+// line, which cost it its source:"client" tag — and that tag is the only thing distinguishing an
+// unauthenticated browser-reported entry from a genuine 14 KB Mongo stack. Every consumer below
+// either runs linear regexes or caps its own input, so the bound sits where it is actually needed.
 function splitLines(text) {
-  return String(text).split(/\r?\n/).filter(l => l.trim().length)
-    .map(l => aiExplain.capScanLine(l));
+  return String(text).split(/\r?\n/).filter(l => l.trim().length);
 }
 
 /** Splits docker's own mid-stream diagnostics out of the container's stderr. */
@@ -197,7 +203,9 @@ function postToTeams(payload) {
  * The Teams payload leaves the box, so it gets the same masking the AI prompt gets.
  */
 function bullet(line) {
-  const safe = aiExplain.redact(line);
+  // Caps its own input now that splitLines does not: redact() is linear but not free, and the
+  // bullet shows 280 characters regardless.
+  const safe = aiExplain.redact(aiExplain.capScanLine(line));
   return '• ' + (safe.length > 280 ? safe.slice(0, 280) + '…' : safe);
 }
 
@@ -264,6 +272,13 @@ function scanLines(lines) {
 }
 
 /** The on-box report keeps RAW lines: it never leaves the droplet and is the diagnostic copy. */
+// The report is the only consumer that kept whole uncapped lines. One pathological line could
+// write itself to disk in full, every run, on a box with no retention sweep over this directory.
+function reportLines(lines) {
+  if (!lines.length) return '(none)';
+  return lines.map(l => aiExplain.capScanLine(l)).join('\n');
+}
+
 function buildReport(scan, scanned, generatedAt) {
   return [
     `=== ${SCAN_LABEL} ===`,
@@ -274,10 +289,10 @@ function buildReport(scan, scanned, generatedAt) {
     `User-activity events: ${scanned.userCount}`,
     '',
     '--- User-activity (why) ---',
-    scanned.userLines.length ? scanned.userLines.join('\n') : '(none)',
+    reportLines(scanned.userLines),
     '',
     '--- Generic bug lines (why) ---',
-    scanned.bugLines.length ? scanned.bugLines.join('\n') : '(none)',
+    reportLines(scanned.bugLines),
   ].join('\n');
 }
 
@@ -396,6 +411,7 @@ async function main() {
     severity: ai.ai ? ai.ai.worstSeverity : null,
     aiSummary: ai.ai ? ai.ai.overallSummary : null,
     errorGroups: ai.errorGroups,
+    guardDropped: ai.guardDropped || 0,
     aiProvider: ai.ai ? ai.provider : null,
     aiModel: ai.ai ? ai.model : null,
   };

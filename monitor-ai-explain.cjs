@@ -107,12 +107,19 @@ const RESPONSE_SCHEMA = {
 
 // ---- Line bounding --------------------------------------------------------
 
+const TRUNCATION_MARKER = /…\[\+\d{1,12} chars truncated\]$/;
+const MARKER_MAX_CHARS = 40;
+const CALL_SITE = /[/\\][^\s:()]{0,200}:\d{1,7}:\d{1,7}/;
+
 /** Truncates one log line to MAX_SCAN_LINE_CHARS, keeping the drop visible. */
 function capScanLine(text, maxChars) {
   const value = String(text == null ? '' : text);
   const ok = Number.isFinite(maxChars) && maxChars > 0;
   const cap = ok ? Math.floor(maxChars) : MAX_SCAN_LINE_CHARS;
   if (value.length <= cap) return value;
+  // Idempotent, but the marker alone is attacker-forgeable: a padded line ending in it would be
+  // returned uncapped. A genuinely capped value is also never longer than the cap plus the marker.
+  if (value.length <= cap + MARKER_MAX_CHARS && TRUNCATION_MARKER.test(value)) return value;
   return `${value.slice(0, cap)}…[+${value.length - cap} chars truncated]`;
 }
 
@@ -130,9 +137,16 @@ function capFrames(text, maxFrames) {
     const at = value.indexOf(' at ', from);
     if (at === -1) return value;
     from = at + 4;
-    // " at " also occurs in prose, so only a token carrying a path or call site is a frame.
-    const token = value.slice(from, from + 80).split(/\s/)[0];
-    if (!/[/\(]/.test(token)) continue;
+    // " at " also occurs in prose. Test the whole frame, not its first token: in the dominant
+    // "at fn (/path:1:2)" form that token is the function name and carries no call site.
+    // Slice the window FIRST, then look for the newline inside it: searching the whole remaining
+    // string on every iteration made this O(n^2) on a line that contains no newline at all.
+    const window = value.slice(from, from + 200);
+    const eol = window.indexOf('\n');
+    const frame = eol === -1 ? window : window.slice(0, eol);
+    // The call site must be contiguous — a path then :line:col with no space between. Testing for
+    // the two separately matched prose like "failed at 10:00:00 for /api/quotes".
+    if (!CALL_SITE.test(frame)) continue;
     seen += 1;
     if (seen > limit) return `${value.slice(0, at).trimEnd()} …`;
   }
@@ -153,23 +167,34 @@ function toIsoOrNull(value) {
   return Number.isFinite(Date.parse(value)) ? value : null;
 }
 
+/** Enum-ish fields never need more than this, and an unbounded one inflates the payload. */
+function capField(value) {
+  return typeof value === 'string' ? value.slice(0, 120) : value;
+}
+
 function parseLogLine(raw) {
-  const line = capScanLine(typeof raw === 'string' ? raw : String(raw == null ? '' : raw));
+  const full = typeof raw === 'string' ? raw : String(raw == null ? '' : raw);
+  const line = capScanLine(full);
   const entry = { timestamp: null, level: null, source: null, message: line, raw: line, parsed: false };
-  const start = line.indexOf('{');
+  // Parse the UNCAPPED line where a caller hands us one: capping first makes an oversized client
+  // entry unparsable, which loses its source tag. JSON.parse is linear — only the regexes
+  // are not, so EVERY field taken off the object below is capped: timestamp and level too.
+  const start = full.indexOf('{');
   if (start === -1) return entry;
   let obj;
   try {
-    obj = JSON.parse(line.slice(start));
+    obj = JSON.parse(full.slice(start));
   } catch (e) {
     return entry;
   }
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return entry;
   entry.parsed = true;
-  entry.timestamp = toIsoOrNull(obj.timestamp);
-  entry.level = typeof obj.level === 'string' ? obj.level.toLowerCase() : null;
-  entry.source = typeof obj.source === 'string' ? obj.source : null;
-  if (typeof obj.message === 'string') entry.message = obj.message;
+  // Bounded before use: an unbounded timestamp still satisfies ISO_TIMESTAMP via its fractional
+  // seconds, and counted nothing against the prompt budget while inflating the payload.
+  entry.timestamp = toIsoOrNull(capField(obj.timestamp));
+  entry.level = typeof obj.level === 'string' ? capField(obj.level).toLowerCase() : null;
+  entry.source = typeof obj.source === 'string' ? capField(obj.source) : null;
+  if (typeof obj.message === 'string') entry.message = capScanLine(obj.message);
   return entry;
 }
 
@@ -195,6 +220,9 @@ function fingerprint(message) {
   // quantifier below is now bounded for the same reason.
   return capScanLine(String(message == null ? '' : message))
     .toLowerCase()
+    // All CORS rejections collapse to one group. The origin is unauthenticated attacker input, so
+    // distinct origins would otherwise fingerprint apart and eight crafted ones fill every slot.
+    .replace(/not allowed by cors:\s{0,4}\S{0,200}/g, 'not allowed by cors: <origin>')
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g, '<id>')
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1,4}\b/g, '<id>')
     .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b/g, '<ip>')
@@ -272,7 +300,8 @@ const REDACTIONS = [
   // Bounded to RFC 5321's real limits: unbounded, this rule was O(n^2) on a long stderr line.
   [/[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}/g, '[EMAIL]'],
   [/\b[0-9a-f]{24}\b/g, '[OBJECTID]'],
-  [/\b[a-z0-9-]{1,64}\.[a-z0-9]{6,64}\.mongodb\.net\b/gi, '[MONGO_HOST]'],
+  // Project ids are as short as 5 chars, so a 6-char floor left real Atlas hosts unmasked.
+  [/\b[a-z0-9-]{1,64}\.[a-z0-9]{1,64}\.mongodb\.net\b/gi, '[MONGO_HOST]'],
   // Stack frames. The entropy guard was calibrated on stdout, which carried none, so these three
   // rules are what keep a CORS stack from either tripping the guard or leaking the disk layout.
   // Every quantifier is bounded: these run on the same lines finding 1 is about.
@@ -428,9 +457,20 @@ function buildPrompt(groups, ctx) {
 
 // ---- Config resolution ----------------------------------------------------
 
-function intFromEnv(env, name, fallback) {
-  const parsed = parseInt(env[name], 10);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+// parseInt('4e3') is 4 and parseInt('1.9e6') is 1, so a typo used to shrink a limit silently.
+// Number() reads the whole value, and anything not a whole number in range is refused out loud.
+function intFromEnv(env, name, fallback, min, max) {
+  const raw = env[name];
+  if (raw === undefined || String(raw).trim() === '') return fallback;
+  const value = Number(String(raw).trim());
+  const lo = Number.isFinite(min) ? min : 0;
+  const hi = Number.isFinite(max) ? max : Number.MAX_SAFE_INTEGER;
+  if (!Number.isInteger(value) || value < lo || value > hi) {
+    console.error(`[config] ${name}="${raw}" is not a whole number in`,
+      `${lo}-${hi} — using ${fallback}`);
+    return fallback;
+  }
+  return value;
 }
 
 /** Bounds a configured duration so a typo cannot park a socket across several cron gaps. */
@@ -466,8 +506,11 @@ function resolveConfig(env) {
   const requested = String(source.AI_AUTH_STYLE || '').trim().toLowerCase();
   const authStyle = AUTH_STYLES[requested] ? requested : adapter.defaultAuthStyle;
   // Hard ceilings: the cron gap is 15 minutes, so nothing here may outlive one run.
-  const timeoutMs = clampMs(intFromEnv(source, 'AI_TIMEOUT_MS', 20000), 1000, MAX_TIMEOUT_MS, 20000);
-  const totalBudgetMs = clampMs(intFromEnv(source, 'AI_TOTAL_BUDGET_MS', 45000), 1000, MAX_BUDGET_MS, 45000);
+  const timeoutMs = clampMs(intFromEnv(source, 'AI_TIMEOUT_MS', 20000, 1000, MAX_TIMEOUT_MS),
+    1000, MAX_TIMEOUT_MS, 20000);
+  const totalBudgetMs = clampMs(
+    intFromEnv(source, 'AI_TOTAL_BUDGET_MS', 45000, 1000, MAX_BUDGET_MS),
+    1000, MAX_BUDGET_MS, 45000);
   const config = {
     ok: true,
     status: 'ok',
@@ -480,18 +523,18 @@ function resolveConfig(env) {
       ? `[ai] unknown AI_AUTH_STYLE "${requested}" — using ${adapter.defaultAuthStyle}` : null,
     limits: {
       effort: String(source.AI_EFFORT || 'low').trim() || 'low',
-      maxGroups: intFromEnv(source, 'AI_MAX_GROUPS', 8),
-      maxCharsPerError: intFromEnv(source, 'AI_MAX_CHARS_PER_ERROR', 400),
-      maxTotalChars: intFromEnv(source, 'AI_MAX_TOTAL_CHARS', 6000),
-      maxMessageChars: intFromEnv(source, 'AI_MAX_MESSAGE_CHARS', 8000),
-      maxCallsPerDay: intFromEnv(source, 'AI_MAX_CALLS_PER_DAY', 40),
-      cacheTtlMin: intFromEnv(source, 'AI_CACHE_TTL_MIN', 180),
+      maxGroups: intFromEnv(source, 'AI_MAX_GROUPS', 8, 0, 100),
+      maxCharsPerError: intFromEnv(source, 'AI_MAX_CHARS_PER_ERROR', 400, 80, 4000),
+      maxTotalChars: intFromEnv(source, 'AI_MAX_TOTAL_CHARS', 6000, 500, 100000),
+      maxMessageChars: intFromEnv(source, 'AI_MAX_MESSAGE_CHARS', 8000, 500, 28000),
+      maxCallsPerDay: intFromEnv(source, 'AI_MAX_CALLS_PER_DAY', 40, 0, 10000),
+      cacheTtlMin: intFromEnv(source, 'AI_CACHE_TTL_MIN', 180, 0, 10080),
       timeoutMs: timeoutMs,
       totalBudgetMs: totalBudgetMs,
       // The per-request timeout can never exceed the whole AI budget for the run.
       effectiveTimeoutMs: Math.min(timeoutMs, totalBudgetMs),
-      maxRetries: intFromEnv(source, 'AI_MAX_RETRIES', 1),
-      maxTokens: intFromEnv(source, 'AI_MAX_TOKENS', 4000),
+      maxRetries: intFromEnv(source, 'AI_MAX_RETRIES', 1, 0, 5),
+      maxTokens: intFromEnv(source, 'AI_MAX_TOKENS', 4000, 256, 32000),
     },
     dryRun: String(source.AI_DRY_RUN || '') === '1',
     fixtureFile: String(source.AI_FIXTURE_FILE || '').trim(),
@@ -824,6 +867,11 @@ function explanationBlock(index, exp, group, cached) {
  * @param {object} ai validated explanation set plus provider/model/cachedIds
  * @param {Array} groups the groups the explanations refer to, in id order
  */
+function rawBullet(raw) {
+  const safe = redact(String(raw == null ? '' : raw));
+  return '• ' + (safe.length > 280 ? safe.slice(0, 280) + '…' : safe);
+}
+
 function renderAiMessage(summary, ai, groups) {
   const byId = {};
   groups.forEach((group, index) => { byId[group.id || `e${index + 1}`] = group; });
@@ -831,7 +879,7 @@ function renderAiMessage(summary, ai, groups) {
   const lines = [
     `🔎 ${summary.label || 'CPQ12 User & Error Monitor'}`,
     `Time: ${summary.generatedAt}`,
-    `Container: ${summary.container}`,
+    `Container: ${redact(String(summary.container || ''))}`,
     `Severity: ${String(ai.worstSeverity || 'low').toUpperCase()}`,
     `New bug/error lines: ${summary.bugCount}`,
     `User-activity events: ${summary.userCount}`,
@@ -847,8 +895,17 @@ function renderAiMessage(summary, ai, groups) {
   lines.push('Raw lines:');
   ai.explanations.forEach((exp) => {
     const group = byId[exp.id];
-    if (group) lines.push('• ' + (group.raw.length > 280 ? group.raw.slice(0, 280) + '…' : group.raw));
+    // Redact BEFORE the 280 cut: truncating first can leave half a credential in the alert.
+    if (group) lines.push(rawBullet(group.raw));
   });
+  const withheld = Array.isArray(ai.withheld) ? ai.withheld : [];
+  if (withheld.length) {
+    // Deliberately vague about the reason: the prompt budget and a short provider reply land here
+    // too, and naming the guard would advertise which lines are secret-bearing in a searchable
+    // channel. The exact guard count is in the payload as guardDropped.
+    lines.push('', `⚠️ ${withheld.length} error(s) not explained this scan. Raw lines:`);
+    withheld.forEach(group => lines.push(rawBullet(group.raw)));
+  }
   lines.push('', `Explained by ${ai.provider} / ${ai.model}`);
   const message = lines.join('\n');
   const cap = summary.maxMessageChars || 8000;
@@ -858,11 +915,14 @@ function renderAiMessage(summary, ai, groups) {
 
 // ---- Orchestrator ---------------------------------------------------------
 
-function fail(status, groupCount, config) {
+function fail(status, groupCount, config, guardDropped) {
   return {
     ai: null,
     aiStatus: status,
     errorGroups: groupCount,
+    // Carried even with no answer: the total-drop case is where the guard worked hardest, and
+    // reporting 0 there contradicts aiStatus and understates the figure on any dashboard.
+    guardDropped: Number.isFinite(guardDropped) ? guardDropped : 0,
     provider: config && config.ok ? config.provider : null,
     model: config && config.ok ? config.model : null,
     groups: [],
@@ -948,7 +1008,8 @@ async function explainErrors(rawLines, ctx) {
     }
 
     if (!misses.length) {
-      return merged(config, groups, cached, new Map(), 'Repeat of errors already explained in an earlier scan.', 'ok_cached');
+      return merged(config, groups, cached, new Map(),
+        'Repeat of errors already explained in an earlier scan.', 'ok_cached', 0);
     }
     if (state.aiCallsToday >= config.limits.maxCallsPerDay) return fail('skipped_budget', groups.length, config);
 
@@ -1000,7 +1061,8 @@ function guardedPrompt(config, options, misses) {
 
 async function callAndMerge(config, options, groups, misses, state) {
   const guarded = guardedPrompt(config, options, misses);
-  if (!guarded) return fail('failed_redaction_guard', groups.length, config);
+  // misses, not groups: cache hits were never sent, so counting them as dropped overstates it.
+  if (!guarded) return fail('failed_redaction_guard', groups.length, config, misses.length);
   const { prompt, dropped } = guarded;
   const res = await runProviderCall(config, prompt, { requestFn: options.requestFn });
   if (res.billable) {
@@ -1014,13 +1076,13 @@ async function callAndMerge(config, options, groups, misses, state) {
       const detail = res.detail ? `: ${redact(String(res.detail)).slice(0, 500)}` : '';
       console.error(`[ai] call failed (${res.reason})${detail}`);
     }
-    return fail(res.reason, groups.length, config);
+    return fail(res.reason, groups.length, config, dropped);
   }
   const { text, finishReason } = config.adapter.extractText(res.json);
   const validated = validateResponse(text, finishReason, prompt.idMap);
   if (!validated) {
     console.error('[ai] provider response failed validation — falling back to raw lines');
-    return fail('failed_parse', groups.length, config);
+    return fail('failed_parse', groups.length, config, dropped);
   }
   const cachedAt = new Date().toISOString();
   const fresh = new Map();
@@ -1043,7 +1105,7 @@ async function callAndMerge(config, options, groups, misses, state) {
     cached.set(group.id, Object.assign({}, entry.explanation, { id: group.id }));
   }
   return merged(config, groups, cached, fresh, validated.overallSummary,
-    dropped ? 'ok_guard_dropped' : 'ok');
+    dropped ? 'ok_guard_dropped' : 'ok', dropped);
 }
 
 /**
@@ -1051,7 +1113,7 @@ async function callAndMerge(config, options, groups, misses, state) {
  * worstSeverity is recomputed across the merged set — a cached critical must not be hidden by a
  * fresh answer that only saw this scan's misses.
  */
-function merged(config, groups, cached, fresh, summary, status) {
+function merged(config, groups, cached, fresh, summary, status, guardDropped) {
   const explanations = [];
   const cachedIds = [];
   for (const group of groups) {
@@ -1062,10 +1124,17 @@ function merged(config, groups, cached, fresh, summary, status) {
   }
   if (!explanations.length) return fail('failed_parse', groups.length, config);
   const worst = explanations.slice().sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity])[0];
+  // A group with no explanation must still reach the alert. Before this, a guard-dropped group
+  // produced no block AND no raw line, so the error simply vanished while the header counted it.
+  // "Unexplained" is broader than "guard-dropped" — the prompt budget and a short provider reply
+  // land here too — so the count reported is the real guard figure, not this list's length.
+  const withheld = groups.filter(g => !fresh.has(g.id) && !cached.has(g.id));
+  const dropped = Number.isFinite(guardDropped) ? guardDropped : 0;
   return {
     ai: { overallSummary: summary, worstSeverity: worst.severity, explanations, cachedIds,
-      provider: config.provider, model: config.model },
-    aiStatus: status, errorGroups: groups.length, provider: config.provider, model: config.model, groups,
+      withheld, guardDropped: dropped, provider: config.provider, model: config.model },
+    aiStatus: status, errorGroups: groups.length, guardDropped: dropped,
+    provider: config.provider, model: config.model, groups,
   };
 }
 
@@ -1073,6 +1142,6 @@ module.exports = {
   parseLogLine, isAiEligible, fingerprint, groupErrors,
   redact, hasResidualSecret, buildPrompt, resolveConfig, callProvider,
   validateResponse, loadState, saveState, explainErrors, renderAiMessage,
-  capScanLine, capFrames, promptSample,
+  capScanLine, capFrames, promptSample, merged, fail, guardGroups,
   SYSTEM_PROMPT, RESPONSE_SCHEMA, FIELD_LIMITS, MAX_SCAN_LINE_CHARS,
 };

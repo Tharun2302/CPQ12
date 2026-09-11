@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const { safeOriginLabel } = require('./cors-origin-utils.cjs');
 const axios = require('axios');
 const sgMail = require('@sendgrid/mail');
 const multer = require('multer');
@@ -193,7 +194,9 @@ app.use(cors({
     if (!origin || isAllowedOrigin(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS: ' + origin));
+      // The raw Origin is attacker-controlled and this error is stderr-logged, so it reached the
+      // log monitor's AI prompt verbatim. Log a bounded, sanitised form instead of the header.
+      callback(new Error('Not allowed by CORS: ' + safeOriginLabel(origin)));
     }
   },
   credentials: true,
