@@ -280,6 +280,19 @@ const NODE_FRAME = /\bnode:internal\/[\w/]{1,120}:\d{1,7}:\d{1,7}/g;
 // Order matters: URI credentials before whole-URI masking, specific key shapes before generic
 // ones, and the full-UUID rule before the truncated-UUID rule.
 const REDACTIONS = [
+  // Git-generated, known-benign 40-hex shapes. These must be neutralised BEFORE the generic
+  // hex-shape rules below (and before hasResidualSecret's RESIDUAL_SHAPES guard ever sees them):
+  // git's own "This reverts commit <sha>." / "(cherry picked from commit <sha>)" trailers, and
+  // this project's own EMPTY_TREE_SHA/ZERO_SHA constants (hardcoded in commit-explain.cjs), were
+  // false-tripping the guard on an otherwise-clean revert/cherry-pick commit, and on any future
+  // commit that merely edits commit-explain.cjs and so touches those two literal strings. These
+  // are specific known-safe TEXT SHAPES, not a general "mask all 40-hex" rule — the guard must
+  // keep catching a real 40+ char hex secret everywhere else, so nothing here loosens that.
+  [/(\bThis reverts commit )([0-9a-f]{40})\b/gi, '$1[SHA]'],
+  [/(\bchanges made to )([0-9a-f]{40})\b/gi, '$1[SHA]'],
+  [/(\(cherry picked from commit )([0-9a-f]{40})(\))/gi, '$1[SHA]$3'],
+  [/\b4b825dc642cb6eb9a060e54bf8d69288fbee4904\b/g, '[GIT_EMPTY_TREE_SHA]'],
+  [/\b0{40}\b/g, '[GIT_ZERO_SHA]'],
   [/(:\/\/)([^/\s:@]+):([^/\s:@]+)@/g, '$1[REDACTED]@'],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, '[JWT]'],
   [/\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi, 'Bearer [REDACTED]'],
@@ -684,7 +697,14 @@ async function callProvider(adapter, req, opts) {
     const detail = redact(String(failure.detail || res.body || '')).slice(0, 500) || null;
     const canRetry = failure.retry && attempt < maxRetries && Date.now() + retryDelay < deadline;
     if (!canRetry) return { ok: false, reason: failure.reason, status: res.status, detail };
-    await new Promise((r) => { const t = setTimeout(r, retryDelay); if (t.unref) t.unref(); });
+    // Deliberately left ref'd (Node's default): unlike the request-timeout guards in sendOnce,
+    // which are backstops for work that is already otherwise keeping the loop alive, this timer
+    // IS the retry — there is nothing else guaranteeing the process stays up to take the next
+    // attempt. A long-running caller (the log-monitor's cron process) always has other pending
+    // work at this point, so ref'ing this costs it nothing; a short-lived caller (commit-explain.cjs)
+    // has nothing else at all, and an unref'd version of this timer let Node exit before it ever
+    // fired, silently abandoning the retry and the whole in-flight explanation with it.
+    await new Promise((r) => { setTimeout(r, retryDelay); });
   }
 }
 
@@ -718,6 +738,11 @@ function parseLoose(text) {
 function sanitiseField(text) {
   return String(text === undefined || text === null ? '' : text)
     .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    // Markdown link syntax first, so a crafted model reply cannot render as a clickable
+    // phishing link in Teams: the visible label survives, the URL never does.
+    .replace(/\[([^\]\n]{0,200})\]\(\s*https?:\/\/[^\s)]{0,500}\)/gi, '$1 [link removed]')
+    // A bare http(s) URL is just as clickable in Teams without any markdown at all.
+    .replace(/\bhttps?:\/\/\S{1,500}/gi, '[link removed]')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -1143,5 +1168,9 @@ module.exports = {
   redact, hasResidualSecret, buildPrompt, resolveConfig, callProvider,
   validateResponse, loadState, saveState, explainErrors, renderAiMessage,
   capScanLine, capFrames, promptSample, merged, fail, guardGroups,
-  SYSTEM_PROMPT, RESPONSE_SCHEMA, FIELD_LIMITS, MAX_SCAN_LINE_CHARS,
+  // parseLoose and sanitiseField are schema-agnostic (truncation length is applied by each
+  // caller via FIELD_LIMITS, not inside these functions) — commit-ai-explain.cjs imports them
+  // from here instead of keeping its own duplicate copy.
+  parseLoose, sanitiseField,
+  SYSTEM_PROMPT, RESPONSE_SCHEMA, FIELD_LIMITS, MAX_SCAN_LINE_CHARS, MAX_CACHE_ENTRIES,
 };

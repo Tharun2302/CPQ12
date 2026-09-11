@@ -1,0 +1,5 @@
+# Git hook shell scripts must always be checked out with LF line endings. A Windows clone with
+# core.autocrlf=true would otherwise convert them to CRLF, which breaks the "#!/bin/sh" shebang
+# ("bad interpreter" / silently no-op) when Git for Windows' own bash runs them as hooks.
+scripts/hooks/post-commit text eol=lf
+scripts/hooks/pre-push text eol=lf

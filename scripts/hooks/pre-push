@@ -1,0 +1,25 @@
+#!/bin/sh
+# CPQ12 Commit Logic Explainer — pre-push hook.
+#
+# Git feeds this hook lines on stdin, one per ref being pushed:
+#   <local ref> <local sha> <remote ref> <remote sha>
+# All parsing of that stdin — and the decision to do nothing for a feature-branch push, a
+# branch delete, or a push that does not actually move `main` forward — lives in
+# commit-explain.cjs (function findMainMovingLine) so it can be unit tested. This wrapper only
+# forwards stdin and guarantees the push is never blocked.
+#
+# This hook must NEVER block or fail a push: every failure mode inside commit-explain.cjs is
+# already swallowed there, and this wrapper additionally ignores any non-zero exit from node and
+# always exits 0 itself.
+
+HOOK_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$HOOK_DIR/../.." && pwd)
+SCRIPT="$REPO_ROOT/commit-explain.cjs"
+
+STDIN_DATA=$(cat)
+
+if command -v node >/dev/null 2>&1 && [ -f "$SCRIPT" ]; then
+  ( cd "$REPO_ROOT" && printf '%s\n' "$STDIN_DATA" | node "$SCRIPT" pre-push ) || true
+fi
+
+exit 0

@@ -1,0 +1,24 @@
+#!/bin/sh
+# CPQ12 Commit Logic Explainer — post-commit hook.
+#
+# Explains what BEHAVIOR changed in the commit just made, prints it to the terminal and logs it
+# to disk (logs/commit-explain/). This hook must NEVER block or fail a commit: every failure
+# mode inside commit-explain.cjs (AI provider down, a timeout, a crash, disk full) is already
+# swallowed there, and this wrapper additionally ignores any non-zero exit from node and always
+# exits 0 itself. The commit has already happened by the time this hook runs, so there is
+# nothing left to protect except the developer's terminal.
+#
+# All git introspection (commit sha/author/message/diff) happens inside commit-explain.cjs via
+# Node's child_process, not here — a shell script capturing arbitrary commit messages/diffs by
+# hand is fragile (quotes, backticks, newlines, non-UTF8 bytes). This wrapper only locates node
+# and invokes the script.
+
+HOOK_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$HOOK_DIR/../.." && pwd)
+SCRIPT="$REPO_ROOT/commit-explain.cjs"
+
+if command -v node >/dev/null 2>&1 && [ -f "$SCRIPT" ]; then
+  ( cd "$REPO_ROOT" && node "$SCRIPT" post-commit ) || true
+fi
+
+exit 0

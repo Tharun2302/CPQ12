@@ -490,6 +490,81 @@ describe('hasResidualSecret', () => {
   it('masks a Mongo ObjectId before it can reach the guard', () => {
     expect(redact('Fetching exhibit file: 6a832c3e3591a4aa913b6104')).toBe('Fetching exhibit file: [OBJECTID]');
   });
+
+  // Regression coverage for the "24+ hex char" false-trip QA found: git's own auto-generated
+  // revert/cherry-pick trailers, and this project's own EMPTY_TREE_SHA/ZERO_SHA constants, all
+  // carry a bare 40-hex-char SHA that RESIDUAL_SHAPES' /\b[0-9a-f]{24,}\b/i rule (correctly, in
+  // general) treats as an unmasked secret. redact() must neutralise these SPECIFIC known-benign
+  // shapes before the guard ever sees them, without weakening the general rule for anything else.
+  describe('known-benign git-generated 40-hex shapes (do not trip the guard)', () => {
+    const sha = 'a94a8fe5ccb19ba61c4c0873d391e987982fbbd3';
+
+    it.each([
+      ['a plain revert trailer', `This reverts commit ${sha}.`],
+      ['a merge-revert trailer with two shas', `This reverts commit ${sha}, reversing\nchanges made to ${sha}.`],
+      ['a cherry-pick -x trailer', `Some commit message\n\n(cherry picked from commit ${sha})`],
+      ['the EMPTY_TREE_SHA constant', "const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';"],
+      ['the ZERO_SHA constant', "const ZERO_SHA = '0000000000000000000000000000000000000000';"],
+    ])('%s no longer trips hasResidualSecret once redacted', (_name, text) => {
+      expect(hasResidualSecret(redact(text))).toBe(false);
+    });
+
+    it('still catches a real 40+ char hex secret that is not one of these known shapes', () => {
+      const notAKnownShape = `Unexpected data: ${sha}deadbeef in the payload`;
+      expect(hasResidualSecret(redact(notAKnownShape))).toBe(true);
+    });
+
+    it('still catches the guard-independent 40-char-hex canary even after redaction', () => {
+      // Same canary the existing "catches %s, which no redaction rule masks" block above uses —
+      // proves this fix did not accidentally loosen RESIDUAL_SHAPES' bare-hex rule itself.
+      expect(hasResidualSecret(redact(sha))).toBe(true);
+    });
+  });
+});
+
+// =============================================================================
+// sanitiseField — control-char stripping AND link neutralisation, shared by both callers
+// =============================================================================
+describe('sanitiseField', () => {
+  const { sanitiseField } = aiExplain as unknown as { sanitiseField: (text: unknown) => string };
+
+  it('collapses control characters and whitespace (anti-header-injection)', () => {
+    expect(sanitiseField('line one\nHEALTHY\r\nline two   three')).toBe('line one HEALTHY line two three');
+  });
+
+  it('neutralises a markdown link, keeping the label but never the URL', () => {
+    const out = sanitiseField('click [here](https://evil.example/phish) for details');
+    expect(out).toContain('here');
+    expect(out).toContain('[link removed]');
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('neutralises a bare http(s) URL with no markdown at all', () => {
+    const out = sanitiseField('see https://evil.example/phish?x=1 for the fix');
+    expect(out).toContain('[link removed]');
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('leaves ordinary text alone', () => {
+    expect(sanitiseField('Quotes over 15% now email Legal for approval.'))
+      .toBe('Quotes over 15% now email Legal for approval.');
+  });
+
+  it('never throws on junk', () => {
+    for (const junk of [null, undefined, 42, '']) expect(() => sanitiseField(junk)).not.toThrow();
+  });
+});
+
+// =============================================================================
+// Extraction regression guard: commit-ai-explain.cjs must import, not duplicate, these helpers
+// =============================================================================
+describe('module.exports — parseLoose/sanitiseField/MAX_CACHE_ENTRIES are shared, not duplicated', () => {
+  it('exports parseLoose and sanitiseField for commit-ai-explain.cjs to import', () => {
+    const exported = aiExplain as unknown as Record<string, unknown>;
+    expect(typeof exported.parseLoose).toBe('function');
+    expect(typeof exported.sanitiseField).toBe('function');
+    expect(typeof exported.MAX_CACHE_ENTRIES).toBe('number');
+  });
 });
 
 // =============================================================================

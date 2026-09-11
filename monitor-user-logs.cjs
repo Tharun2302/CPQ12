@@ -12,10 +12,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
-const http = require('http');
 const { spawnSync } = require('child_process');
 const aiExplain = require('./monitor-ai-explain.cjs');
+const { postToTeams } = require('./teams-notify.cjs');
 
 // ---- Config --------------------------------------------------------------
 const ENV_FILE = process.env.MONITOR_ENV_FILE || '/root/.cpq-monitor/monitor.env';
@@ -163,39 +162,6 @@ function getContainerLogs() {
   if (!cli.length) return scanResult(true, app, null);
   console.error('docker logs reported a stream error for', CONTAINER, cli[0].slice(0, 400));
   return scanResult(false, app, cli[0].slice(0, 280));
-}
-
-function postToTeams(payload) {
-  if (!TEAMS_WEBHOOK_URL) {
-    console.log('[teams] No TEAMS_WEBHOOK_URL set — skipping notification.');
-    return Promise.resolve(false);
-  }
-  let url;
-  try { url = new URL(TEAMS_WEBHOOK_URL); } catch (e) {
-    console.error('[teams] Invalid webhook URL', e.message);
-    return Promise.resolve(false);
-  }
-  const body = JSON.stringify(payload);
-  const lib = url.protocol === 'http:' ? http : https;
-  const opts = {
-    method: 'POST',
-    hostname: url.hostname,
-    // Pre-existing bug: without this a webhook URL carrying an explicit port was sent to :80/:443.
-    // No effect on production URLs, where url.port is '' and this stays undefined.
-    port: url.port || undefined,
-    path: url.pathname + url.search,
-    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-  };
-  return new Promise((resolve) => {
-    const req = lib.request(opts, (res) => {
-      let data = '';
-      res.on('data', d => data += d);
-      res.on('end', () => resolve(res.statusCode >= 200 && res.statusCode < 300));
-    });
-    req.on('error', (e) => { console.error('[teams] error', e.message); resolve(false); });
-    req.write(body);
-    req.end();
-  });
 }
 
 /**
@@ -425,7 +391,7 @@ async function main() {
     console.error('Could not append the AI section to the report:', e.message);
   }
 
-  const ok = await postToTeams(payload);
+  const ok = await postToTeams(TEAMS_WEBHOOK_URL, payload);
   console.log(`[teams] notification sent: ${ok}`);
   return payload;
 }

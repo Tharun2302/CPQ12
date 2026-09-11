@@ -25,6 +25,9 @@ dist-ssr
 .env
 env
 
+# Commit Logic Explainer — real config (the .example template stays checked in)
+.env.commit-explain
+
 # Test files (to prevent merge conflicts)
 test-*.cjs
 verify-*.cjs
