@@ -20,6 +20,10 @@ import {
 import { shouldAutoStartPlaceFieldsTour, startEsignPlaceFieldsTour } from '../utils/esignTour';
 import { lookupRecipient } from '../config/recipientDirectory';
 import { SUPPRESS_PII } from '../analytics/privacy';
+import { ZOHO_SEND_SUCCESS_LINE, zohoValidationItems } from '../utils/esignProviderCopy';
+import EsignProviderPicker from '../components/EsignProviderPicker';
+import { useZohoSignStatus } from '../hooks/useZohoSignStatus';
+import { sendDocumentForSignature, type EsignProvider } from '../services/esignDocumentService';
 
 const QUOTE_PENDING_APPROVAL_KEY = 'quotePendingApproval';
 const SAVED_RECIPIENTS_KEY = 'esign_saved_recipients';
@@ -235,8 +239,11 @@ const EsignPlaceFieldsPage: React.FC = () => {
   const [sendingApproval, setSendingApproval] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [sendForSignatureResult, setSendForSignatureResult] = useState<string | null>(null);
-  const [sendSuccessModal, setSendSuccessModal] = useState<{ open: boolean; recipients: string[] }>({ open: false, recipients: [] });
+  const [sendSuccessModal, setSendSuccessModal] = useState<{ open: boolean; recipients: string[]; provider?: EsignProvider }>({ open: false, recipients: [] });
   const [sending, setSending] = useState(false);
+  // Never persisted: every visit to this page starts on the in-house provider.
+  const [provider, setProvider] = useState<EsignProvider>('cpq');
+  const { zohoEnabled } = useZohoSignStatus();
   const [savedRecipients, setSavedRecipients] = useState<SavedRecipient[]>(() => getSavedRecipients());
   const [savedGroups, setSavedGroups] = useState<SavedGroup[]>(() => getSavedGroups());
   const [defaultGroupId, setDefaultGroupIdState] = useState<string | null>(() => getDefaultGroupId());
@@ -806,16 +813,20 @@ const EsignPlaceFieldsPage: React.FC = () => {
       }
       setSending(true);
       try {
-        const sendRes = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/send-for-signature`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
+        const sendData = await sendDocumentForSignature(documentId, provider, {
+          is_sequential: !!doc?.signing_order_enforced,
+          email_reminders: true,
         });
-        const sendData = await sendRes.json();
         if (sendData.success) {
-          setSendForSignatureResult(formatSendForSignatureSuccessMessage(sendData));
-          const sentTo = Array.isArray(sendData.emails_sent_to) ? sendData.emails_sent_to : [];
-          setSendSuccessModal({ open: true, recipients: sentTo });
+          const sentViaZoho = provider === 'zoho';
+          setSendForSignatureResult(
+            sentViaZoho ? ZOHO_SEND_SUCCESS_LINE : formatSendForSignatureSuccessMessage(sendData)
+          );
+          // Zoho answers with its own recipient list; the in-house route reports who it emailed.
+          const sentTo = sentViaZoho
+            ? (Array.isArray(sendData.recipients) ? sendData.recipients.map((r: { email?: string }) => r.email || '').filter(Boolean) : [])
+            : (Array.isArray(sendData.emails_sent_to) ? sendData.emails_sent_to : []);
+          setSendSuccessModal({ open: true, recipients: sentTo, provider });
         } else {
           setSendForSignatureResult(sendData.error || 'Failed to send.');
         }
@@ -956,6 +967,10 @@ const EsignPlaceFieldsPage: React.FC = () => {
     ...(reviewerRecipients.length > 0
       ? [{ label: 'Field placed for each reviewer', done: reviewersMissingField.length === 0, optional: true }]
       : []),
+    // Zoho-only: these two rules are Zoho's, not CPQ's, so they appear only while it is selected.
+    ...(provider === 'zoho'
+      ? zohoValidationItems(recipients.length, signerRecipients.map((s) => s.id), signatureFields)
+      : []),
   ];
   const allValidationPassed = validationItems.every((v) => v.optional || v.done) && recipients.length > 0;
 
@@ -991,6 +1006,9 @@ const EsignPlaceFieldsPage: React.FC = () => {
               <h2 id="send-success-title" className="text-lg font-semibold text-slate-900">
                 Signature request sent successfully.
               </h2>
+              {sendSuccessModal.provider === 'zoho' && (
+                <p className="mt-2 text-sm text-slate-600">{ZOHO_SEND_SUCCESS_LINE}</p>
+              )}
               {sendSuccessModal.recipients.length > 0 && (
                 <p className="mt-2 text-sm text-slate-600">
                   Notified {sendSuccessModal.recipients.length} recipient{sendSuccessModal.recipients.length === 1 ? '' : 's'}:
@@ -1599,6 +1617,10 @@ const EsignPlaceFieldsPage: React.FC = () => {
                   ))}
                 </ul>
               </section>
+
+              {zohoEnabled && (
+                <EsignProviderPicker value={provider} onChange={setProvider} disabled={saving || sending} />
+              )}
               </div>
 
               {doc?.signing_order_enforced && recipients.length > 1 && (

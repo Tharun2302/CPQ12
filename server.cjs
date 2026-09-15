@@ -9,6 +9,7 @@ const fs = require('fs');
 const { exec } = require('child_process');
 const { MongoClient } = require('mongodb');
 const { pickEsignCarriedFields } = require('./esign-field-carry.cjs');
+const { zohoSignEnabled, zohoSignConfigured, getZohoSignConfig } = require('./zoho-sign-config.cjs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { spawn } = require('child_process');
@@ -493,6 +494,29 @@ async function initializeDatabase() {
     await auditLogsCollection.createIndex({ document_id: 1 });
     await auditLogsCollection.createIndex({ timestamp: -1 });
     console.log('✅ E-Signature collections ready');
+
+    // Zoho Sign indexes are created only when the provider is switched on, so an
+    // install that never enables Zoho sees no schema-adjacent change at all.
+    if (zohoSignEnabled(getZohoSignConfig())) {
+      // Sparse is mandatory: every pre-existing document lacks zoho_request_id, and a
+      // non-sparse unique index would throw E11000 on the second one — the same trap
+      // already hit and fixed for signing_token above.
+      await esignDocumentsCollection.createIndex(
+        { zoho_request_id: 1 },
+        { unique: true, sparse: true }
+      );
+      await esignDocumentsCollection.createIndex(
+        { provider: 1, zoho_request_status: 1, zoho_last_polled_at: 1 },
+        { sparse: true }
+      );
+      await esignRecipientsCollection.createIndex({ zoho_action_id: 1 }, { sparse: true });
+      const zohoSignEventsCollection = db.collection('zoho_sign_events');
+      // Unique dedupe_key IS the idempotency mechanism: a webhook and a poll reporting
+      // the same event collide here, so only one of them changes state.
+      await zohoSignEventsCollection.createIndex({ dedupe_key: 1 }, { unique: true });
+      await zohoSignEventsCollection.createIndex({ document_id: 1, performed_at: -1 });
+      console.log('✅ Zoho Sign collections ready');
+    }
     
     console.log('✅ Connected to MongoDB Atlas successfully');
     console.log('📊 Database name:', DB_NAME);
@@ -8472,6 +8496,236 @@ app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
   } catch (error) {
     console.error('❌ E-sign send-for-signature error:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ===========================================================================
+// ZOHO SIGN (optional second provider) — design §8 E2
+//
+// This block is additive. With ZOHO_SIGN_ENABLED blank, getZohoSignConfig().enabled is false,
+// the sender returns 503 before touching anything, and every in-house path above is untouched.
+//
+// It is held to the CLAUDE.md bar — verified JWT, creator check, per-route rate limit, backend
+// validation — even though the /api/esign/* routes around it are not. Copying that pattern
+// would be copying a defect (design §4.4, §12.3).
+// ===========================================================================
+
+const {
+  createZohoSignAuth,
+} = require('./zoho-sign-auth.cjs');
+const { createZohoSignClient } = require('./zoho-sign-client.cjs');
+const { createZohoSignSender } = require('./zoho-sign-send.cjs');
+
+// Reminders are emails to customers and a send is an irreversible external action, so this is
+// the tightest limiter in the file. 10/min/IP, per design §8 E2.
+const zohoSignSendLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many Zoho Sign requests. Try again in a minute.' },
+});
+
+/**
+ * Transport for the Zoho modules. validateStatus is disabled on purpose: zoho-sign-client owns
+ * the whole status-to-error mapping, and an axios throw would bypass it and lose the body that
+ * carries Zoho's own code.
+ */
+async function zohoSignHttpRequest(spec) {
+  const wantsBuffer = spec.responseType === 'buffer';
+  const response = await axios({
+    method: spec.method,
+    url: spec.url,
+    headers: spec.headers || {},
+    data: spec.body,
+    responseType: wantsBuffer ? 'arraybuffer' : 'text',
+    transformResponse: [(data) => data],
+    validateStatus: () => true,
+    timeout: 60000,
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+  });
+  return {
+    status: response.status,
+    headers: response.headers || {},
+    body: wantsBuffer ? Buffer.from(response.data) : String(response.data == null ? '' : response.data),
+  };
+}
+
+// Survives a restart so a crash loop cannot burn refresh calls against the 50/minute ceiling.
+// The refresh token is NEVER written here — it stays in .env (design §6.3).
+const zohoSignTokenStore = {
+  async load() {
+    if (!db) return null;
+    return await db.collection('zoho_sign_tokens').findOne({ _id: 'zoho-sign' });
+  },
+  async save(record) {
+    if (!db) return;
+    await db.collection('zoho_sign_tokens').updateOne(
+      { _id: 'zoho-sign' },
+      {
+        $set: {
+          access_token: record.access_token,
+          expires_at: record.expires_at,
+          api_domain: record.api_domain,
+          updated_at: record.updated_at,
+        },
+      },
+      { upsert: true },
+    );
+  },
+};
+
+/** The Mongo half of the sender's store contract. Every write here is an additive field. */
+const zohoSignMongoStore = {
+  async findDocument(documentId) {
+    return await db.collection('esign_documents').findOne({ _id: new ObjectId(documentId) });
+  },
+  async findRecipients(documentId) {
+    return await db.collection('esign_recipients')
+      .find(esignRecipientsDocumentFilter(documentId))
+      .sort({ order: 1, _id: 1 })
+      .toArray();
+  },
+  async findFields(documentId) {
+    return await db.collection('signature_fields')
+      .find(signatureFieldsDocumentFilter(documentId))
+      .sort({ _id: 1 })
+      .toArray();
+  },
+  async loadPdf(doc) {
+    const diskPath = doc.review_merged_file_path || doc.file_path;
+    if (diskPath && fs.existsSync(diskPath)) {
+      return { buffer: fs.readFileSync(path.resolve(diskPath)), fileName: doc.file_name || 'document.pdf' };
+    }
+    if (doc.file_data) {
+      return { buffer: Buffer.from(doc.file_data, 'base64'), fileName: doc.file_name || 'document.pdf' };
+    }
+    return null;
+  },
+  /** 1-based page number to size in PDF points, which is the unit CPQ's stored geometry uses. */
+  async resolvePageSizes(buffer) {
+    const pdf = await PDFDocument.load(buffer, { ignoreEncryption: true });
+    const sizes = {};
+    pdf.getPages().forEach((page, index) => {
+      sizes[index + 1] = { width: page.getWidth(), height: page.getHeight() };
+    });
+    return sizes;
+  },
+  async saveZohoRequest(documentId, patch) {
+    await db.collection('esign_documents').updateOne({ _id: new ObjectId(documentId) }, { $set: patch });
+  },
+  async saveRecipientAction(recipientId, patch) {
+    await db.collection('esign_recipients').updateOne({ _id: new ObjectId(recipientId) }, { $set: patch });
+  },
+  async saveSent(documentId, patch) {
+    await db.collection('esign_documents').updateOne({ _id: new ObjectId(documentId) }, { $set: patch });
+  },
+  async saveError(documentId, lastError) {
+    await db.collection('esign_documents').updateOne(
+      { _id: new ObjectId(documentId) },
+      { $set: { zoho_last_error: lastError } },
+    );
+  },
+};
+
+let zohoSignRuntime = null;
+
+/** One auth instance and one client per process — the single-flight refresh lock depends on it. */
+function getZohoSignRuntime() {
+  if (zohoSignRuntime) return zohoSignRuntime;
+  const config = getZohoSignConfig();
+  const auth = createZohoSignAuth({ config, httpRequest: zohoSignHttpRequest, store: zohoSignTokenStore });
+  const client = createZohoSignClient({
+    config,
+    auth,
+    httpRequest: zohoSignHttpRequest,
+    logger: (message) => console.warn(`⚠️ ${message}`),
+  });
+  const sender = createZohoSignSender({
+    config,
+    client,
+    store: zohoSignMongoStore,
+    logAudit,
+    logger: (message) => console.warn(`⚠️ ${message}`),
+  });
+  zohoSignRuntime = { config, auth, client, sender };
+  return zohoSignRuntime;
+}
+
+// Status is polled by every prepare page on mount, so it gets its own, looser limiter than the
+// send route. 30/min/IP, per design §8 E1.
+const zohoSignStatusLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many Zoho Sign status checks. Try again in a minute.' },
+});
+
+// GET /api/zoho-sign/status — the flag the prepare UI reads to decide whether to offer Zoho at
+// all. Booleans and env-variable NAMES only: no key, no token, not even a prefix of one.
+app.get('/api/zoho-sign/status', zohoSignStatusLimiter, async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+
+    const actor = await getAuthenticatedUser(req, res);
+    if (!actor) return undefined;
+
+    const config = getZohoSignConfig();
+    const enabled = zohoSignEnabled(config);
+    return res.json({
+      success: true,
+      enabled,
+      configured: zohoSignConfigured(config),
+      // Only meaningful once the feature is switched on, and even then it is a list of names.
+      missing_keys: enabled ? config.missingKeys.slice() : [],
+    });
+  } catch (error) {
+    console.error('❌ Zoho Sign status error:', error?.message);
+    return res.status(500).json({ success: false, error: 'Could not read Zoho Sign status.' });
+  }
+});
+
+// POST /api/zoho-sign/documents/:id/send — hand a prepared CPQ document to Zoho Sign.
+// Recipients and fields are read server-side from esign_recipients and signature_fields, so the
+// existing prepare UI needs no new data plumbing and there is one source of truth.
+app.post('/api/zoho-sign/documents/:id/send', zohoSignSendLimiter, async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+
+    // Cheap gate first: an install with Zoho off must not pay for a JWT lookup to be told 503.
+    const config = getZohoSignConfig();
+    if (!zohoSignEnabled(config)) {
+      return res.status(503).json({ success: false, error: 'Zoho Sign is not enabled.', code: 'ZOHO_DISABLED' });
+    }
+    // Enabled-but-unconfigured has to be answered here rather than by the sender: building the
+    // client against a blank apiBase throws, and that would surface as a 500 instead of the 503
+    // naming the missing keys.
+    if (!zohoSignConfigured(config)) {
+      return res.status(503).json({
+        success: false,
+        error: config.dcError || `Zoho Sign is enabled but not configured. Missing .env values: ${config.missingKeys.join(', ')}`,
+        code: 'ZOHO_NOT_CONFIGURED',
+        missing_keys: config.missingKeys.slice(),
+      });
+    }
+
+    const actor = await getAuthenticatedUser(req, res);
+    if (!actor) return undefined;
+
+    const result = await getZohoSignRuntime().sender.send({
+      documentId: req.params.id,
+      actorEmail: actor.email,
+      body: req.body,
+      ip: req.ip,
+    });
+    return res.status(result.status).json(result.body);
+  } catch (error) {
+    // The sender maps every Zoho failure itself, so reaching here means a CPQ-side fault. The
+    // message is not echoed: it can carry a file path or a Mongo detail.
+    console.error('❌ Zoho Sign send error:', error?.message);
+    return res.status(500).json({ success: false, error: 'Could not send this document with Zoho Sign.', code: 'ZOHO_SEND_FAILED' });
   }
 });
 

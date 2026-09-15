@@ -1,0 +1,497 @@
+'use strict';
+
+// The Zoho send (design §8, E2) as an injectable service. Kept out of server.cjs so the whole
+// sequence — preconditions, create, persist-before-submit, submit, persist — can be unit tested
+// with a fake Mongo layer and a fake Zoho client. server.cjs keeps only the glue: JWT, the rate
+// limiter, and handing the returned {status, body} to res.
+//
+// Injected store contract (every method may be async; none of them is called by a test against
+// a real database):
+//   findDocument(documentId)            -> doc | null
+//   findRecipients(documentId)          -> [esign_recipients row]
+//   findFields(documentId)              -> [signature_fields row]
+//   loadPdf(doc)                        -> { buffer, fileName } | null
+//   resolvePageSizes(buffer)            -> { [1-based page]: { width, height } }   (optional)
+//   saveZohoRequest(documentId, patch)  -> void   persisted BEFORE submit
+//   saveRecipientAction(recipientId, patch) -> void
+//   saveSent(documentId, patch)         -> void
+//   saveError(documentId, lastError)    -> void
+//
+// Nothing here logs or returns a Zoho raw body: callers get `message`, which is written to be
+// shown to a user, and the redaction guard from zoho-sign-client owns anything that is logged.
+
+const {
+  ZOHO_ERROR_CODES,
+  zohoSignError,
+} = require('./zoho-sign-auth.cjs');
+
+const { createRedactor } = require('./zoho-sign-client.cjs');
+
+const { actorIsEsignDocumentCreator } = require('./esign-creator-utils.cjs');
+
+const {
+  ZOHO_ACTION_TYPES,
+  DEFAULT_PAGE_SIZE_PT,
+  mapRecipientsToZohoActions,
+  mapSignatureFieldsToZoho,
+  actionsMissingFields,
+  buildCreateRequestPayload,
+  buildSubmitPayload,
+} = require('./zoho-sign-mapper.cjs');
+
+const OBJECT_ID_PATTERN = /^[0-9a-fA-F]{24}$/;
+
+/** Zoho's single-document ceiling (design §7.7). Checked here so the upload is never attempted. */
+const ZOHO_MAX_PDF_BYTES = 25 * 1024 * 1024;
+
+const EXPIRATION_DAYS_MIN = 1;
+const EXPIRATION_DAYS_MAX = 90;
+const REMINDER_PERIOD_MIN = 1;
+const REMINDER_PERIOD_MAX = 30;
+const NOTES_MAX_LENGTH = 500;
+const REQUEST_NAME_MAX_LENGTH = 200;
+
+// Anything not listed maps to 502: the browser learns "Zoho refused this" and the precise cause
+// stays in zoho_last_error, where it cannot leak account detail into a response body.
+const HTTP_STATUS_BY_ZOHO_ERROR = Object.freeze({
+  [ZOHO_ERROR_CODES.NOT_CONFIGURED]: 503,
+  [ZOHO_ERROR_CODES.RATE_LIMITED]: 429,
+  [ZOHO_ERROR_CODES.INVALID_INPUT]: 400,
+});
+
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+function capString(value, maxLength) {
+  return String(value == null ? '' : value).trim().slice(0, maxLength);
+}
+
+/** True for a 24-hex id. Checked before `new ObjectId()` so a malformed id is a 400, not a throw. */
+function isValidObjectIdString(value) {
+  return OBJECT_ID_PATTERN.test(String(value == null ? '' : value).trim());
+}
+
+/**
+ * Backend validation of the request body (design §12.4).
+ *
+ * Absent keys are not defaults — they are simply omitted, so Zoho applies its own account
+ * settings. Present-but-wrong is always an error rather than a silent coercion: a caller that
+ * sent `is_sequential: "false"` meant something, and quietly reading that as true would send a
+ * contract to every recipient at once.
+ */
+function validateZohoSendOptions(body) {
+  const source = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
+  const errors = [];
+  const options = {};
+
+  if (hasOwn(source, 'expiration_days') && source.expiration_days !== null && source.expiration_days !== '') {
+    const days = Number(source.expiration_days);
+    if (!Number.isInteger(days) || days < EXPIRATION_DAYS_MIN || days > EXPIRATION_DAYS_MAX) {
+      errors.push(`expiration_days must be a whole number between ${EXPIRATION_DAYS_MIN} and ${EXPIRATION_DAYS_MAX}.`);
+    } else {
+      options.expirationDays = days;
+    }
+  }
+
+  if (hasOwn(source, 'reminder_period') && source.reminder_period !== null && source.reminder_period !== '') {
+    const period = Number(source.reminder_period);
+    if (!Number.isInteger(period) || period < REMINDER_PERIOD_MIN || period > REMINDER_PERIOD_MAX) {
+      errors.push(`reminder_period must be a whole number between ${REMINDER_PERIOD_MIN} and ${REMINDER_PERIOD_MAX}.`);
+    } else {
+      options.reminderPeriod = period;
+    }
+  }
+
+  if (hasOwn(source, 'is_sequential')) {
+    if (typeof source.is_sequential !== 'boolean') errors.push('is_sequential must be true or false.');
+    else options.isSequential = source.is_sequential;
+  }
+
+  if (hasOwn(source, 'email_reminders')) {
+    if (typeof source.email_reminders !== 'boolean') errors.push('email_reminders must be true or false.');
+    else options.emailReminders = source.email_reminders;
+  }
+
+  if (hasOwn(source, 'notes') && source.notes !== null && source.notes !== '') {
+    if (typeof source.notes !== 'string') errors.push('notes must be text.');
+    else options.notes = capString(source.notes, NOTES_MAX_LENGTH);
+  }
+
+  if (hasOwn(source, 'request_name') && source.request_name !== null && source.request_name !== '') {
+    if (typeof source.request_name !== 'string') errors.push('request_name must be text.');
+    else options.requestName = capString(source.request_name, REQUEST_NAME_MAX_LENGTH);
+  }
+
+  return { errors, options };
+}
+
+/**
+ * Whether this document may be handed to Zoho at all. Returns null when it may.
+ *
+ * The zoho_request_id check comes first and is the important one: it is what stops a double
+ * click creating two signature requests at Zoho for the same contract, because E2 persists that
+ * id before it submits.
+ */
+function checkDocumentSendable(doc) {
+  if (doc && (doc.zoho_request_id || doc.provider === 'zoho')) {
+    return {
+      status: 409,
+      error: 'This document has already been handed to Zoho Sign.',
+      code: 'ZOHO_ALREADY_SENT',
+    };
+  }
+  if (doc && doc.status === 'sent') {
+    return { status: 409, error: 'This document has already been sent.', code: 'ALREADY_SENT' };
+  }
+  if (!doc || doc.status !== 'draft') {
+    return {
+      status: 400,
+      error: `Only draft documents can be sent. This one is "${(doc && doc.status) || 'unknown'}".`,
+      code: 'NOT_DRAFT',
+    };
+  }
+  return null;
+}
+
+/**
+ * Zoho's action_ids, lined up with the actions we asked for.
+ *
+ * Positional alignment is what the mapper's buildSubmitPayload expects, but matching on email
+ * first means a reordered echo puts each signer's fields on their own page rather than on
+ * somebody else's. Falling back to position keeps a Zoho response that omits the email usable.
+ */
+function matchZohoActionIds(zohoActions, mappedActions) {
+  const echoed = Array.isArray(zohoActions) ? zohoActions : [];
+  const byEmail = new Map();
+  echoed.forEach((action) => {
+    const email = String((action && action.recipient_email) || '').trim().toLowerCase();
+    if (email && !byEmail.has(email)) byEmail.set(email, action);
+  });
+
+  const actionIds = [];
+  const unmatched = [];
+  (Array.isArray(mappedActions) ? mappedActions : []).forEach((action, index) => {
+    const hit = byEmail.get(String(action.recipient_email || '').toLowerCase()) || echoed[index];
+    const id = hit && hit.action_id != null ? String(hit.action_id) : '';
+    if (id === '') unmatched.push(action.recipient_email || `recipient ${index + 1}`);
+    actionIds.push(id);
+  });
+  return { actionIds, unmatched };
+}
+
+/** Zoho's document_ids echo, reduced to what we store and what the field mapper addresses. */
+function normalizeZohoDocumentIds(zohoRequest) {
+  const list = zohoRequest && Array.isArray(zohoRequest.document_ids) ? zohoRequest.document_ids : [];
+  return list.map((entry) => ({
+    document_id: String((entry && entry.document_id) || ''),
+    document_name: String((entry && entry.document_name) || ''),
+    total_pages: Number((entry && entry.total_pages) || 0) || 0,
+  })).filter((entry) => entry.document_id !== '');
+}
+
+function httpStatusForZohoError(error) {
+  return HTTP_STATUS_BY_ZOHO_ERROR[error && error.code] || 502;
+}
+
+/**
+ * The stored failure record. Deliberately narrow: code, a user-safe message and a timestamp.
+ * Zoho's raw body is not kept — it can carry account detail and the UI renders this field.
+ */
+function toStoredError(error, at) {
+  return {
+    code: String((error && error.code) || ZOHO_ERROR_CODES.API_ERROR),
+    message: String((error && error.message) || 'Zoho Sign refused the request.'),
+    at,
+  };
+}
+
+/**
+ * The E2 service.
+ *
+ * @param {object} deps
+ * @param {object} deps.config   resolved zoho-sign-config object
+ * @param {object} deps.client   zoho-sign-client instance
+ * @param {object} deps.store    see the header contract
+ * @param {Function} [deps.logAudit] (documentId, action, email, ip, extra) => Promise
+ * @param {Function} [deps.now]  clock, for tests
+ * @param {Function} [deps.logger] (message) => void; only ever receives redacted text
+ */
+function createZohoSignSender(deps) {
+  const { config, client, store } = deps || {};
+  const now = (deps && deps.now) || (() => new Date());
+  const audit = (deps && deps.logAudit) || null;
+  const logger = deps && typeof deps.logger === 'function' ? deps.logger : null;
+
+  if (!config) throw zohoSignError(ZOHO_ERROR_CODES.INVALID_INPUT, 'createZohoSignSender requires a config');
+  if (!store) throw zohoSignError(ZOHO_ERROR_CODES.INVALID_INPUT, 'createZohoSignSender requires a store');
+  if (!client) throw zohoSignError(ZOHO_ERROR_CODES.INVALID_INPUT, 'createZohoSignSender requires a Zoho client');
+
+  const redact = createRedactor([config.clientSecret, config.refreshToken, config.webhookSecret]);
+
+  function warn(message) {
+    if (!logger) return;
+    const safe = redact(message);
+    if (safe === null) return;
+    logger(safe);
+  }
+
+  function fail(status, error, code, extra) {
+    return { status, body: Object.assign({ success: false, error, code }, extra || {}) };
+  }
+
+  async function recordFailure(documentId, error) {
+    if (typeof store.saveError !== 'function') return;
+    try {
+      await store.saveError(documentId, toStoredError(error, now()));
+    } catch (e) {
+      // A failure to record a failure must not replace the real error the caller is about to see.
+      warn(`Zoho Sign could not record the last error for document ${documentId}`);
+    }
+  }
+
+  /**
+   * @param {object} input
+   * @param {string} input.documentId  the :id path parameter, unvalidated
+   * @param {string} input.actorEmail  the VERIFIED JWT email, never a body-supplied address
+   * @param {object} input.body        the request body, unvalidated
+   * @param {string} [input.ip]        for the audit row
+   * @returns {Promise<{status:number, body:object}>}
+   */
+  async function send(input) {
+    const documentId = String((input && input.documentId) || '').trim();
+    const actorEmail = String((input && input.actorEmail) || '').trim();
+    const ip = (input && input.ip) || null;
+
+    if (config.enabled !== true) {
+      return fail(503, 'Zoho Sign is not enabled.', 'ZOHO_DISABLED');
+    }
+    if (config.configured !== true) {
+      return fail(
+        503,
+        config.dcError || `Zoho Sign is enabled but not configured. Missing .env values: ${config.missingKeys.join(', ')}`,
+        'ZOHO_NOT_CONFIGURED',
+        { missing_keys: config.missingKeys.slice() },
+      );
+    }
+    if (!isValidObjectIdString(documentId)) {
+      return fail(400, 'Invalid document ID', 'INVALID_DOCUMENT_ID');
+    }
+
+    const { errors: optionErrors, options } = validateZohoSendOptions(input && input.body);
+    if (optionErrors.length > 0) {
+      return fail(400, optionErrors.join(' '), 'INVALID_INPUT', { details: optionErrors });
+    }
+
+    const doc = await store.findDocument(documentId);
+    if (!doc) return fail(404, 'Document not found', 'NOT_FOUND');
+
+    if (!actorIsEsignDocumentCreator(doc, actorEmail)) {
+      return fail(403, 'Only the document creator can send this document with Zoho Sign.', 'NOT_CREATOR');
+    }
+
+    const stateError = checkDocumentSendable(doc);
+    if (stateError) return fail(stateError.status, stateError.error, stateError.code);
+
+    const recipients = (await store.findRecipients(documentId)) || [];
+    const mapped = mapRecipientsToZohoActions(recipients, {});
+    if (mapped.errors.length > 0) {
+      return fail(400, mapped.errors.join(' '), 'INVALID_RECIPIENTS', { details: mapped.errors });
+    }
+
+    const fields = (await store.findFields(documentId)) || [];
+
+    const pdf = await store.loadPdf(doc);
+    if (!pdf || !pdf.buffer || pdf.buffer.length === 0) {
+      return fail(404, 'The PDF for this document could not be found.', 'FILE_NOT_FOUND');
+    }
+    if (pdf.buffer.length > ZOHO_MAX_PDF_BYTES) {
+      return fail(
+        413,
+        `Zoho Sign accepts documents up to 25 MB; this one is ${Math.ceil(pdf.buffer.length / (1024 * 1024))} MB.`,
+        'FILE_TOO_LARGE',
+      );
+    }
+
+    let pageSizes = {};
+    if (typeof store.resolvePageSizes === 'function') {
+      try {
+        pageSizes = (await store.resolvePageSizes(pdf.buffer)) || {};
+      } catch (e) {
+        // A page-size read failure is not fatal: the mapper falls back to US Letter, which is
+        // what every CPQ agreement template uses anyway.
+        warn(`Zoho Sign could not read page sizes for document ${documentId}; falling back to US Letter`);
+        pageSizes = {};
+      }
+    }
+
+    // Field mapping runs before anything is created at Zoho. A rejected submit would otherwise
+    // leave an orphaned draft in the Zoho account that nothing in CPQ ever cleans up.
+    const { byRecipient, unassigned } = mapSignatureFieldsToZoho(fields, {
+      documentId: '',
+      pageSizes,
+      pageSize: DEFAULT_PAGE_SIZE_PT,
+      origin: config.coordOrigin,
+      unit: config.coordUnit,
+    });
+
+    const missing = actionsMissingFields(mapped.actions, mapped.recipientIds, byRecipient);
+    if (missing.length > 0) {
+      const who = missing.map((entry) => entry.email).join(', ');
+      return fail(
+        400,
+        `Zoho Sign requires at least one field for every signer and reviewer. These have none: ${who}.`,
+        'RECIPIENT_HAS_NO_FIELDS',
+        { recipients_without_fields: missing.map((entry) => entry.email) },
+      );
+    }
+
+    const createPayload = buildCreateRequestPayload({
+      requestName: options.requestName || doc.file_name || 'CPQ Agreement',
+      actions: mapped.actions,
+      notes: options.notes,
+      isSequential: hasOwn(options, 'isSequential') ? options.isSequential : doc.signing_order_enforced === true,
+      expirationDays: options.expirationDays,
+      emailReminders: options.emailReminders,
+      reminderPeriod: options.reminderPeriod,
+    });
+
+    let zohoRequest;
+    try {
+      zohoRequest = await client.createRequest({
+        files: [{ buffer: pdf.buffer, fileName: pdf.fileName || 'document.pdf', contentType: 'application/pdf' }],
+        data: createPayload,
+      });
+    } catch (error) {
+      await recordFailure(documentId, error);
+      return fail(httpStatusForZohoError(error), error.message, error.code || ZOHO_ERROR_CODES.API_ERROR);
+    }
+
+    const requestId = zohoRequest && zohoRequest.request_id != null ? String(zohoRequest.request_id) : '';
+    if (requestId === '') {
+      const error = zohoSignError(ZOHO_ERROR_CODES.API_ERROR, 'Zoho Sign did not return a request id.');
+      await recordFailure(documentId, error);
+      return fail(502, error.message, error.code);
+    }
+
+    const zohoDocumentIds = normalizeZohoDocumentIds(zohoRequest);
+    const sentAt = now();
+
+    // Persisted BEFORE submit, deliberately: a crash between the two calls then leaves a
+    // recoverable CPQ record pointing at a real Zoho draft, rather than an orphan at Zoho that
+    // nothing here can find again.
+    await store.saveZohoRequest(documentId, {
+      provider: 'zoho',
+      zoho_request_id: requestId,
+      zoho_document_ids: zohoDocumentIds,
+      zoho_dc: config.dc,
+      zoho_request_status: String((zohoRequest && zohoRequest.request_status) || 'draft'),
+    });
+
+    const { actionIds, unmatched } = matchZohoActionIds(zohoRequest && zohoRequest.actions, mapped.actions);
+    if (unmatched.length > 0) {
+      const error = zohoSignError(
+        ZOHO_ERROR_CODES.API_ERROR,
+        `Zoho Sign did not return an action id for: ${unmatched.join(', ')}.`,
+      );
+      await recordFailure(documentId, error);
+      return fail(502, error.message, error.code, { zoho_request_id: requestId });
+    }
+
+    const primaryDocumentId = zohoDocumentIds.length > 0 ? zohoDocumentIds[0].document_id : '';
+    // The attributes come from mapped.actions — our own CPQ-sourced objects — not from the
+    // actions Zoho echoed at create. Zoho's echo carries read-only keys (action_status and
+    // friends) and a submit refuses them with 9043 "Extra key found".
+    const submitPayload = buildSubmitPayload(actionIds, mapped.actions, mapped.recipientIds, byRecipient);
+    // document_id is only knowable after create, so it is stamped onto the mapped fields here
+    // rather than guessed at mapping time.
+    submitPayload.requests.actions.forEach((action) => {
+      action.fields.forEach((field) => { field.document_id = primaryDocumentId; });
+    });
+
+    try {
+      await client.submitRequest(requestId, submitPayload);
+    } catch (error) {
+      await recordFailure(documentId, error);
+      return fail(httpStatusForZohoError(error), error.message, error.code || ZOHO_ERROR_CODES.API_ERROR, {
+        zoho_request_id: requestId,
+      });
+    }
+
+    const recipientResults = [];
+    for (let index = 0; index < mapped.recipientIds.length; index += 1) {
+      const recipientId = mapped.recipientIds[index];
+      const patch = {
+        zoho_action_id: actionIds[index],
+        zoho_action_type: mapped.actions[index].action_type,
+        zoho_action_status: 'NOTACTIONYET',
+        status: 'pending',
+        sent_at: sentAt,
+      };
+      if (recipientId) await store.saveRecipientAction(recipientId, patch);
+      recipientResults.push({
+        id: recipientId,
+        email: mapped.actions[index].recipient_email,
+        zoho_action_id: actionIds[index],
+        zoho_action_type: mapped.actions[index].action_type,
+      });
+    }
+
+    await store.saveSent(documentId, {
+      status: 'sent',
+      sent_at: sentAt,
+      zoho_sent_at: sentAt,
+      zoho_request_status: 'inprogress',
+      zoho_last_synced_at: sentAt,
+    });
+
+    if (audit) {
+      try {
+        await audit(documentId, 'sent', actorEmail, ip, {
+          provider: 'zoho',
+          zoho_request_id: requestId,
+          zoho_dc: config.dc,
+          recipients: recipientResults.length,
+        });
+      } catch (e) {
+        warn(`Zoho Sign could not write the audit row for document ${documentId}`);
+      }
+    }
+
+    return {
+      status: 200,
+      body: {
+        success: true,
+        message: `Sent to Zoho Sign. Zoho will email ${recipientResults.length} recipient(s).`,
+        document: {
+          id: documentId,
+          provider: 'zoho',
+          status: 'sent',
+          zoho_request_id: requestId,
+          zoho_dc: config.dc,
+        },
+        recipients: recipientResults,
+      },
+    };
+  }
+
+  return { send };
+}
+
+module.exports = {
+  ZOHO_MAX_PDF_BYTES,
+  OBJECT_ID_PATTERN,
+  ZOHO_ACTION_TYPES,
+  isValidObjectIdString,
+  validateZohoSendOptions,
+  checkDocumentSendable,
+  matchZohoActionIds,
+  normalizeZohoDocumentIds,
+  httpStatusForZohoError,
+  toStoredError,
+  createZohoSignSender,
+};

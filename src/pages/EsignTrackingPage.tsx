@@ -16,6 +16,9 @@ interface EsignDocument {
   creator_name?: string | null;
   creator_email?: string | null;
   sent_at?: string | null;
+  /** Absent on every document created before the provider split, which reads as the in-house flow. */
+  provider?: string | null;
+  zoho_request_status?: string | null;
 }
 
 interface Recipient {
@@ -37,6 +40,10 @@ interface Recipient {
 }
 
 const POLL_INTERVAL_MS = 12000;
+
+function isZohoDocument(doc: { provider?: string | null } | null): boolean {
+  return (doc?.provider || '').toLowerCase() === 'zoho';
+}
 
 function normalizeEmail(email: string | undefined | null): string {
   return (email || '').trim().toLowerCase();
@@ -222,6 +229,10 @@ const EsignTrackingPage: React.FC = () => {
   if (!doc) return null;
 
   const isSentOrCompleted = doc.status === 'sent' || doc.status === 'completed';
+  const sentViaZoho = isZohoDocument(doc);
+  // Only rendered once the backend actually reports a provider, so nothing moves on an install
+  // where the provider split is off.
+  const providerLabel = doc.provider ? (sentViaZoho ? 'Zoho' : 'CPQ') : null;
   const allSigned = doc.status === 'completed';
   const isCreator = isEsignDocumentForCurrentUser(doc, user?.email);
   const pendingRecipients = recipients.filter((rec) => rec.status === 'pending');
@@ -262,6 +273,14 @@ const EsignTrackingPage: React.FC = () => {
                 Sent for signature
               </span>
             ) : null}
+            {providerLabel && (
+              <span className="inline-block mt-2 ml-2 px-2.5 py-1 rounded-md text-xs font-medium bg-white/10 text-indigo-50 border border-white/30">
+                {providerLabel}
+              </span>
+            )}
+            {sentViaZoho && doc.zoho_request_status && (
+              <p className="text-indigo-100 text-xs mt-1.5">Zoho status: {doc.zoho_request_status}</p>
+            )}
           </div>
 
           <div className="p-6 space-y-6">
@@ -334,7 +353,7 @@ const EsignTrackingPage: React.FC = () => {
               </div>
             )}
 
-            {doc.status === 'sent' && pendingRecipients.length > 0 && pendingExpiryLabel && (
+            {doc.status === 'sent' && !sentViaZoho && pendingRecipients.length > 0 && pendingExpiryLabel && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 Pending signing links expire on <strong>{pendingExpiryLabel}</strong>.
               </div>
@@ -359,7 +378,7 @@ const EsignTrackingPage: React.FC = () => {
                     <CalendarClock className="h-5 w-5" />
                     {(isCreator || userIsApprovalAdmin) ? 'Edit dates' : 'View dates'}
                   </button>
-                  {doc.status === 'sent' && isCreator && pendingRecipients.length > 0 && (
+                  {doc.status === 'sent' && isCreator && !sentViaZoho && pendingRecipients.length > 0 && (
                     <button
                       type="button"
                       onClick={handleExtendExpiry}
@@ -374,7 +393,7 @@ const EsignTrackingPage: React.FC = () => {
                 {(doc.status === 'sent' || doc.status === 'signed') && (
                   <p className="text-xs text-slate-500">
                     Shows the latest PDF on file, including any signatures applied so far.
-                    {doc.status === 'sent' && isCreator ? ' Use Extend expiry to reissue fresh 15-day links for pending recipients only.' : ''}
+                    {doc.status === 'sent' && isCreator && !sentViaZoho ? ' Use Extend expiry to reissue fresh 15-day links for pending recipients only.' : ''}
                   </p>
                 )}
               </div>

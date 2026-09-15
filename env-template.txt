@@ -103,3 +103,50 @@ VITE_APPROVAL_DEALDESK_EMAIL=
 TECHNICAL_TEAM_EMAIL=
 LEGAL_TEAM_EMAIL=
 DEAL_DESK_EMAIL=
+
+# ===========================================
+# ZOHO SIGN (Optional second e-signature provider)
+# ===========================================
+# EVERY VALUE BELOW IS DELIBERATELY BLANK. Fill in only what you need.
+# Blank ZOHO_SIGN_ENABLED means Zoho Sign is completely off: no provider
+# picker in the UI, no poller, and every /api/zoho-sign/* route returns 503.
+# The built-in CPQ e-sign flow is unaffected either way.
+# Accepted "on" values: 1, true, yes, on
+ZOHO_SIGN_ENABLED=
+
+# Data centre of the Zoho Sign account: us | eu | in | au | jp | ca | sa
+# Find it by opening Zoho Sign in a browser and reading the domain
+# (sign.zoho.in means "in"). Tokens are NOT portable between data centres.
+# Blank defaults to: us
+ZOHO_SIGN_DC=
+
+# From the Zoho API Console (https://api-console.zoho.<dc>), Self Client.
+# NEVER commit real values. NEVER log them.
+ZOHO_SIGN_CLIENT_ID=
+ZOHO_SIGN_CLIENT_SECRET=
+
+# One-time exchange of the Self Client grant code. Long-lived: Zoho refresh
+# tokens do not expire. Treat this as a password.
+ZOHO_SIGN_REFRESH_TOKEN=
+
+# Shared secret entered in Zoho Sign > Settings > Webhooks.
+# Blank disables webhook processing entirely (polling still works).
+ZOHO_SIGN_WEBHOOK_SECRET=
+
+# Polling fallback. Required while there is no public HTTPS callback URL.
+# Blank defaults to: off, 300000 ms, batch 20, 30000 ms minimum refresh.
+ZOHO_SIGN_POLL_ENABLED=
+ZOHO_SIGN_POLL_INTERVAL_MS=
+ZOHO_SIGN_POLL_BATCH=
+ZOHO_SIGN_MIN_REFRESH_MS=
+
+# Field coordinate calibration. Zoho does not document the unit or the origin,
+# so these are set once, after measuring against a real Zoho account.
+# ORIGIN: top | bottom   UNIT: pt | px   Blank defaults to: top, pt
+ZOHO_SIGN_COORD_ORIGIN=
+ZOHO_SIGN_COORD_UNIT=
+
+# Optional overrides. Leave blank to use the built-in data centre table.
+# Set BOTH to reach a data centre the table does not list.
+ZOHO_SIGN_API_BASE=
+ZOHO_SIGN_ACCOUNTS_BASE=

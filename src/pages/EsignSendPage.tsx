@@ -7,6 +7,10 @@ import {
   formatSendForSignatureSuccessMessage,
   validateSignatureFieldsBeforeSend,
 } from '../utils/esignSendValidation';
+import { ZOHO_SEND_SUCCESS_LINE, isEsignSendSuccessMessage } from '../utils/esignProviderCopy';
+import EsignProviderPicker from '../components/EsignProviderPicker';
+import { useZohoSignStatus } from '../hooks/useZohoSignStatus';
+import { sendDocumentForSignature, type EsignProvider } from '../services/esignDocumentService';
 
 const EsignSendPage: React.FC = () => {
   const { documentId } = useParams<{ documentId: string }>();
@@ -15,6 +19,9 @@ const EsignSendPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [sendForSignatureResult, setSendForSignatureResult] = useState<string | null>(null);
+  // Never persisted: every visit to this screen starts on the in-house provider.
+  const [provider, setProvider] = useState<EsignProvider>('cpq');
+  const { zohoEnabled } = useZohoSignStatus();
 
   useEffect(() => {
     if (!documentId) return;
@@ -53,14 +60,11 @@ const EsignSendPage: React.FC = () => {
         return;
       }
 
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/send-for-signature`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-      const data = await res.json();
+      const data = await sendDocumentForSignature(documentId, provider, { is_sequential: true, email_reminders: true });
       if (data.success) {
-        setSendForSignatureResult(formatSendForSignatureSuccessMessage(data));
+        setSendForSignatureResult(
+          provider === 'zoho' ? ZOHO_SEND_SUCCESS_LINE : formatSendForSignatureSuccessMessage(data)
+        );
       } else setSendForSignatureResult(data.error || 'Failed.');
     } catch {
       setSendForSignatureResult('Failed to send.');
@@ -96,21 +100,14 @@ const EsignSendPage: React.FC = () => {
             {sendForSignatureResult && (
               <p
                 className={`text-sm ${
-                  sendForSignatureResult.startsWith('Successfully') ||
-                  sendForSignatureResult.startsWith('Signing') ||
-                  sendForSignatureResult.startsWith('Document')
-                    ? 'text-emerald-600'
-                    : 'text-amber-600'
+                  isEsignSendSuccessMessage(sendForSignatureResult) ? 'text-emerald-600' : 'text-amber-600'
                 }`}
               >
                 {sendForSignatureResult}
               </p>
             )}
 
-            {sendForSignatureResult &&
-              (sendForSignatureResult.startsWith('Successfully') ||
-                sendForSignatureResult.startsWith('Signing') ||
-                sendForSignatureResult.startsWith('Document')) && (
+            {sendForSignatureResult && isEsignSendSuccessMessage(sendForSignatureResult) && (
               <button
                 type="button"
                 onClick={() => documentId && navigate(`/esign/${documentId}/status`)}
@@ -119,6 +116,10 @@ const EsignSendPage: React.FC = () => {
                 <ListChecks className="h-4 w-4" />
                 View signing status
               </button>
+            )}
+
+            {zohoEnabled && (
+              <EsignProviderPicker value={provider} onChange={setProvider} disabled={sending} />
             )}
 
             <div className="flex flex-wrap gap-3">

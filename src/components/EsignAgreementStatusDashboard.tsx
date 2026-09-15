@@ -143,6 +143,9 @@ interface Agreement {
   voided_at?: string;
   status: string;
   recipients: RecipientStatus[];
+  /** Absent on every agreement created before the provider split, which reads as the in-house flow. */
+  provider?: string | null;
+  zoho_request_status?: string | null;
 }
 
 type StatusFilterTab = 'all' | 'completed' | 'pending' | 'rejected';
@@ -151,6 +154,11 @@ type StatusFilterTab = 'all' | 'completed' | 'pending' | 'rejected';
 type AgreementTrack = 'sent' | 'viewed' | 'waiting' | 'completed' | 'declined' | 'voided' | 'expired';
 
 const isDoneStatus = (s?: string) => ['signed', 'reviewed'].includes((s || '').toLowerCase());
+
+const isZohoAgreement = (ag: { provider?: string | null }) => (ag.provider || '').toLowerCase() === 'zoho';
+
+/** Only labelled once the backend actually reports a provider, so nothing moves while the split is off. */
+const providerLabel = (ag: { provider?: string | null }) => (ag.provider ? (isZohoAgreement(ag) ? 'Zoho' : 'CPQ') : null);
 
 function deriveAgreementStatus(ag: Agreement): AgreementTrack {
   const s = (ag.status || '').toLowerCase();
@@ -1100,6 +1108,8 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                       const hasRecipients = (ag.recipients || []).length > 0;
                       const withComment = (ag.recipients || []).find((r) => r.comment);
                       const rowStatus = (ag.status || '').toLowerCase();
+                      const rowIsZoho = isZohoAgreement(ag);
+                      const rowProviderLabel = providerLabel(ag);
                       // Download of the signed/finalized PDF is available to everyone who can see the row.
                       const canDownloadRow = rowStatus === 'signed' || rowStatus === 'completed' || rowStatus === 'denied';
                       // Management actions (reminder/extend/cancel) are shown to everyone while the agreement is
@@ -1152,6 +1162,14 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                           <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border w-fit ${badge.cls}`}>
                             <badge.Icon className="h-3.5 w-3.5" /> {badge.label}
                           </span>
+                          {rowProviderLabel && (
+                            <span className="ml-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border border-slate-200 bg-slate-100 text-slate-600 w-fit">
+                              {rowProviderLabel}
+                            </span>
+                          )}
+                          {rowIsZoho && ag.zoho_request_status && (
+                            <p className="text-xs text-slate-500 mt-1.5">Zoho status: {ag.zoho_request_status}</p>
+                          )}
                           {last.iso ? (
                             <p className="text-xs text-slate-500 mt-1.5">
                               {last.label} {relativeTime(last.iso)}
@@ -1214,7 +1232,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                                 </button>
                               </>
                             )}
-                            {ag.status === 'sent' && (() => {
+                            {ag.status === 'sent' && !rowIsZoho && (() => {
                               const isCreator = isCurrentUserCreator(ag);
                               return (
                                 <button
@@ -1343,7 +1361,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                         <CalendarClock className="h-4 w-4 shrink-0" />
                         {(isCurrentUserCreator(openAgreement) || userIsApprovalAdmin) ? 'Edit dates' : 'View dates'}
                       </button>
-                      {status === 'sent' && (
+                      {status === 'sent' && !isZohoAgreement(openAgreement) && (
                         <button
                           type="button"
                           onClick={isCreator
