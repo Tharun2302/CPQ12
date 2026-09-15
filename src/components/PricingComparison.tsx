@@ -48,25 +48,30 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     }
   }, [selectedTiersPerCombination]);
 
-  // GLOBAL pricing plan: the single plan used to price the WHOLE quote (same for all
-  // combinations). Independent of the per-combination exhibit plans above.
-  const [pricingPlan, setPricingPlan] = useState<'Basic' | 'Standard' | 'Advanced'>(() => {
+  // PRICING plan per combination (key: combinationName, value: plan name). Mirrors the EXHIBIT
+  // map above in every way — per combination, defaulting to Standard — but kept separate from it:
+  // changing which exhibits a combination pulls must never move its price.
+  const [pricingPlanPerCombination, setPricingPlanPerCombination] = useState<Record<string, 'Basic' | 'Standard' | 'Advanced'>>(() => {
     try {
-      const saved = sessionStorage.getItem('cpq_pricing_plan');
-      if (saved === 'Basic' || saved === 'Standard' || saved === 'Advanced') return saved;
+      const saved = sessionStorage.getItem('cpq_pricing_plan_per_combination');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        console.log('📋 Restored per-combination pricing plans:', parsed);
+        return parsed;
+      }
     } catch (e) {
-      console.warn('Could not load pricing plan:', e);
+      console.warn('Could not load per-combination pricing plans:', e);
     }
-    return 'Standard';
+    return {};
   });
 
   useEffect(() => {
     try {
-      sessionStorage.setItem('cpq_pricing_plan', pricingPlan);
+      sessionStorage.setItem('cpq_pricing_plan_per_combination', JSON.stringify(pricingPlanPerCombination));
     } catch (e) {
-      console.warn('Could not save pricing plan:', e);
+      console.warn('Could not save per-combination pricing plans:', e);
     }
-  }, [pricingPlan]);
+  }, [pricingPlanPerCombination]);
 
   // Initialize each combination's plan to Standard by default, preserving any plan already
   // chosen (each combination keeps its own plan — mixing is allowed).
@@ -78,36 +83,43 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
       calculations[0]?.emailCombinationBreakdowns?.forEach(b => allNames.push(b.combinationName));
       if (allNames.length === 0) return;
 
-      setSelectedTiersPerCombination(prev => {
+      const fillMissing = (prev: Record<string, 'Basic' | 'Standard' | 'Advanced'>) => {
         // Only fill in combinations that have no plan yet; never overwrite a user's choice.
         const missing = allNames.filter(n => !prev[n]);
         if (missing.length === 0) return prev;
         const updated = { ...prev };
         missing.forEach(n => { updated[n] = 'Standard'; });
         return updated;
-      });
+      };
+
+      setSelectedTiersPerCombination(fillMissing);
+      setPricingPlanPerCombination(fillMissing);
     }
   }, [calculations, configuration]);
 
-  // Calculate custom total — ALL combinations are priced at the single GLOBAL pricing plan
-  // (per-combination exhibit plans do NOT affect pricing).
+  // Calculate custom total — each combination is priced at ITS OWN pricing plan (Standard until
+  // changed). Per-combination exhibit plans still do NOT affect pricing.
   const customTotal = useMemo(() => {
     if (!configuration || configuration.migrationType !== 'Multi combination') {
       return null;
     }
 
-    const pricingTier = PRICING_TIERS.find(t => t.name === pricingPlan) || PRICING_TIERS[1];
+    const tierFor = (combinationName: string) => {
+      const planName = pricingPlanPerCombination[combinationName] || 'Standard';
+      return { planName, tier: PRICING_TIERS.find(t => t.name === planName) || PRICING_TIERS[1] };
+    };
     let total = 0;
     const breakdown: Array<{ combinationName: string; tier: string; cost: number; type: string }> = [];
 
     // Calculate messaging combinations
     if (configuration.messagingConfigs && configuration.messagingConfigs.length > 0) {
       configuration.messagingConfigs.forEach(cfg => {
-        const pricing = calculateCombinationPricing(cfg.exhibitName, 'messaging', configuration, pricingTier);
+        const { planName, tier } = tierFor(cfg.exhibitName);
+        const pricing = calculateCombinationPricing(cfg.exhibitName, 'messaging', configuration, tier);
         total += pricing.totalCost;
         breakdown.push({
           combinationName: cfg.exhibitName,
-          tier: pricingPlan,
+          tier: planName,
           cost: pricing.totalCost,
           type: 'messaging'
         });
@@ -117,11 +129,12 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     // Calculate content combinations
     if (configuration.contentConfigs && configuration.contentConfigs.length > 0) {
       configuration.contentConfigs.forEach(cfg => {
-        const pricing = calculateCombinationPricing(cfg.exhibitName, 'content', configuration, pricingTier);
+        const { planName, tier } = tierFor(cfg.exhibitName);
+        const pricing = calculateCombinationPricing(cfg.exhibitName, 'content', configuration, tier);
         total += pricing.totalCost;
         breakdown.push({
           combinationName: cfg.exhibitName,
-          tier: pricingPlan,
+          tier: planName,
           cost: pricing.totalCost,
           type: 'content'
         });
@@ -131,11 +144,12 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     // Calculate email combinations
     if (configuration.emailConfigs && configuration.emailConfigs.length > 0) {
       configuration.emailConfigs.forEach(cfg => {
-        const pricing = calculateCombinationPricing(cfg.exhibitName, 'email', configuration, pricingTier);
+        const { planName, tier } = tierFor(cfg.exhibitName);
+        const pricing = calculateCombinationPricing(cfg.exhibitName, 'email', configuration, tier);
         total += pricing.totalCost;
         breakdown.push({
           combinationName: cfg.exhibitName,
-          tier: pricingPlan,
+          tier: planName,
           cost: pricing.totalCost,
           type: 'email'
         });
@@ -146,17 +160,22 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     console.log('🔧 Custom Total Calculation:', {
       breakdown,
       total,
-      pricingPlan,
+      pricingPlans: pricingPlanPerCombination,
       exhibitPlans: selectedTiersPerCombination
     });
 
     return total;
-  }, [configuration, pricingPlan]);
+  }, [configuration, pricingPlanPerCombination]);
 
   // Each combination keeps its OWN plan (mixing allowed). Setting the plan applies it to the
   // currently selected combination only.
   const setTierForCombination = (combinationName: string, newTier: 'Basic' | 'Standard' | 'Advanced') => {
     setSelectedTiersPerCombination(prev => ({ ...prev, [combinationName]: newTier }));
+  };
+
+  // Same idea for the PRICING plan: the chosen plan applies to that combination only.
+  const setPricingPlanForCombination = (combinationName: string, newPlan: 'Basic' | 'Standard' | 'Advanced') => {
+    setPricingPlanPerCombination(prev => ({ ...prev, [combinationName]: newPlan }));
   };
 
   // Flat list of every combination (across messaging/content/email) for the combination filter.
@@ -175,8 +194,21 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
   const activeCombinationPlan: 'Basic' | 'Standard' | 'Advanced' =
     (activeCombination && selectedTiersPerCombination[activeCombination.name]) || 'Standard';
 
-  // The global pricing tier object (used to price each combination's contribution).
-  const pricingTierObj = PRICING_TIERS.find(t => t.name === pricingPlan) || PRICING_TIERS[1];
+  // The PRICING plan of the currently selected combination (defaults to Standard).
+  const activeCombinationPricingPlan: 'Basic' | 'Standard' | 'Advanced' =
+    (activeCombination && pricingPlanPerCombination[activeCombination.name]) || 'Standard';
+
+  // The tier object that prices the currently selected combination.
+  const activeCombinationPricingTier =
+    PRICING_TIERS.find(t => t.name === activeCombinationPricingPlan) || PRICING_TIERS[1];
+
+  // The quote still carries ONE plan name (used downstream for the label and template pick).
+  // With a plan per combination there is no global choice any more, so derive it: the plan they
+  // all share, or Standard when the quote mixes plans.
+  const headlinePricingPlan: 'Basic' | 'Standard' | 'Advanced' = useMemo(() => {
+    const plans = allCombinations.map(c => pricingPlanPerCombination[c.name] || 'Standard');
+    return plans.length > 0 && plans.every(p => p === plans[0]) ? plans[0] : 'Standard';
+  }, [allCombinations, pricingPlanPerCombination]);
 
   // Get pricing for a specific combination with selected tier
   const getCombinationPricing = (
@@ -190,8 +222,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     }
 
     // If planTier is provided, use it for comparison view (each column shows its own tier)
-    // Otherwise, use selectedTier for custom total calculation
-    const tierToUse = planTier || PRICING_TIERS.find(t => t.name === (selectedTiersPerCombination[combinationName] || 'Standard'));
+    // Otherwise fall back to this combination's own pricing plan.
+    const tierToUse = planTier || PRICING_TIERS.find(t => t.name === (pricingPlanPerCombination[combinationName] || 'Standard'));
 
     if (!tierToUse) {
       return defaultBreakdown;
@@ -1010,28 +1042,10 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
             🔧 Customize Individual Combinations
           </h3>
           <p className="text-sm text-purple-700 mb-4 text-center">
-            One pricing plan prices the whole quote; choose the exhibit plan separately per combination
+            Each combination has its own pricing plan and its own exhibit plan
           </p>
 
           <div className="space-y-4">
-            {/* Global PRICING plan — same for all combinations, drives the total. */}
-            <div className="bg-white rounded-lg p-4 border border-purple-200">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-gray-700">Pricing Plan (applies to all)</span>
-                <select
-                  title="Pricing plan"
-                  aria-label="Pricing plan"
-                  value={pricingPlan}
-                  onChange={(e) => setPricingPlan(e.target.value as 'Basic' | 'Standard' | 'Advanced')}
-                  className="px-3 py-1.5 border border-purple-300 rounded-lg bg-white text-sm font-medium text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="Basic">Basic Plan</option>
-                  <option value="Standard">Standard Plan</option>
-                </select>
-              </div>
-              <p className="text-xs text-purple-600 mt-2">This plan prices the entire quote (all combinations).</p>
-            </div>
-
             {/* Per-combination EXHIBIT plan — which plan's exhibits each combination includes. */}
             {allCombinations.length > 0 && (
               <div className="bg-white rounded-lg p-4 border border-purple-200">
@@ -1047,6 +1061,20 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     {allCombinations.map(c => (
                       <option key={`${c.type}-${c.name}`} value={c.name}>{c.label}: {c.name}</option>
                     ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between mt-3">
+                  <span className="font-medium text-gray-700">Pricing plan for this combination</span>
+                  <select
+                    title="Pricing plan for this combination"
+                    aria-label="Pricing plan for this combination"
+                    value={activeCombinationPricingPlan}
+                    onChange={(e) => activeCombination && setPricingPlanForCombination(activeCombination.name, e.target.value as 'Basic' | 'Standard' | 'Advanced')}
+                    className="px-3 py-1.5 border border-purple-300 rounded-lg bg-white text-sm font-medium text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="Basic">Basic Plan</option>
+                    <option value="Standard">Standard Plan</option>
                   </select>
                 </div>
 
@@ -1070,12 +1098,12 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     activeCombination.name,
                     activeCombination.type,
                     activeCombination.breakdown,
-                    pricingTierObj
+                    activeCombinationPricingTier
                   );
                   return (
                     <div className="mt-3 bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm">
                       <div className="flex justify-between mb-2">
-                        <span className="text-gray-600">Priced at {pricingPlan} Plan:</span>
+                        <span className="text-gray-600">Priced at {activeCombinationPricingPlan} Plan:</span>
                         <span className="font-semibold text-purple-900">{formatCurrency(pricing.totalCost)}</span>
                       </div>
                       <div className="text-gray-600 mb-1">Exhibits included ({activeCombinationPlan} Plan):</div>
@@ -1092,13 +1120,13 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
             {/* Summary — exhibit plan chosen for each combination (so the mix is visible). */}
             {allCombinations.length > 0 && (
               <div className="bg-white rounded-lg p-4 border border-purple-200">
-                <span className="font-medium text-gray-700">Exhibit plan per combination</span>
+                <span className="font-medium text-gray-700">Plan per combination</span>
                 <ul className="mt-2 space-y-1 text-sm">
                   {allCombinations.map(c => (
-                    <li key={`sum-${c.type}-${c.name}`} className="flex justify-between">
+                    <li key={`sum-${c.type}-${c.name}`} className="flex justify-between gap-4">
                       <span className="text-gray-700">{c.label}: {c.name}</span>
-                      <span className="font-semibold text-purple-900">
-                        {(selectedTiersPerCombination[c.name] || 'Standard')} Plan
+                      <span className="font-semibold text-purple-900 whitespace-nowrap">
+                        {(pricingPlanPerCombination[c.name] || 'Standard')} pricing / {(selectedTiersPerCombination[c.name] || 'Standard')} exhibits
                       </span>
                     </li>
                   ))}
@@ -1125,7 +1153,9 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   // are pulled (handled downstream).
                   if (!configuration) return;
 
-                  const pricingTier = PRICING_TIERS.find(t => t.name === pricingPlan) || PRICING_TIERS[1];
+                  const pricingTier = PRICING_TIERS.find(t => t.name === headlinePricingPlan) || PRICING_TIERS[1];
+                  const tierFor = (combinationName: string) =>
+                    PRICING_TIERS.find(t => t.name === (pricingPlanPerCombination[combinationName] || 'Standard')) || PRICING_TIERS[1];
                   let combinedUserCost = 0;
                   let combinedDataCost = 0;
                   let combinedMigrationCost = 0;
@@ -1134,7 +1164,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   // Calculate messaging combinations
                   if (configuration.messagingConfigs && configuration.messagingConfigs.length > 0) {
                     configuration.messagingConfigs.forEach(cfg => {
-                      const pricing = calculateCombinationPricing(cfg.exhibitName, 'messaging', configuration, pricingTier);
+                      const pricing = calculateCombinationPricing(cfg.exhibitName, 'messaging', configuration, tierFor(cfg.exhibitName));
                       combinedUserCost += pricing.userCost;
                       combinedDataCost += pricing.dataCost;
                       combinedMigrationCost += pricing.migrationCost;
@@ -1145,7 +1175,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   // Calculate content combinations
                   if (configuration.contentConfigs && configuration.contentConfigs.length > 0) {
                     configuration.contentConfigs.forEach(cfg => {
-                      const pricing = calculateCombinationPricing(cfg.exhibitName, 'content', configuration, pricingTier);
+                      const pricing = calculateCombinationPricing(cfg.exhibitName, 'content', configuration, tierFor(cfg.exhibitName));
                       combinedUserCost += pricing.userCost;
                       combinedDataCost += pricing.dataCost;
                       combinedMigrationCost += pricing.migrationCost;
@@ -1156,7 +1186,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   // Calculate email combinations
                   if (configuration.emailConfigs && configuration.emailConfigs.length > 0) {
                     configuration.emailConfigs.forEach(cfg => {
-                      const pricing = calculateCombinationPricing(cfg.exhibitName, 'email', configuration, pricingTier);
+                      const pricing = calculateCombinationPricing(cfg.exhibitName, 'email', configuration, tierFor(cfg.exhibitName));
                       combinedUserCost += pricing.userCost;
                       combinedDataCost += pricing.dataCost;
                       combinedMigrationCost += pricing.migrationCost;
@@ -1164,28 +1194,49 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     });
                   }
 
-                  // Create custom calculation: priced at the global pricing plan; per-combination
-                  // exhibit plans are read downstream (sessionStorage) to pull each combination's
-                  // own-plan exhibits.
+                  // Rebuild the breakdowns at each combination's own plan. QuoteGenerator's
+                  // getEffectiveTotalCost SUMS these for Multi combination and ignores totalCost,
+                  // so handing it calculations[0]'s breakdowns (always the Basic tier) would put
+                  // the Basic total on every document regardless of the plans picked here.
+                  const buildBreakdowns = (
+                    cfgs: Array<{ exhibitName: string }> | undefined,
+                    type: 'messaging' | 'content' | 'email'
+                  ) => (cfgs || []).map(cfg => {
+                    const p = calculateCombinationPricing(cfg.exhibitName, type, configuration, tierFor(cfg.exhibitName));
+                    return {
+                      combinationName: cfg.exhibitName,
+                      numberOfUsers: p.numberOfUsers,
+                      userCost: p.userCost,
+                      dataCost: p.dataCost,
+                      migrationCost: p.migrationCost,
+                      instanceCost: p.instanceCost,
+                      totalCost: p.totalCost,
+                    };
+                  });
+
+                  // Create custom calculation: each combination is priced at its own plan, so the
+                  // tier stamped here is only the quote's headline plan (label + template pick).
+                  // Per-combination exhibit plans are read downstream (sessionStorage).
                   const customCalculation: PricingCalculation = {
                     userCost: combinedUserCost,
                     dataCost: combinedDataCost,
                     migrationCost: combinedMigrationCost,
                     instanceCost: combinedInstanceCost,
                     totalCost: customTotal * (1 - discount / 100),
-                    tier: pricingTier, // Global pricing plan (drives total + label)
+                    tier: pricingTier, // Headline plan — label and template only, not the total
                     // Include the original calculations for reference
                     messagingCalculation: calculations[0]?.messagingCalculation,
                     contentCalculation: calculations[0]?.contentCalculation,
                     emailCalculation: calculations[0]?.emailCalculation,
-                    messagingCombinationBreakdowns: calculations[0]?.messagingCombinationBreakdowns,
-                    contentCombinationBreakdowns: calculations[0]?.contentCombinationBreakdowns,
-                    emailCombinationBreakdowns: calculations[0]?.emailCombinationBreakdowns
+                    messagingCombinationBreakdowns: buildBreakdowns(configuration.messagingConfigs, 'messaging'),
+                    contentCombinationBreakdowns: buildBreakdowns(configuration.contentConfigs, 'content'),
+                    emailCombinationBreakdowns: buildBreakdowns(configuration.emailConfigs, 'email')
                   };
                   
                   console.log('🔧 Proceeding with custom plan selection:', {
                     customCalculation,
-                    selectedTiers: selectedTiersPerCombination
+                    pricingPlans: pricingPlanPerCombination,
+                    exhibitPlans: selectedTiersPerCombination
                   });
                   
                   onSelectTier(customCalculation);
