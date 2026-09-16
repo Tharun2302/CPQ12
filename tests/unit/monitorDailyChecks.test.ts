@@ -969,17 +969,17 @@ describe('the label is not an escape hatch around safe()', () => {
 describe('the file header describes what is actually bounded', () => {
   const header = fs.readFileSync(SCRIPT, 'utf8').split("'use strict'")[0];
 
-  it('no longer claims the req() guard bounds a whole run', () => {
+  it('attributes each bound to the thing that actually enforces it', () => {
     expect(header).not.toMatch(/wall-clock guard in req\(\) bounds a single run/);
-    expect(header).toMatch(/bounds the PROBES only/);
+    expect(header).toMatch(/bounds the probes/);
+    expect(header).toMatch(/teams-notify\.cjs bounds the final POST/);
   });
 
-  // teams-notify.cjs is shared with monitor-user-logs.cjs, so the fix is out of scope here — but
-  // the hang is real and the header must not imply otherwise.
-  it('records the unbounded Teams POST alongside the lockfile follow-up', () => {
-    expect(header).toMatch(/UNBOUNDED/);
-    expect(header).toMatch(/teams-notify\.cjs/);
+  // The lockfile is still open; the hang that made it urgent is not. The header must keep the
+  // remaining follow-up without re-asserting the hang as current.
+  it('keeps the lockfile follow-up and names the report-stamp collision with it', () => {
     expect(header).toMatch(/lockfile/);
+    expect(header).toMatch(/stamped to the second/);
   });
 
   // The retry doubles the probe phase in the worst case; the header has to say the new number or
@@ -990,9 +990,19 @@ describe('the file header describes what is actually bounded', () => {
     expect(header).toMatch(/retried ONCE/);
   });
 
-  it('is still true of teams-notify.cjs: its request has no timeout', () => {
+  // Inverted once teams-notify.cjs gained a timeout. The header now claims the run is bounded end
+  // to end, so this pins the half of that claim living in the other file: strip the timeout there
+  // and this fails rather than leaving the header quietly describing a script that no longer is.
+  it('is still true of teams-notify.cjs: its request IS bounded', () => {
     const notify = fs.readFileSync(path.join(process.cwd(), 'teams-notify.cjs'), 'utf8');
-    expect(notify).not.toMatch(/setTimeout/);
+    expect(notify).toMatch(/const POST_TIMEOUT_MS = \d+;/);
+    // The wall-clock guard, not req.setTimeout — inactivity cannot end a slow drip.
+    expect(notify).toMatch(/guard = setTimeout\(/);
+  });
+
+  it('no longer claims the run is unbounded', () => {
+    expect(header).toMatch(/bounded end to end/);
+    expect(header).not.toMatch(/UNBOUNDED/);
   });
 });
 

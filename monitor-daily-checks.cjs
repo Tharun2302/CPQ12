@@ -21,17 +21,15 @@
  * failover breaks. A check that cries wolf is worse than no check. Retrying makes the PROBE phase
  * worst case 3 probes x TIMEOUT_MS plus 3 x (RETRY_DELAY_MS + TIMEOUT_MS) — about 75 seconds with
  * every endpoint dead, against 30 seconds before. (Three probes, not four: the fourth counted
- * check is derived from the /api/health body, not separately fetched.) The run as a whole is still
- * NOT bounded — see the Teams POST below.
+ * check is derived from the /api/health body, not separately fetched.)
  *
- * FOLLOW-UP (not in this pass): there is no lockfile. If one run hangs past the next cron tick,
- * a second copy starts. The wall-clock guard in req() bounds the PROBES only — nothing else. The
- * final Teams POST is UNBOUNDED: teams-notify.cjs sets no timeout on its request and only handles
- * 'error', so a Power Automate endpoint that accepts the socket and never answers hangs main()
- * forever. That is the realistic overlap path, not a theoretical one. teams-notify.cjs is shared
- * with monitor-user-logs.cjs, so its timeout is a separate change. The report filename is stamped
- * to the second, so two runs that land in the same second overwrite each other's report — fix
- * these together.
+ * The run IS now bounded end to end: req()'s wall-clock guard bounds the probes, and
+ * teams-notify.cjs bounds the final POST at POST_TIMEOUT_MS. Before that, a Power Automate
+ * endpoint that accepted the socket and never answered hung main() forever with no alert sent.
+ *
+ * FOLLOW-UP (not in this pass): there is no lockfile, so a run that somehow outlives the next
+ * cron tick still lets a second copy start. The report filename is stamped to the second, so two
+ * runs landing in the same second overwrite each other's report — fix these together.
  */
 'use strict';
 
