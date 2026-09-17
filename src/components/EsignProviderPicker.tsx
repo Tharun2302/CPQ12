@@ -4,6 +4,8 @@ interface EsignProviderPickerProps {
   value: EsignProvider;
   onChange: (provider: EsignProvider) => void;
   disabled?: boolean;
+  /** Section wrapper classes. Defaults to the divider used when the picker sits below another section. */
+  className?: string;
 }
 
 const PROVIDER_OPTIONS: { id: EsignProvider; title: string; blurb: string; isDefault?: boolean }[] = [
@@ -19,9 +21,14 @@ const PROVIDER_OPTIONS: { id: EsignProvider; title: string; blurb: string; isDef
  * The choice is the caller's component state and is never persisted: every send starts from the
  * in-house default.
  */
-function EsignProviderPicker({ value, onChange, disabled = false }: EsignProviderPickerProps) {
+function EsignProviderPicker({
+  value,
+  onChange,
+  disabled = false,
+  className = 'border-t border-slate-200 pt-4',
+}: EsignProviderPickerProps) {
   return (
-    <section className="border-t border-slate-200 pt-4" data-testid="esign-provider-picker">
+    <section className={className} data-testid="esign-provider-picker">
       <h2 className="text-xs font-bold uppercase tracking-wide text-slate-900 mb-2">Signing method</h2>
       <div role="radiogroup" aria-label="Signing method" className="space-y-2">
         {PROVIDER_OPTIONS.map((option) => {

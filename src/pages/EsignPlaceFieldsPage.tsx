@@ -1455,8 +1455,13 @@ const EsignPlaceFieldsPage: React.FC = () => {
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="p-3 sm:p-4 space-y-5 overflow-y-auto flex-1 min-h-0">
 
+              {/* ── Signing method ── */}
+              {zohoEnabled && (
+                <EsignProviderPicker value={provider} onChange={setProvider} disabled={saving || sending} className="" />
+              )}
+
               {/* ── Recipient ── */}
-              <section id="esign-tour-recipients-panel">
+              <section id="esign-tour-recipients-panel" className={zohoEnabled ? 'border-t border-slate-200 pt-4' : undefined}>
                 <div className="flex items-center justify-between mb-1">
                   <h2 className="text-xs font-bold uppercase tracking-wide text-slate-900">Recipient</h2>
                   <span className="text-xs font-medium text-slate-400">{recipients.length}</span>
@@ -1618,9 +1623,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
                 </ul>
               </section>
 
-              {zohoEnabled && (
-                <EsignProviderPicker value={provider} onChange={setProvider} disabled={saving || sending} />
-              )}
               </div>
 
               {doc?.signing_order_enforced && recipients.length > 1 && (

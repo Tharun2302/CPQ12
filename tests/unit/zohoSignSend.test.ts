@@ -23,6 +23,7 @@ const {
   isValidObjectIdString,
   validateZohoSendOptions,
   checkDocumentSendable,
+  creatorNote,
   matchZohoActionIds,
   normalizeZohoDocumentIds,
   httpStatusForZohoError,
@@ -32,6 +33,7 @@ const {
   isValidObjectIdString: (value: unknown) => boolean;
   validateZohoSendOptions: (body: unknown) => { errors: string[]; options: Record<string, unknown> };
   checkDocumentSendable: (doc: unknown) => { status: number; error: string; code: string } | null;
+  creatorNote: (name: unknown, email: unknown) => string;
   matchZohoActionIds: (zohoActions: unknown, mapped: unknown) => { actionIds: string[]; unmatched: string[] };
   normalizeZohoDocumentIds: (request: unknown) => Array<{ document_id: string; document_name: string; total_pages: number }>;
   httpStatusForZohoError: (error: unknown) => number;
@@ -561,5 +563,32 @@ describe('zoho-sign-send: Zoho failures', () => {
   it('still reports success when the audit write fails', async () => {
     const { service } = buildSender({ logAudit: vi.fn(async () => { throw new Error('audit_logs unavailable'); }) });
     expect((await service.send({ documentId: DOC_ID, actorEmail: CREATOR, body: {} })).status).toBe(200);
+  });
+});
+
+// Zoho takes the sender from the OAuth token owner and CPQ holds one org-wide token, so every
+// signature email names the same person however built the SOW. The preparer line in `notes` is
+// the only place the real creator reaches the signer, which makes these cases user-visible.
+describe('creatorNote', () => {
+  it('names the creator and their email', () => {
+    expect(creatorNote('Abhilasha Kandakatla', 'abhilasha.k@cloudfuze.com'))
+      .toBe('Prepared by Abhilasha Kandakatla (abhilasha.k@cloudfuze.com)');
+  });
+
+  it('falls back to the email alone when the user record has no name', () => {
+    expect(creatorNote('', 'anush.dasari@cloudfuze.com')).toBe('Prepared by anush.dasari@cloudfuze.com');
+  });
+
+  it('does not print the same address twice when the name IS the email', () => {
+    expect(creatorNote('x@y.com', 'x@y.com')).toBe('Prepared by x@y.com');
+  });
+
+  it('returns empty rather than a dangling "Prepared by" when there is no identity', () => {
+    expect(creatorNote('', '')).toBe('');
+    expect(creatorNote(null, undefined)).toBe('');
+  });
+
+  it('stays inside the 500-character notes limit Zoho enforces', () => {
+    expect(creatorNote('A'.repeat(400), `${'b'.repeat(400)}@example.com`).length).toBeLessThanOrEqual(500);
   });
 });

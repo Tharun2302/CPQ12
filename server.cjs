@@ -8717,6 +8717,7 @@ app.post('/api/zoho-sign/documents/:id/send', zohoSignSendLimiter, async (req, r
     const result = await getZohoSignRuntime().sender.send({
       documentId: req.params.id,
       actorEmail: actor.email,
+      actorName: actor.name,
       body: req.body,
       ip: req.ip,
     });

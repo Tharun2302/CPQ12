@@ -71,6 +71,26 @@ function capString(value, maxLength) {
   return String(value == null ? '' : value).trim().slice(0, maxLength);
 }
 
+/**
+ * Zoho takes the sender identity from whoever owns the OAuth token, and CPQ holds one token for
+ * the whole org — so every signature email says the same name no matter who built the SOW. There
+ * is no sender field on POST /requests and no impersonation header, so the creator is surfaced in
+ * `notes` instead, which Zoho renders as "Message to all" in the email the signer receives.
+ *
+ * Returns '' when there is no usable identity, so the caller omits `notes` rather than sending
+ * "Prepared by".
+ */
+function creatorNote(actorName, actorEmail) {
+  const name = capString(actorName, 120);
+  const email = capString(actorEmail, 200);
+  if (name === '' && email === '') return '';
+  if (name === '') return capString(`Prepared by ${email}`, NOTES_MAX_LENGTH);
+  if (email === '' || name.toLowerCase() === email.toLowerCase()) {
+    return capString(`Prepared by ${name}`, NOTES_MAX_LENGTH);
+  }
+  return capString(`Prepared by ${name} (${email})`, NOTES_MAX_LENGTH);
+}
+
 /** True for a 24-hex id. Checked before `new ObjectId()` so a malformed id is a 400, not a throw. */
 function isValidObjectIdString(value) {
   return OBJECT_ID_PATTERN.test(String(value == null ? '' : value).trim());
@@ -258,6 +278,7 @@ function createZohoSignSender(deps) {
    * @param {object} input
    * @param {string} input.documentId  the :id path parameter, unvalidated
    * @param {string} input.actorEmail  the VERIFIED JWT email, never a body-supplied address
+   * @param {string} [input.actorName] the VERIFIED JWT display name, shown to signers as the preparer
    * @param {object} input.body        the request body, unvalidated
    * @param {string} [input.ip]        for the audit row
    * @returns {Promise<{status:number, body:object}>}
@@ -265,6 +286,7 @@ function createZohoSignSender(deps) {
   async function send(input) {
     const documentId = String((input && input.documentId) || '').trim();
     const actorEmail = String((input && input.actorEmail) || '').trim();
+    const actorName = String((input && input.actorName) || '').trim();
     const ip = (input && input.ip) || null;
 
     if (config.enabled !== true) {
@@ -353,7 +375,9 @@ function createZohoSignSender(deps) {
     const createPayload = buildCreateRequestPayload({
       requestName: options.requestName || doc.file_name || 'CPQ Agreement',
       actions: mapped.actions,
-      notes: options.notes,
+      // An explicit note from the caller wins: it is a deliberate message to the signers, and
+      // overwriting it with the preparer line would lose real content.
+      notes: options.notes || creatorNote(actorName, actorEmail),
       isSequential: hasOwn(options, 'isSequential') ? options.isSequential : doc.signing_order_enforced === true,
       expirationDays: options.expirationDays,
       emailReminders: options.emailReminders,
@@ -487,6 +511,7 @@ module.exports = {
   OBJECT_ID_PATTERN,
   ZOHO_ACTION_TYPES,
   isValidObjectIdString,
+  creatorNote,
   validateZohoSendOptions,
   checkDocumentSendable,
   matchZohoActionIds,
