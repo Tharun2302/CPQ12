@@ -10,9 +10,12 @@ import {
   AlertCircle,
   X,
   Download,
-  Upload
+  Upload,
+  Eye,
+  FileText
 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { templateService } from '../utils/templateService';
 import { useAuth } from '../hooks/useAuth';
 import { SUPPRESS_PII } from '../analytics/privacy';
 
@@ -67,6 +70,61 @@ const CombinationManager: React.FC = () => {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [previewCombo, setPreviewCombo] = useState<Combination | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  // A DOCX preview costs a full LibreOffice run on the backend, so keep the rendered PDF per combination.
+  const previewCache = useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    return () => {
+      Object.values(previewCache.current).forEach((url) => URL.revokeObjectURL(url));
+      previewCache.current = {};
+    };
+  }, []);
+
+  const invalidatePreview = (id: string) => {
+    const cached = previewCache.current[id];
+    if (cached) {
+      URL.revokeObjectURL(cached);
+      delete previewCache.current[id];
+    }
+  };
+
+  const openPreview = async (c: Combination) => {
+    setPreviewCombo(c);
+    setPreviewError(null);
+    const cached = previewCache.current[c.id];
+    if (cached) {
+      setPreviewUrl(cached);
+      return;
+    }
+    setPreviewUrl(null);
+    setIsPreviewLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/combinations/${c.id}/file`);
+      if (!res.ok) throw new Error('Could not load the template file.');
+      const blob = await res.blob();
+      const isDocx =
+        (c.fileName || '').toLowerCase().endsWith('.docx') || blob.type.includes('wordprocessingml');
+      const viewable = isDocx ? await templateService.convertDocxToPdf(blob) : blob;
+      const url = URL.createObjectURL(viewable);
+      previewCache.current[c.id] = url;
+      setPreviewUrl(url);
+    } catch (e) {
+      setPreviewError(e instanceof Error ? e.message : 'Failed to open this document.');
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
+
+  const closePreview = () => {
+    setPreviewCombo(null);
+    setPreviewUrl(null);
+    setPreviewError(null);
+    setIsPreviewLoading(false);
+  };
 
   const loadCombinations = async () => {
     try {
@@ -172,6 +230,7 @@ const CombinationManager: React.FC = () => {
           const fileData = await fileRes.json();
           if (fileRes.ok && fileData.combination) {
             updatedCombo = fileData.combination;
+            invalidatePreview(editingCombo.id);
           }
         }
         setSubmitSuccess(formFile ? 'Combination and template file updated.' : 'Combination updated.');
@@ -335,15 +394,27 @@ const CombinationManager: React.FC = () => {
                     <td className="py-3 px-4 text-gray-600">{c.displayOrder ?? 999}</td>
                     <td className="py-3 px-4">
                       {c.hasFile ? (
-                        <a
-                          href={`${BACKEND_URL}/api/combinations/${c.id}/file`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-indigo-600 hover:underline text-sm"
-                        >
-                          <Download className="w-4 h-4" />
-                          {c.fileName || 'Download'}
-                        </a>
+                        <span className="flex items-center gap-3">
+                          <a
+                            href={`${BACKEND_URL}/api/combinations/${c.id}/file`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-indigo-600 hover:underline text-sm"
+                          >
+                            <Download className="w-4 h-4" />
+                            {c.fileName || 'Download'}
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => openPreview(c)}
+                            className="inline-flex items-center gap-1 text-gray-600 hover:text-indigo-600 hover:underline text-sm"
+                            title="View document"
+                            aria-label="View document"
+                          >
+                            <Eye className="w-4 h-4" />
+                            View
+                          </button>
+                        </span>
                       ) : (
                         <span className="text-gray-400 text-sm">—</span>
                       )}
@@ -528,6 +599,71 @@ const CombinationManager: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {previewCombo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={closePreview}>
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-5xl h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="w-5 h-5 text-indigo-600 shrink-0" />
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-gray-900 truncate">{previewCombo.label}</h3>
+                  <p className="text-xs text-gray-500 truncate" {...SUPPRESS_PII}>
+                    {previewCombo.fileName || 'Template document'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={`${BACKEND_URL}/api/combinations/${previewCombo.id}/file`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm text-indigo-600 hover:bg-indigo-50"
+                >
+                  <Download className="w-4 h-4" />
+                  Download
+                </a>
+                <button
+                  type="button"
+                  onClick={closePreview}
+                  className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                  title="Close"
+                  aria-label="Close preview"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 bg-gray-50 rounded-b-2xl overflow-hidden">
+              {isPreviewLoading && (
+                <div className="h-full flex flex-col items-center justify-center gap-3 text-gray-600">
+                  <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+                  <p className="text-sm">Preparing the document preview…</p>
+                </div>
+              )}
+              {!isPreviewLoading && previewError && (
+                <div className="h-full flex flex-col items-center justify-center gap-3 px-6 text-center">
+                  <AlertCircle className="w-8 h-8 text-red-500" />
+                  <p className="text-sm text-gray-700">{previewError}</p>
+                  <button
+                    type="button"
+                    onClick={() => openPreview(previewCombo)}
+                    className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700"
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+              {!isPreviewLoading && !previewError && previewUrl && (
+                <iframe src={previewUrl} title="Combination template preview" className="w-full h-full border-0" />
+              )}
+            </div>
           </div>
         </div>
       )}
