@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Check, ChevronRight, Search, ArrowRight, RefreshCw, X } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { scopeExhibitsForCombination } from '../utils/exhibitCombination';
 
 interface Exhibit {
   _id: string;
@@ -20,15 +21,39 @@ interface ExhibitSelectorProps {
   selectedExhibits: string[];
   onExhibitsChange: (exhibitIds: string[]) => void;
   selectedTier?: { tier: { name: string } } | null;
+  /**
+   * Show only exhibits authored for `combination`, instead of the whole catalogue.
+   *
+   * Migration flows want every exhibit: Multi combination legitimately draws from any pair.
+   * An agreement template (data-sprawl, overage-agreement) has its own exhibits and must not
+   * offer 176 migration-pair documents that have nothing to do with it.
+   */
+  restrictToCombination?: boolean;
 }
 
 const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   combination,
   selectedExhibits,
   onExhibitsChange,
-  selectedTier
+  selectedTier,
+  restrictToCombination = false
 }) => {
-  const [exhibits, setExhibits] = useState<Exhibit[]>([]);
+  const [allExhibits, setAllExhibits] = useState<Exhibit[]>([]);
+  // Slugs of Manage-only agreements (data-sprawl, mange+sprawl). Their exhibits are hidden
+  // from migration flows; see scopeExhibitsForCombination.
+  const [manageOnlySlugs, setManageOnlySlugs] = useState<string[]>([]);
+
+  // Scoped at the source so every downstream rule — tier fallback, auto-select, required
+  // exhibits, the stale-selection cleanup — sees the same set and cannot reintroduce an
+  // out-of-scope exhibit behind the list's back.
+  const exhibits = useMemo(
+    () => scopeExhibitsForCombination(allExhibits, {
+      combination,
+      restrict: restrictToCombination,
+      excludeSlugs: manageOnlySlugs,
+    }),
+    [allExhibits, restrictToCombination, combination, manageOnlySlugs],
+  );
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -51,6 +76,27 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   useEffect(() => {
     loadExhibits();
   }, []); // Load all exhibits once on mount, regardless of combination
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/combinations`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled || !data?.success || !Array.isArray(data.combinations)) return;
+        setManageOnlySlugs(
+          data.combinations
+            .filter((c: any) => c?.value && c?.migrationType === 'Manage')
+            .map((c: any) => String(c.value)),
+        );
+      } catch {
+        // Worst case the migration catalogue shows a Manage exhibit; the Manage side, which
+        // is the one that must not leak, is scoped from `combination` alone and unaffected.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Validate restored selectedExhibits against loaded exhibits
   // This ensures restored selections are preserved even if they're restored after exhibits load
@@ -117,16 +163,26 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         console.log(`✅ Loaded ${data.exhibits?.length || 0} total exhibits from backend`);
         
         if (data.success) {
+          const fetched: Exhibit[] = data.exhibits || [];
           // Always set exhibits (even if empty array)
-          setExhibits(data.exhibits || []);
-          
+          setAllExhibits(fetched);
+
+          // The auto-select below has to honour the same scope as the list. Left unscoped, a
+          // required migration-pair exhibit would attach itself to a data-sprawl quote, and a
+          // selection carried over from a previous configuration would survive as valid.
+          const inScope: Exhibit[] = scopeExhibitsForCombination(fetched, {
+            combination,
+            restrict: restrictToCombination,
+            excludeSlugs: manageOnlySlugs,
+          });
+
           // Auto-select required exhibits and clean up previously selected exhibits that are no longer required
-          if (data.exhibits && data.exhibits.length > 0) {
-            const requiredIds: string[] = data.exhibits
+          if (inScope.length > 0) {
+            const requiredIds: string[] = inScope
               .filter((ex: Exhibit) => ex.isRequired)
               .map((ex: Exhibit) => ex._id);
             
-            const allExhibitIds = data.exhibits.map((ex: Exhibit) => ex._id);
+            const allExhibitIds = inScope.map((ex: Exhibit) => ex._id);
             
             // Remove any selected exhibits that no longer exist
             const validSelections = selectedExhibits.filter(id => allExhibitIds.includes(id));
@@ -221,11 +277,11 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   // combination + include-type (Included/Not Included) pair. A combination only falls
   // back to the sibling tier (Basic <-> Standard) for the specific include-type variant
   // that's missing - it never overrides a variant the selected tier already has.
-  const resolveTierExhibitIds = (allExhibits: Exhibit[], tierName: string): Set<string> => {
+  const resolveTierExhibitIds = (candidates: Exhibit[], tierName: string): Set<string> => {
     const fallbackTier = FALLBACK_TIER[tierName];
     const byGroup = new Map<string, Exhibit[]>();
 
-    allExhibits.forEach(ex => {
+    candidates.forEach(ex => {
       const tier = getExhibitTier(ex);
       if (tier !== tierName && (!fallbackTier || tier !== fallbackTier)) return;
       const comboKey = (ex.combinations && ex.combinations.length > 0) ? ex.combinations[0] : 'all';

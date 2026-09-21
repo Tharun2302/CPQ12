@@ -19,6 +19,7 @@ import {
   UserPlus
 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { matchesAgreementFilter, agreementsSupportingExhibits } from '../utils/exhibitCombination';
 import { getCombinationsForCategory } from '../utils/exhibitAutoDetect';
 import { useAuth } from '../hooks/useAuth';
 import '../assets/docx-preview.css';
@@ -290,6 +291,8 @@ const ExhibitManager: React.FC = () => {
   const [editingExhibit, setEditingExhibit] = useState<Exhibit | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('');
+  // '' = every exhibit; a slug = only that agreement's; MIGRATION_ONLY = the migration pairs.
+  const [filterAgreement, setFilterAgreement] = useState<string>('');
   // Track EXPANDED ids so folders added later default to collapsed
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
@@ -322,6 +325,13 @@ const ExhibitManager: React.FC = () => {
   const [combinationDropdownOpen, setCombinationDropdownOpen] = useState(false);
   const [createNewFolder, setCreateNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  // Agreement templates (Template Manager combinations) an exhibit can be attached to. These
+  // are NOT migration pairs and must not be slugified from their label: "mange+sprawl" would
+  // normalise to "mange-sprawl" and silently stop matching its template.
+  const [templateCombinations, setTemplateCombinations] = useState<
+    { value: string; label: string; migrationType: string }[]
+  >([]);
+  const [selectedTemplateCombination, setSelectedTemplateCombination] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
@@ -342,6 +352,31 @@ const ExhibitManager: React.FC = () => {
     setShowUploadGuide(true);
     localStorage.removeItem('exhibitUploadGuideHidden');
   };
+
+  // Load the agreement templates an exhibit can be attached to
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/combinations`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled || !data?.success || !Array.isArray(data.combinations)) return;
+        setTemplateCombinations(
+          data.combinations
+            .filter((c: any) => c?.value)
+            .map((c: any) => ({
+              value: String(c.value),
+              label: String(c.label || c.value),
+              migrationType: String(c.migrationType || ''),
+            })),
+        );
+      } catch {
+        // The picker is an optional convenience; the folder fields still work without it.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Load exhibits
   useEffect(() => {
@@ -551,12 +586,12 @@ const ExhibitManager: React.FC = () => {
     }
 
     // Validate folder selection
-    if (!createNewFolder && !selectedFolder) {
-      setUploadError('Please select a folder or create a new one');
+    if (!selectedTemplateCombination && !createNewFolder && !selectedFolder) {
+      setUploadError('Pick an agreement template, or select a folder / create a new one');
       return;
     }
     
-    if (createNewFolder && !newFolderName.trim()) {
+    if (!selectedTemplateCombination && createNewFolder && !newFolderName.trim()) {
       setUploadError('Please enter a folder name');
       return;
     }
@@ -592,7 +627,10 @@ const ExhibitManager: React.FC = () => {
         combinationSource = formData.combination || '';
       }
 
-      const finalCombination = buildCombinationKey(
+      // An agreement template's slug is authored in Template Manager, not derived from a
+      // migration path, so it is stored verbatim: slugifying "mange+sprawl" to "mange-sprawl"
+      // would silently stop it matching its template.
+      const finalCombination = selectedTemplateCombination || buildCombinationKey(
         combinationSource || cleanFolderName || formData.combination || '',
         formData.includeType,
         formData.plan
@@ -700,6 +738,11 @@ const ExhibitManager: React.FC = () => {
   const handleEdit = (exhibit: Exhibit) => {
     setEditingExhibit(exhibit);
     const exhibitCombination = exhibit.combinations?.[0] || '';
+
+    // Reopen with the agreement-template picker already set, or the save would re-slug the
+    // exhibit into a migration-pair folder and detach it from its template.
+    const attachedTemplate = templateCombinations.find((c) => c.value === exhibitCombination);
+    setSelectedTemplateCombination(attachedTemplate ? attachedTemplate.value : '');
     
     // Check if combination exists in predefined list
     const availableCombos = getCombinationsForCategory(exhibit.category);
@@ -811,12 +854,12 @@ const ExhibitManager: React.FC = () => {
     if (!editingExhibit) return;
 
     // Validate folder selection
-    if (!createNewFolder && !selectedFolder) {
-      setUploadError('Please select a folder or create a new one');
+    if (!selectedTemplateCombination && !createNewFolder && !selectedFolder) {
+      setUploadError('Pick an agreement template, or select a folder / create a new one');
       return;
     }
     
-    if (createNewFolder && !newFolderName.trim()) {
+    if (!selectedTemplateCombination && createNewFolder && !newFolderName.trim()) {
       setUploadError('Please enter a folder name');
       return;
     }
@@ -847,8 +890,11 @@ const ExhibitManager: React.FC = () => {
       let finalCombination = '';
       let cleanFolderName = '';
       
-      // If creating new folder, use the new folder name
-      if (createNewFolder && newFolderName.trim()) {
+      // An agreement template's slug is stored verbatim; see the note in the upload handler.
+      if (selectedTemplateCombination) {
+        finalCombination = selectedTemplateCombination;
+        cleanFolderName = generateNameFromCombination(selectedTemplateCombination);
+      } else if (createNewFolder && newFolderName.trim()) {
         cleanFolderName = newFolderName.trim();
         finalCombination = buildCombinationKey(cleanFolderName, formData.includeType, formData.plan);
         setUseCustomCombination(true);
@@ -1207,9 +1253,21 @@ const ExhibitManager: React.FC = () => {
     setCombinationDropdownOpen(false);
     setCreateNewFolder(false);
     setNewFolderName('');
+    setSelectedTemplateCombination('');
     setUploadError(null);
     // Don't reset guide preference - keep user's choice
   };
+
+  // Overage Agreement never renders an exhibit step, so it is not offered in either picker.
+  const selectableAgreements = useMemo(
+    () => agreementsSupportingExhibits(templateCombinations),
+    [templateCombinations],
+  );
+
+  const manageOnlySlugs = useMemo(
+    () => templateCombinations.filter((c) => c.migrationType === 'Manage').map((c) => c.value),
+    [templateCombinations],
+  );
 
   // Filter and sort exhibits (newest first)
   const filteredExhibits = useMemo(() => exhibits
@@ -1220,14 +1278,15 @@ const ExhibitManager: React.FC = () => {
         (exhibit.description || '').toLowerCase().includes(q) ||
         (exhibit.fileName || '').toLowerCase().includes(q);
       const matchesCategory = !filterCategory || exhibit.category === filterCategory;
-      return matchesSearch && matchesCategory;
+      const matchesAgreement = matchesAgreementFilter(exhibit, filterAgreement, manageOnlySlugs);
+      return matchesSearch && matchesCategory && matchesAgreement;
     })
     .sort((a, b) => {
       // Sort by createdAt in descending order (newest first)
       const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       return dateB - dateA; // Descending order (newest first)
-    }), [exhibits, searchTerm, filterCategory]);
+    }), [exhibits, searchTerm, filterCategory, filterAgreement, manageOnlySlugs]);
 
   const folderGroups = useMemo(() => buildFolderGroups(filteredExhibits), [filteredExhibits]);
 
@@ -1314,6 +1373,7 @@ const ExhibitManager: React.FC = () => {
           />
         </div>
         <select
+          aria-label="Filter by category"
           value={filterCategory}
           onChange={(e) => setFilterCategory(e.target.value)}
           className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -1322,6 +1382,17 @@ const ExhibitManager: React.FC = () => {
           <option value="messaging">Messaging</option>
           <option value="content">Content</option>
           <option value="email">Email</option>
+        </select>
+        <select
+          aria-label="Filter by agreement"
+          value={filterAgreement}
+          onChange={(e) => setFilterAgreement(e.target.value)}
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        >
+          <option value="">All Agreements</option>
+          {selectableAgreements.map((c) => (
+            <option key={c.value} value={c.value}>{c.label}</option>
+          ))}
         </select>
       </div>
 
@@ -1586,11 +1657,49 @@ const ExhibitManager: React.FC = () => {
                   </select>
                 </div>
 
+                {/* Agreement template attachment — for templates that are not migration pairs */}
+                {templateCombinations.length > 0 && (
+                  <div>
+                    <label htmlFor="agreement-template-upload" className="block text-sm font-medium text-gray-700 mb-2">
+                      Agreement template
+                    </label>
+                    <select
+                      id="agreement-template-upload"
+                      value={selectedTemplateCombination}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setSelectedTemplateCombination(next);
+                        // The two pickers are alternatives; clear the folder fields so the
+                        // form cannot describe two different combinations at once.
+                        if (next) {
+                          setCreateNewFolder(false);
+                          setSelectedFolder('');
+                          setNewFolderName('');
+                          setCombinationFolderSearch('');
+                          setUseCustomCombination(false);
+                          setCustomCombination('');
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Not attached to an agreement template</option>
+                      {selectableAgreements.map((c) => (
+                        <option key={c.value} value={c.value}>{c.label}</option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Attach this exhibit to a Template Manager agreement (e.g. data-sprawl). It is then
+                      offered whenever that agreement is quoted. Leave unset for a migration-pair exhibit
+                      and use the folder below instead.
+                    </p>
+                  </div>
+                )}
+
                 {/* Folder Selection - Required */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-sm font-medium text-gray-700">
-                      Folder *
+                      {selectedTemplateCombination ? 'Folder' : 'Folder *'}
                     </label>
                     <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
                       <input
@@ -1643,7 +1752,7 @@ const ExhibitManager: React.FC = () => {
                         }}
                         placeholder="Enter combination folder name (e.g., Testing to Production)"
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        required
+                        required={!selectedTemplateCombination}
                       />
                       <p className="mt-1 text-xs text-gray-500">
                         Enter a name for the new combination folder. This will be used to group related exhibits together.
@@ -1662,7 +1771,7 @@ const ExhibitManager: React.FC = () => {
                         onBlur={() => setTimeout(() => setCombinationDropdownOpen(false), 200)}
                         placeholder="Search or select existing combination"
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        required
+                        required={!selectedTemplateCombination}
                         autoComplete="off"
                       />
                       {combinationDropdownOpen && (
@@ -1832,11 +1941,49 @@ const ExhibitManager: React.FC = () => {
                   </select>
                 </div>
 
+                {/* Agreement template attachment — for templates that are not migration pairs */}
+                {templateCombinations.length > 0 && (
+                  <div>
+                    <label htmlFor="agreement-template-edit" className="block text-sm font-medium text-gray-700 mb-2">
+                      Agreement template
+                    </label>
+                    <select
+                      id="agreement-template-edit"
+                      value={selectedTemplateCombination}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setSelectedTemplateCombination(next);
+                        // The two pickers are alternatives; clear the folder fields so the
+                        // form cannot describe two different combinations at once.
+                        if (next) {
+                          setCreateNewFolder(false);
+                          setSelectedFolder('');
+                          setNewFolderName('');
+                          setCombinationFolderSearch('');
+                          setUseCustomCombination(false);
+                          setCustomCombination('');
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Not attached to an agreement template</option>
+                      {selectableAgreements.map((c) => (
+                        <option key={c.value} value={c.value}>{c.label}</option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Attach this exhibit to a Template Manager agreement (e.g. data-sprawl). It is then
+                      offered whenever that agreement is quoted. Leave unset for a migration-pair exhibit
+                      and use the folder below instead.
+                    </p>
+                  </div>
+                )}
+
                 {/* Folder Selection - Required */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-sm font-medium text-gray-700">
-                      Folder *
+                      {selectedTemplateCombination ? 'Folder' : 'Folder *'}
                     </label>
                     <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
                       <input
@@ -1889,7 +2036,7 @@ const ExhibitManager: React.FC = () => {
                         }}
                         placeholder="Enter combination folder name (e.g., Testing to Production)"
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        required
+                        required={!selectedTemplateCombination}
                       />
                       <p className="mt-1 text-xs text-gray-500">
                         Enter a name for the new combination folder. This will be used to group related exhibits together.
@@ -1908,7 +2055,7 @@ const ExhibitManager: React.FC = () => {
                         onBlur={() => setTimeout(() => setCombinationDropdownOpen(false), 200)}
                         placeholder="Search or select existing combination"
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        required
+                        required={!selectedTemplateCombination}
                         autoComplete="off"
                       />
                       {combinationDropdownOpen && (

@@ -172,7 +172,8 @@ describe('ExhibitManager folder grouping', () => {
     const user = userEvent.setup();
     await renderManager();
 
-    await user.selectOptions(screen.getByRole('combobox'), 'messaging');
+    // Two filters now share the combobox role, so target the category one by its label.
+    await user.selectOptions(screen.getByLabelText('Filter by category'), 'messaging');
 
     expect(screen.getByRole('button', { name: /Slack to Teams/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Box to OneDrive/ })).toBeNull();

@@ -1,4 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import {
+  exhibitCombinationKey,
+  restrictExhibitsToCombination,
+  showExhibitSelector,
+} from '../utils/exhibitCombination';
 import { ConfigurationData, PricingTier } from '../types/pricing';
 import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X, Mail, ChevronDown, Plus, Layers } from 'lucide-react';
 import { trackConfiguration } from '../analytics/clarity';
@@ -2768,11 +2773,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
-          {/* Exhibits selection - Show for Migrate service plan (all combination types) and optionally for Manage/Bundle */}
-          {config.servicePlan === 'Migrate' && config.combination && (
+          {/* Exhibits selection - Migrate uses config.combination; Manage identifies its agreement
+              by migrationType, because config.combination is pinned to 'manage-standalone' there.
+              Overage Agreement opts out entirely: see showExhibitSelector. */}
+          {showExhibitSelector(config) && (
             <div data-section="exhibits-selection">
               <ExhibitSelector
-                combination={config.combination || 'multi-combination'}
+                combination={exhibitCombinationKey(config)}
+                restrictToCombination={restrictExhibitsToCombination(config)}
                 selectedExhibits={selectedExhibits}
                 onExhibitsChange={onExhibitsChange}
                 // Multi-combination can include multiple migrations with different tiers.

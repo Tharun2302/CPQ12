@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { templatesUpdateIsNoop } from '../utils/templateState';
 import { useLocation } from 'react-router-dom';
 import {
   Upload, 
@@ -186,6 +187,11 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
     }
   ];
 
+  const setTemplatesIfChanged = (next: Template[]) => {
+    if (templatesUpdateIsNoop(templates, next)) return;
+    setTemplates(next);
+  };
+
   // Load templates - use external cache if available, otherwise load from database
   useEffect(() => {
     const loadTemplates = async () => {
@@ -274,7 +280,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
         } else {
           // No templates in database
           console.log('📋 TemplateManager: No templates found in database');
-          setTemplates([]);
+          setTemplatesIfChanged([]);
         }
       } catch (error: any) {
         const errorTime = performance.now() - loadStartTime;
@@ -290,7 +296,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
         // If API fails and we didn't load from cache, set empty array
         if (!templatesLoadedFromCache) {
           console.log('📋 TemplateManager: No templates available (cache or database failed)');
-          setTemplates([]);
+          setTemplatesIfChanged([]);
         } else {
           console.log('✅ TemplateManager: Templates already loaded from cache, ignoring API error');
         }
