@@ -2330,9 +2330,13 @@ app.get('/api/templates', async (req, res) => {
     // blobs to be read from the database and sent over the network.
     //
     // Restrict the fields we return to keep the payload small and fast.
+    // Legacy templates archived by scripts/archive-legacy-agreement-templates.cjs are excluded
+    // from normal listing (they overrode Combination Manager uploads for Multi Combination and
+    // Manage). The records and their files are kept, not deleted; pass ?includeArchived=true to see them.
+    const includeArchived = req.query.includeArchived === 'true';
     const templatesCursor = db.collection('templates')
       .find(
-        {},
+        includeArchived ? {} : { archived: { $ne: true } },
         {
           projection: {
             fileData: 0, // never send the big binary/base64 data in the list call

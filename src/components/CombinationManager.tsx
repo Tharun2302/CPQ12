@@ -5,7 +5,6 @@ import {
   Trash2,
   Search,
   Loader2,
-  Layers,
   CheckCircle,
   AlertCircle,
   X,
@@ -302,12 +301,8 @@ const CombinationManager: React.FC = () => {
   return (
     <div className="max-w-6xl mx-auto p-6">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-3">
-          <Layers className="w-8 h-8 text-indigo-600" />
-          Combination Manager
-        </h1>
         <p className="text-gray-600">
-          Add and edit combinations shown in the Configure page when users select a migration type (Messaging, Content, Email, Multi combination, Overage).
+          Add and edit the deal agreement template for each service plan and template type. Whatever file is attached here is what generates the agreement.
         </p>
       </div>
 

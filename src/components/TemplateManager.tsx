@@ -1877,7 +1877,7 @@ CloudFuze Team`;
               }`}
             >
               <Layers className="w-4 h-4" />
-              Combinations
+              Template Manager
             </button>
           </div>
         </div>
