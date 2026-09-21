@@ -1231,9 +1231,9 @@ const ExhibitManager: React.FC = () => {
 
   const folderGroups = useMemo(() => buildFolderGroups(filteredExhibits), [filteredExhibits]);
 
-  const isSearching = searchTerm.trim().length > 0;
-  // Derived, not an effect: collapse state must return to the user choice when the search clears
-  const isFolderExpanded = (folderId: string) => isSearching || expandedFolders.has(folderId);
+  // Search narrows which combination folders are listed; it does not open them. The user
+  // clicks a folder to see its exhibits, so results stay scannable when a term matches many.
+  const isFolderExpanded = (folderId: string) => expandedFolders.has(folderId);
 
   const toggleFolder = (folderId: string) => {
     setExpandedFolders(prev => {

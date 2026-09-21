@@ -133,25 +133,34 @@ describe('ExhibitManager folder grouping', () => {
     expect(folderHeader(/Slack to Teams/).textContent).toContain('(1 file)');
   });
 
-  it('auto-expands matching folders while a search is active', async () => {
+  it('narrows to the matching folders but keeps them collapsed while a search is active', async () => {
     const user = userEvent.setup();
     await renderManager();
 
     await user.type(screen.getByPlaceholderText('Search exhibits...'), 'Slack');
 
-    expect(screen.getByText('Slack to Teams - Basic Scope')).toBeTruthy();
-    expect(folderHeader(/Slack to Teams/).getAttribute('aria-expanded')).toBe('true');
+    expect(folderHeader(/Slack to Teams/).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText('Slack to Teams - Basic Scope')).toBeNull();
     expect(screen.queryByRole('button', { name: /Box to OneDrive/ })).toBeNull();
   });
 
-  it('re-collapses folders when the search is cleared', async () => {
+  it('expands a matching folder when it is clicked during a search', async () => {
+    const user = userEvent.setup();
+    await renderManager();
+
+    await user.type(screen.getByPlaceholderText('Search exhibits...'), 'Slack');
+    await user.click(folderHeader(/Slack to Teams/));
+
+    expect(folderHeader(/Slack to Teams/).getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('Slack to Teams - Basic Scope')).toBeTruthy();
+  });
+
+  it('keeps folders collapsed when the search is cleared', async () => {
     const user = userEvent.setup();
     await renderManager();
 
     const searchBox = screen.getByPlaceholderText('Search exhibits...');
     await user.type(searchBox, 'Slack');
-    expect(screen.getByText('Slack to Teams - Basic Scope')).toBeTruthy();
-
     await user.clear(searchBox);
 
     expect(folderHeader(/Slack to Teams/).getAttribute('aria-expanded')).toBe('false');
