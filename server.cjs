@@ -8526,6 +8526,23 @@ const zohoSignSendLimiter = rateLimit({
   message: { success: false, error: 'Too many Zoho Sign requests. Try again in a minute.' },
 });
 
+const http = require('http');
+const https = require('https');
+
+/**
+ * Node's Happy Eyeballs gives each address 250ms, but Zoho's TCP+TLS handshake takes ~800ms from
+ * a distant network, so the working IPv4 attempt was being abandoned before it could finish.
+ * Where DNS also answers with a NAT64 AAAA that does not route, every candidate "fails" and the
+ * connect dies as ETIMEDOUT in under a second — a reachable Zoho reported as unreachable.
+ *
+ * Widening the per-attempt window fixes that. Turning autoSelectFamily off fixes it too, but
+ * that connects to one address with no fallback at all, so a host whose DNS puts the dead AAAA
+ * first would hang instead: measured here, v6-ordered-first still succeeds in 950ms this way.
+ */
+const ZOHO_CONNECT_ATTEMPT_MS = 2000;
+const zohoSignHttpsAgent = new https.Agent({ autoSelectFamilyAttemptTimeout: ZOHO_CONNECT_ATTEMPT_MS });
+const zohoSignHttpAgent = new http.Agent({ autoSelectFamilyAttemptTimeout: ZOHO_CONNECT_ATTEMPT_MS });
+
 /**
  * Transport for the Zoho modules. validateStatus is disabled on purpose: zoho-sign-client owns
  * the whole status-to-error mapping, and an axios throw would bypass it and lose the body that
@@ -8544,6 +8561,8 @@ async function zohoSignHttpRequest(spec) {
     timeout: 60000,
     maxBodyLength: Infinity,
     maxContentLength: Infinity,
+    httpAgent: zohoSignHttpAgent,
+    httpsAgent: zohoSignHttpsAgent,
   });
   return {
     status: response.status,

@@ -42,6 +42,30 @@ const ZOHO_INVALID_TOKEN_MARKERS = Object.freeze([
   'INVALID_OAUTH',
 ]);
 
+// Deep enough for the shapes that actually occur: axios wraps the original in `cause`, and a
+// Happy Eyeballs failure — the one this suffix exists to diagnose — is an AggregateError whose
+// per-address errors hold the only real code.
+const TRANSPORT_CAUSE_DEPTH = 3;
+
+/**
+ * ` (ETIMEDOUT)` for a transport failure that names a code, `''` otherwise. Only the code is
+ * taken, never the message: a raw transport message can carry the request URL, and a token
+ * call's URL carries the client id. Codes are a fixed vocabulary — Node syscall names plus
+ * axios's own ECONNABORTED — so the result is safe to show a user.
+ */
+function transportCauseSuffix(error, depth) {
+  const remaining = typeof depth === 'number' ? depth : TRANSPORT_CAUSE_DEPTH;
+  if (!error || typeof error !== 'object' || remaining <= 0) return '';
+  if (typeof error.code === 'string' && error.code !== '') return ` (${error.code})`;
+  if (Array.isArray(error.errors)) {
+    for (const inner of error.errors) {
+      const found = transportCauseSuffix(inner, remaining - 1);
+      if (found !== '') return found;
+    }
+  }
+  return transportCauseSuffix(error.cause, remaining - 1);
+}
+
 /** Normalised error every Zoho module throws. `message` is safe to show a user. */
 function zohoSignError(code, message, extra) {
   const err = new Error(message);
@@ -207,7 +231,13 @@ function createZohoSignAuth(deps) {
     try {
       response = await httpRequest(request);
     } catch (e) {
-      throw zohoSignError(ZOHO_ERROR_CODES.NETWORK_ERROR, 'Could not reach Zoho to refresh the access token');
+      // The transport code is the whole diagnosis for this class of failure (ETIMEDOUT vs
+      // ENOTFOUND vs ECONNREFUSED point at three different fixes) and it is a fixed
+      // vocabulary word, never a credential — so it is carried into the message.
+      throw zohoSignError(
+        ZOHO_ERROR_CODES.NETWORK_ERROR,
+        `Could not reach Zoho to refresh the access token${transportCauseSuffix(e)}`,
+      );
     }
     const record = parseTokenResponse(response && response.status, response && response.body, now());
     cached = record;
@@ -271,6 +301,7 @@ function createZohoSignAuth(deps) {
 
 module.exports = {
   ZOHO_ERROR_CODES,
+  transportCauseSuffix,
   ZOHO_INVALID_TOKEN_MARKERS,
   TOKEN_EXPIRY_SKEW_MS,
   ZOHO_TOKEN_PATH,

@@ -16,6 +16,7 @@ const {
   ZOHO_ERROR_CODES,
   zohoSignError,
   isZohoAuthFailure,
+  transportCauseSuffix,
 } = require('./zoho-sign-auth.cjs');
 
 const ZOHO_AUTH_SCHEME = 'Zoho-oauthtoken';
@@ -251,7 +252,11 @@ function createZohoSignClient(deps) {
         responseType: spec.responseType || 'text',
       });
     } catch (e) {
-      throw zohoSignError(ZOHO_ERROR_CODES.NETWORK_ERROR, FRIENDLY_MESSAGES[ZOHO_ERROR_CODES.NETWORK_ERROR], { retryable: true });
+      throw zohoSignError(
+        ZOHO_ERROR_CODES.NETWORK_ERROR,
+        `${FRIENDLY_MESSAGES[ZOHO_ERROR_CODES.NETWORK_ERROR]}${transportCauseSuffix(e)}`,
+        { retryable: true },
+      );
     }
   }
 

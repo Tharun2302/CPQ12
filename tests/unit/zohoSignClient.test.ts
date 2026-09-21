@@ -389,6 +389,36 @@ describe('retry behaviour', () => {
     const { client } = buildClient([{ status: 200, body: JSON.stringify({ code: 9004, message: 'not found' }) }]);
     await expect(client.getRequest('r1' as never)).rejects.toMatchObject({ code: ZOHO_ERROR_CODES.NOT_FOUND });
   });
+
+  // A bare "Could not reach Zoho Sign" sent us hunting through credentials for what was a
+  // connect-level fault. The code is what separates a dead route from a bad DNS answer.
+  it('names the transport code on an unreachable Zoho, so the cause is not guesswork', async () => {
+    const client = createZohoSignClient({
+      config: testConfig(),
+      auth: staticAuth,
+      sleep: async () => {},
+      random: () => 0.5,
+      httpRequest: async () => { throw Object.assign(new Error('connect failed'), { code: 'ECONNRESET' }); },
+    });
+    await expect(client.getRequest('r1' as never)).rejects.toMatchObject({
+      code: ZOHO_ERROR_CODES.NETWORK_ERROR,
+      message: 'Could not reach Zoho Sign. Check connectivity and try again. (ECONNRESET)',
+    });
+  });
+
+  it('leaves the message clean when the transport names no code at all', async () => {
+    const client = createZohoSignClient({
+      config: testConfig(),
+      auth: staticAuth,
+      sleep: async () => {},
+      random: () => 0.5,
+      httpRequest: async () => { throw new Error('socket hang up'); },
+    });
+    await expect(client.getRequest('r1' as never)).rejects.toMatchObject({
+      code: ZOHO_ERROR_CODES.NETWORK_ERROR,
+      message: 'Could not reach Zoho Sign. Check connectivity and try again.',
+    });
+  });
 });
 
 describe('client with the real auth module', () => {

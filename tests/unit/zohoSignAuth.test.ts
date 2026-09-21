@@ -16,12 +16,14 @@ type HttpResponse = { status: number; body: string };
 const {
   ZOHO_ERROR_CODES, TOKEN_EXPIRY_SKEW_MS, isAccessTokenFresh, isZohoAuthFailure,
   shouldRetryAfterAuthFailure, buildRefreshRequest, parseTokenResponse, createZohoSignAuth,
+  transportCauseSuffix,
 } = zohoAuth as {
   ZOHO_ERROR_CODES: Record<string, string>;
   TOKEN_EXPIRY_SKEW_MS: number;
   isAccessTokenFresh: (record: unknown, nowMs: number, skewMs?: number) => boolean;
   isZohoAuthFailure: (error: unknown) => boolean;
   shouldRetryAfterAuthFailure: (error: unknown, attempt: number) => boolean;
+  transportCauseSuffix: (error: unknown) => string;
   buildRefreshRequest: (config: unknown) => HttpSpec;
   parseTokenResponse: (status: number, body: unknown, nowMs: number) => TokenRecord;
   createZohoSignAuth: (deps: Record<string, unknown>) => {
@@ -224,6 +226,44 @@ describe('createZohoSignAuth', () => {
     const httpRequest = vi.fn(async () => { throw new Error('ECONNREFUSED 10.0.0.1:443'); });
     const auth = createZohoSignAuth({ config: testConfig(), httpRequest, now: () => NOW });
     await expect(auth.getAccessToken()).rejects.toMatchObject({ code: ZOHO_ERROR_CODES.NETWORK_ERROR });
+  });
+
+  // "Could not reach Zoho" with no cause sent us looking at credentials for a connect-level
+  // fault. The syscall code is what separates a bad DNS answer from a blocked route.
+  it('names the transport code in the network error so the cause is not guesswork', async () => {
+    const timedOut = Object.assign(new Error('Error'), { code: 'ETIMEDOUT' });
+    const httpRequest = vi.fn(async () => { throw timedOut; });
+    const auth = createZohoSignAuth({ config: testConfig(), httpRequest, now: () => NOW });
+    await expect(auth.getAccessToken()).rejects.toMatchObject({
+      code: ZOHO_ERROR_CODES.NETWORK_ERROR,
+      message: 'Could not reach Zoho to refresh the access token (ETIMEDOUT)',
+    });
+  });
+
+  it('reads the transport code through an axios-style wrapped cause', () => {
+    expect(transportCauseSuffix(Object.assign(new Error('x'), { cause: { code: 'ENOTFOUND' } }))).toBe(' (ENOTFOUND)');
+  });
+
+  // Happy Eyeballs — the failure this suffix exists to diagnose — reports an AggregateError,
+  // and the only real code lives on the per-address errors inside it.
+  it('digs the code out of an AggregateError, the shape a dual-stack connect failure takes', () => {
+    const aggregate = new AggregateError(
+      [Object.assign(new Error('v6'), { code: 'ENETUNREACH' }), Object.assign(new Error('v4'), { code: 'ETIMEDOUT' })],
+      'all attempts failed',
+    );
+    expect(transportCauseSuffix(aggregate)).toBe(' (ENETUNREACH)');
+  });
+
+  it('stops walking rather than looping on a self-referential cause chain', () => {
+    const looped: Record<string, unknown> = { message: 'nope' };
+    looped.cause = looped;
+    expect(transportCauseSuffix(looped)).toBe('');
+  });
+
+  // A transport message can hold the request URL, and a token-call URL can hold the grant.
+  it('takes only the code, never the transport message', () => {
+    expect(transportCauseSuffix(new Error('connect failed to https://accounts.zoho.com/oauth/v2/token?x=secret'))).toBe('');
+    expect(transportCauseSuffix(null)).toBe('');
   });
 
   it('exposes the expiry but never the token itself', async () => {
