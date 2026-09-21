@@ -1726,13 +1726,28 @@ Quote ID: ${quoteData.id}
         try {
           if (!selectedTemplate?.id) return null;
           // Combo-attached templates (id starts with 'combo-') live in /api/combinations, not /api/templates.
+          // Resolve by slug first: deleting and re-adding a combination gives it a new id, so a stored
+          // combo-<id> can point at a record that no longer exists. Never short-circuit on the cached
+          // file here — that is what kept serving a replaced combination's old document.
           if (selectedTemplate.id.startsWith('combo-')) {
-            if (selectedTemplate.file) return selectedTemplate.file;
-            const comboId = selectedTemplate.id.slice('combo-'.length);
+            let comboId = selectedTemplate.id.slice('combo-'.length);
+            const comboSlug = (selectedTemplate.combination || '').trim().toLowerCase();
+            if (comboSlug) {
+              try {
+                const listRes = await fetch(`${BACKEND_URL}/api/combinations?t=${Date.now()}`, { cache: 'no-store' });
+                const listData = await listRes.json();
+                const match = (listData.combinations || []).find(
+                  (c: any) => (c.value || '').trim().toLowerCase() === comboSlug && c.hasFile
+                );
+                if (match?.id) comboId = match.id;
+              } catch {
+                console.warn('⚠️ Could not resolve combination by slug, using the stored id');
+              }
+            }
             const comboRes = await fetch(`${BACKEND_URL}/api/combinations/${comboId}/file?t=${Date.now()}`, { cache: 'no-store' });
             if (!comboRes.ok) {
               console.warn(`⚠️ Combination file fetch failed with status ${comboRes.status}`);
-              return null;
+              return selectedTemplate.file || null;
             }
             const comboBlob = await comboRes.blob();
             return new File([comboBlob], selectedTemplate.fileName || 'agreement.docx', { type: comboBlob.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
@@ -4874,14 +4889,28 @@ Total Price: {{total price}}`;
         try {
           if (!selectedTemplate?.id) return null;
           // Combo-attached templates (id starts with 'combo-') live in /api/combinations, not /api/templates.
-          // Return the already-loaded file if present, otherwise fetch from the combinations endpoint.
+          // Resolve by slug first: deleting and re-adding a combination gives it a new id, so a stored
+          // combo-<id> can point at a record that no longer exists. Never short-circuit on the cached
+          // file here — that is what kept serving a replaced combination's old document.
           if (selectedTemplate.id.startsWith('combo-')) {
-            if (selectedTemplate.file) return selectedTemplate.file;
-            const comboId = selectedTemplate.id.slice('combo-'.length); // e.g. 'combo-1234-abc'
+            let comboId = selectedTemplate.id.slice('combo-'.length);
+            const comboSlug = (selectedTemplate.combination || '').trim().toLowerCase();
+            if (comboSlug) {
+              try {
+                const listRes = await fetch(`${BACKEND_URL}/api/combinations?t=${Date.now()}`, { cache: 'no-store' });
+                const listData = await listRes.json();
+                const match = (listData.combinations || []).find(
+                  (c: any) => (c.value || '').trim().toLowerCase() === comboSlug && c.hasFile
+                );
+                if (match?.id) comboId = match.id;
+              } catch {
+                console.warn('⚠️ Could not resolve combination by slug, using the stored id');
+              }
+            }
             const comboRes = await fetch(`${BACKEND_URL}/api/combinations/${comboId}/file?t=${Date.now()}`, { cache: 'no-store' });
             if (!comboRes.ok) {
               console.warn(`⚠️ Combination file fetch failed with status ${comboRes.status}`);
-              return null;
+              return selectedTemplate.file || null;
             }
             const comboBlob = await comboRes.blob();
             return new File([comboBlob], selectedTemplate.fileName || 'agreement.docx', { type: comboBlob.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
@@ -4958,7 +4987,10 @@ Total Price: {{total price}}`;
       // Use cached template file immediately when available to avoid blocking on network fetch.
       // Only await fetch when we have no valid cached file (faster "Preview Agreement").
       let templateFileForAgreement: File | null = null;
-      if (selectedTemplate.file && selectedTemplate.file.size > 0) {
+      // Combination templates are replaced from Combination Manager, so always wait for the
+      // server copy; a cached file only serves as the fallback when that fetch fails.
+      const isComboTemplate = !!selectedTemplate.id?.startsWith?.('combo-');
+      if (!isComboTemplate && selectedTemplate.file && selectedTemplate.file.size > 0) {
         templateFileForAgreement = selectedTemplate.file;
         // Refresh template in background for next run (non-blocking)
         fetchLatestTemplateFile().catch(() => {});

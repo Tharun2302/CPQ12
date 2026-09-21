@@ -296,9 +296,12 @@ function App() {
         // Convert File objects to data URLs for storage
         const saveTemplate = async () => {
           try {
+            // Combination templates are re-fetched from the backend on load. Persisting their bytes
+            // is what kept serving a replaced combination's old document after it was updated.
+            const isComboTemplate = !!selectedTemplate.id?.startsWith?.('combo-');
             const templateForStorage = {
               ...selectedTemplate,
-              fileData: selectedTemplate.file ? await fileToDataURL(selectedTemplate.file) : null,
+              fileData: selectedTemplate.file && !isComboTemplate ? await fileToDataURL(selectedTemplate.file) : null,
               fileName: selectedTemplate.file ? selectedTemplate.file.name : null,
               wordFileData: selectedTemplate.wordFile ? await fileToDataURL(selectedTemplate.wordFile) : null,
               wordFileName: selectedTemplate.wordFile ? selectedTemplate.wordFile.name : null,
@@ -1172,7 +1175,11 @@ function App() {
     const combination = (configuration?.combination || '').trim().toLowerCase();
     const isManage = servicePlan === 'Manage';
     const isCombinationTemplateType = migrationType === 'Multi combination' || migrationType === 'Overage Agreement' || isManage;
-    if (!isCombinationTemplateType || selectedTemplate) return;
+    if (!isCombinationTemplateType) return;
+    // A combination template restored from localStorage carries no file bytes any more, so it must
+    // be re-fetched; anything else already selected is left alone.
+    const needsComboFile = !!selectedTemplate?.id?.startsWith?.('combo-') && !selectedTemplate?.file;
+    if (selectedTemplate && !needsComboFile) return;
     // For Manage plans, use migrationType as the lookup key (the specific agreement slug)
     const lookupValue = isManage
       ? (migrationType || '').trim().toLowerCase()
