@@ -4,6 +4,7 @@ import {
   restrictExhibitsToCombination,
   showExhibitSelector,
 } from '../utils/exhibitCombination';
+import { numberInputValue } from '../utils/numberInput';
 import { ConfigurationData, PricingTier } from '../types/pricing';
 import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X, Mail, ChevronDown, Plus, Layers } from 'lucide-react';
 import { trackConfiguration } from '../analytics/clarity';
@@ -1345,7 +1346,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           type="number"
           min="0"
           step="1"
-          value={config.manageUsersByType?.[type] ?? config.manageUsers ?? ''}
+          value={numberInputValue(config.manageUsersByType?.[type], config.manageUsers)}
           onChange={(e) => {
             const v = e.target.value;
             setUsersForType(type, v === '' ? 0 : (parseInt(v) || 0));
