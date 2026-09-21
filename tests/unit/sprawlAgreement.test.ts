@@ -158,9 +158,26 @@ describe('manageAgreementCard — which pricing card the dropdown selects', () =
     }
   });
 
+  // The agreement really is named "mange+sprawl" in Template Manager. Before this, the missing
+  // 'a' made it read as standalone: the per-user licence silently vanished from the quote.
+  it('still bills the licence when "manage" is misspelled in the agreement name', () => {
+    for (const label of ['mange+sprawl', 'Mange + Sprawl', 'MANGE SPRAWL', 'mannage+sprawl']) {
+      expect(manageAgreementCard(manage({ manageAgreementLabel: label }))).toBe('combined');
+    }
+  });
+
+  // The dangerous direction is the other one — charging a licence nobody asked for — so a
+  // sprawl-only name must never drift into 'combined'.
+  it('never reads a sprawl-only agreement as combined', () => {
+    for (const label of ['data-sprawl', 'Data Sprawl', 'email sprawl', 'message sprawl']) {
+      expect(manageAgreementCard(manage({ manageAgreementLabel: label }))).toBe('standalone');
+    }
+  });
+
   it('falls back to migrationType when no label was captured', () => {
     expect(manageAgreementCard(manage({ migrationType: 'datasprawl' as never }))).toBe('standalone');
     expect(manageAgreementCard(manage({ migrationType: 'manage-sprawl' as never }))).toBe('combined');
+    expect(manageAgreementCard(manage({ migrationType: 'mange+sprawl' as never }))).toBe('combined');
   });
 
   it('shows both cards for a Manage agreement that is not a sprawl agreement', () => {

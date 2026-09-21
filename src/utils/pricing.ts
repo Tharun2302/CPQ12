@@ -288,6 +288,14 @@ export function sumSprawlLines(lines: SprawlLine[]): number {
   return lines.reduce((sum, line) => sum + line.cost, 0);
 }
 
+// A hand-typed agreement name decides whether the per-user licence is billed, so a slip in
+// spelling silently reprices the deal. "mange+sprawl" — a real agreement in this system —
+// read as standalone and dropped the licence line, because it is missing the 'a' in "manage".
+// Accepting the near-miss is safer than repricing a customer over a typo; the reverse error
+// (billing a licence that was not meant to be sold) needs a name with no "manage" in it at
+// all, which no misspelling of "manage" produces.
+const MANAGE_PREFIX = /man+a?ge/;
+
 // Which Manage pricing card the chosen agreement corresponds to. The Manage dropdown is
 // the plan selector: "Data Sprawl" sells sprawl only, "MANAGE + Sprawl" sells the licence
 // plus sprawl. The label is preferred because the dropdown's value is admin-defined.
@@ -299,7 +307,7 @@ export function manageAgreementCard(
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
   if (!slug.includes('sprawl')) return 'both';
-  return slug.includes('manage') ? 'combined' : 'standalone';
+  return MANAGE_PREFIX.test(slug) ? 'combined' : 'standalone';
 }
 
 // A selectedTier restored from sessionStorage or MongoDB predates sprawlLines, so
