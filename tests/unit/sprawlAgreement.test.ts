@@ -28,7 +28,8 @@ describe('buildSprawlAgreementData', () => {
     );
     // Content shows its priced GB; Message has no captured count in this fixture.
     expect(data.rows.map(r => r.sprawlLabel)).toEqual(['Data Sprawl (345 GB)', 'Message Sprawl']);
-    expect(data.rows.map(r => r.sprawlPrice)).toEqual(['$55.20', '$2,248.40']);
+    // Content bills whole: 345 GB x 0.16 = 55.20 -> $55.
+    expect(data.rows.map(r => r.sprawlPrice)).toEqual(['$55.00', '$2,248.40']);
     expect(data.rows.every(r => r.sprawlJobRequirement === 'CloudFuze Data Sprawl')).toBe(true);
     expect(data.rows.map(r => r.isLast)).toEqual([false, true]);
   });
@@ -55,8 +56,10 @@ describe('buildSprawlAgreementData', () => {
     const standalone = { sprawlType: 'Content' as const, userCost: 0 };
     const data = buildSprawlAgreementData(config, standalone);
     expect(data.userCost).toBe(0);
-    // Total equals the printed rows, which is the whole point of the standalone plan
-    expect(data.totalCost).toBeCloseTo(2303.6, 2);
+    // Total equals the printed rows, which is the whole point of the standalone plan.
+    // Content bills in whole dollars: 345 GB × 0.16 = 55.20 → $55, plus Message
+    // 1022 × 2.20 = 2,248.40, which keeps its cents.
+    expect(data.totalCost).toBeCloseTo(2303.4, 2);
   });
 
   it('printed rows always add up to the printed total', () => {
@@ -79,7 +82,7 @@ describe('buildSprawlAgreementData', () => {
         cfg({ manageSprawlTypes: ['Content', 'Message'], manageDataGB: 345 })
       );
       expect(data.tokens['{{manag_data_label}}']).toBe('Data Sprawl (345 GB) + Message Sprawl');
-      expect(data.tokens['{{manag_data_cost}}']).toBe('$2,303.60');
+      expect(data.tokens['{{manag_data_cost}}']).toBe('$2,303.40');
       expect(data.tokens['{{sprawl_row_count}}']).toBe('2');
     });
   });
@@ -263,7 +266,7 @@ describe('agreement rows with DISTINCT per-type user counts', () => {
     expect(data.rows.map(r => r.sprawlQty)).toEqual(['345', '424', '100']);
     // 424 -> $2.80 band, 100 -> $3.60 band. The aggregate 586 would give $2.50 for both.
     expect(data.rows.map(r => r.sprawlRate)).toEqual(['$0.16', '$2.80', '$3.60']);
-    expect(data.rows.map(r => r.sprawlPrice)).toEqual(['$55.20', '$1,187.20', '$360.00']);
+    expect(data.rows.map(r => r.sprawlPrice)).toEqual(['$55.00', '$1,187.20', '$360.00']);
   });
 
   it('regression: printed rows sum to the printed data line for every subset', () => {
@@ -355,5 +358,28 @@ describe('withDiscountRow — the Discount line in the agreement table', () => {
     const withDiscount = withDiscountRow(base, 20, 1262.18);
     expect(withDiscount.slice(0, base.length).map(r => r.sprawlPrice))
       .toEqual(base.map(r => r.sprawlPrice));
+  });
+});
+
+describe('agreement rates keep the tiers distinct', () => {
+  // The comparison card and the generated agreement must print the same rate for the
+  // same deal. At 2dp they did not: 30,000 GB and 40,000 GB both printed "$0.08 per GB".
+  it('prints four decimals for the tiers that collide at two', () => {
+    const at = (gb: number) =>
+      buildSprawlAgreementData(cfg({ manageSprawlTypes: ['Content'], manageDataGB: gb })).rows[0].sprawlRate;
+    expect(at(20000)).toBe('$0.0833');
+    expect(at(30000)).toBe('$0.075');
+    expect(at(20000)).not.toBe(at(30000));
+
+    expect(at(600000)).toBe('$0.0533');
+    expect(at(1500000)).toBe('$0.0467');
+    expect(at(600000)).not.toBe(at(1500000));
+  });
+
+  it('carries the same precision into the overage line and the legacy token', () => {
+    const config = cfg({ manageSprawlTypes: ['Content'], manageDataGB: 20000 });
+    expect(buildOverageLine(calcSprawlLines(['Content'], 0, 20000)))
+      .toBe('Overage Charge: $0.0833 per GB');
+    expect(sprawlPerDataCost(config)).toBe('$0.0833');
   });
 });

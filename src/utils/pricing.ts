@@ -166,13 +166,20 @@ export function lookupContentSprawlRate(gb: number): number {
   return CONTENT_SPRAWL[CONTENT_SPRAWL.length - 1].rate;
 }
 
-// Full-precision sprawl cost (round for display only). Email uses the Message table.
+// Sprawl cost. Email uses the Message table.
 // Guards negative/non-finite inputs to 0 so quotes can never go negative.
+//
+// CONTENT IS BILLED IN WHOLE DOLLARS. The 2026 sheet's Content data cost is formatted
+// $#,##0 and that rounded figure is the price the customer is quoted, not merely how it
+// prints: 1–3 GB → $0, 4–9 → $1, 10–15 → $2, 16–21 → $3, 22–28 → $4, and on by the same
+// rule. Rounding here rather than at each display site is what keeps the Data Sprawl row,
+// the card total and the agreement's Total Price reconciling with one another.
+// Message/Email keep full precision — their rates are per-user and already dollar-scale.
 export function calcSprawlCost(type: 'Content' | 'Message' | 'Email', users: number, gb: number): number {
   const u = Number.isFinite(users) && users > 0 ? users : 0;
   const g = Number.isFinite(gb) && gb > 0 ? gb : 0;
   return type === 'Content'
-    ? lookupContentSprawlRate(g) * g
+    ? Math.round(lookupContentSprawlRate(g) * g)
     : lookupMessageSprawlRate(u) * u;
 }
 
@@ -287,6 +294,7 @@ export function calcSprawlLines(types: SprawlType[], users: number, gb: number):
 export function sumSprawlLines(lines: SprawlLine[]): number {
   return lines.reduce((sum, line) => sum + line.cost, 0);
 }
+
 
 // A hand-typed agreement name decides whether the per-user licence is billed, so a slip in
 // spelling silently reprices the deal. "mange+sprawl" — a real agreement in this system —
@@ -1464,6 +1472,18 @@ export function formatCurrency(amount: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount);
+}
+
+// Per-unit rates need four decimals, not two: the Content sprawl tiers run down to 0.04167,
+// and at 2dp both 0.05333 and 0.04667 render "$0.05", so two different tiers look identical
+// and the printed "rate × quantity" stops reconciling with the printed cost.
+export function formatUnitRate(rate: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(Number.isFinite(rate) ? rate : 0);
 }
 
 // Export the instance type cost function for use in templates

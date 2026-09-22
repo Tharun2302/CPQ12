@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CheckCircle } from 'lucide-react';
 import { PricingCalculation, ConfigurationData, PricingTier } from '../types/pricing';
-import { formatCurrency, PRICING_TIERS, calculateCombinationPricing, getManageDataRatePerGB, resolveSprawlLines, sprawlDisplayTotal, manageAgreementCard } from '../utils/pricing';
+import { formatCurrency, formatUnitRate, PRICING_TIERS, calculateCombinationPricing, getManageDataRatePerGB, resolveSprawlLines, sprawlDisplayTotal, manageAgreementCard } from '../utils/pricing';
 
 interface PricingComparisonProps {
   calculations: PricingCalculation[];
@@ -866,7 +866,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       <div key={line.type} className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
                         <span className="text-gray-700 font-medium">
                           {line.quantity > 0
-                            ? `${line.label} (${formatCurrency(line.rate)}/${line.basis === 'gb' ? 'GB' : 'user'} × ${line.quantity})`
+                            ? `${line.label} (${formatUnitRate(line.rate)}/${line.basis === 'gb' ? 'GB' : 'user'} × ${line.quantity})`
                             : `${line.label}`}:
                         </span>
                         <span className="font-bold text-gray-900">{formatCurrency(line.cost)}</span>
@@ -1004,7 +1004,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
               <div key={line.type} className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3 mb-3">
                 <span className="text-gray-700 font-medium">
                   {line.quantity > 0
-                    ? `${line.label} (${formatCurrency(line.rate)}/${line.basis === 'gb' ? 'GB' : 'user'} × ${line.quantity})`
+                    ? `${line.label} (${formatUnitRate(line.rate)}/${line.basis === 'gb' ? 'GB' : 'user'} × ${line.quantity})`
                     : `${line.label}`}:
                 </span>
                 <span className="font-bold text-gray-900">{formatCurrency(line.cost)}</span>

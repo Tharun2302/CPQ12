@@ -1,6 +1,7 @@
 import { ConfigurationData, PricingCalculation, SprawlLine } from '../types/pricing';
 import {
   formatCurrency,
+  formatUnitRate,
   normalizeSprawlTypes,
   calcSprawlLinesFromConfig,
   manageUserLineCost,
@@ -64,7 +65,7 @@ export function buildSprawlAgreementData(
     sprawlJobRequirement: JOB_REQUIREMENT,
     sprawlLabel: decorateLabel(line, cfg),
     sprawlPrice: formatCurrency(round2(line.cost)),
-    sprawlRate: formatCurrency(line.rate),
+    sprawlRate: formatUnitRate(line.rate),
     sprawlBasis: line.basis === 'gb' ? 'per GB' : 'per user',
     sprawlQty: String(line.quantity),
     isLast: i === lines.length - 1
@@ -118,7 +119,7 @@ export function withDiscountRow(rows: SprawlRow[], percent: number, amount: numb
 export function buildOverageLine(lines: SprawlLine[]): string {
   if (lines.length === 0) return '';
   const parts = lines.map(
-    l => `${formatCurrency(l.rate)} ${l.basis === 'gb' ? 'per GB' : 'per user'}`
+    l => `${formatUnitRate(l.rate)} ${l.basis === 'gb' ? 'per GB' : 'per user'}`
   );
   return `Overage Charge: ${parts.join(' | ')}`;
 }
@@ -136,5 +137,5 @@ export function sprawlPerDataCost(config: ConfigurationData | undefined): string
   if (lines.length === 0) return undefined;
   // Content wins because its rate matches the template's static "per GB" wording.
   const line = lines.find(l => l.type === 'Content') ?? lines[0];
-  return formatCurrency(line.rate);
+  return formatUnitRate(line.rate);
 }
