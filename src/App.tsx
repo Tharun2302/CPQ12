@@ -1318,7 +1318,6 @@ function App() {
         // Only clear if explicitly switching to a different migration type (not empty/null)
         console.log('🔄 Migration type changed FROM Multi combination TO', config.migrationType, '- clearing exhibits');
         setSelectedExhibits([]);
-        localStorage.removeItem('cpq_selected_exhibits');
         sessionStorage.removeItem('cpq_selected_exhibits');
       } else if (isNowMultiCombination) {
         // When staying in Multi combination, preserve exhibits
@@ -1331,7 +1330,15 @@ function App() {
         console.log('🔄 Configuration being initialized - preserving exhibits during restoration');
       }
     }
-    
+
+    // Outside Multi combination, switching to a different pair means the previously selected exhibits are stale.
+    const isSinglePairFlow = config.migrationType !== 'Multi combination';
+    if (!migrationTypeChanged && combinationChanged && isSinglePairFlow && !isRestoringState) {
+      console.log('🔄 Combination changed within a single-pair flow - clearing stale exhibits');
+      setSelectedExhibits([]);
+      sessionStorage.removeItem('cpq_selected_exhibits');
+    }
+
     // If combination changed, trigger template re-selection.
     // For Manage plans, migrationType is the effective "combination" (combination is always 'manage-standalone').
     const manageAgreementChanged = config.servicePlan === 'Manage' && migrationTypeChanged;
@@ -1385,8 +1392,8 @@ function App() {
       });
     }
     setSelectedExhibits(normalized);
-    // Save to both localStorage (for persistence across sessions) and sessionStorage (for current session)
-    localStorage.setItem('cpq_selected_exhibits', JSON.stringify(normalized));
+    // sessionStorage only: it's scoped to this tab's session, so it can't leak a
+    // combination the user picked in an earlier, unrelated browser session (see cleanup below).
     try {
       sessionStorage.setItem('cpq_selected_exhibits', JSON.stringify(normalized));
     } catch (e) {
@@ -1395,20 +1402,20 @@ function App() {
     console.log('📎 Exhibits selection changed:', { raw: exhibitIds, normalized });
   }, []);
 
-  // Restore exhibits from sessionStorage (preferred) or localStorage (fallback)
+  // One-time cleanup: clear old localStorage-persisted exhibits so stale combos stop leaking in.
+  useEffect(() => {
+    if (!localStorage.getItem('cpq_selected_exhibits_cleanup_v1')) {
+      localStorage.removeItem('cpq_selected_exhibits');
+      localStorage.setItem('cpq_selected_exhibits_cleanup_v1', '1');
+    }
+  }, []);
+
+  // Restore exhibits from sessionStorage only - never falls back to localStorage.
   useEffect(() => {
     setIsRestoringState(true); // Set flag to prevent clearing during restoration
-    
-    // First try sessionStorage (for current session navigation)
-    let saved = sessionStorage.getItem('cpq_selected_exhibits');
-    let source = 'sessionStorage';
-    
-    // Fallback to localStorage if sessionStorage doesn't have it
-    if (!saved) {
-      saved = localStorage.getItem('cpq_selected_exhibits');
-      source = 'localStorage';
-    }
-    
+
+    const saved = sessionStorage.getItem('cpq_selected_exhibits');
+
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -1417,15 +1424,15 @@ function App() {
         );
         if (normalized.length > 0) {
           setSelectedExhibits(normalized);
-          console.log(`♻️ Restored ${normalized.length} selected exhibits from ${source}:`, normalized);
+          console.log(`♻️ Restored ${normalized.length} selected exhibits from sessionStorage:`, normalized);
         } else {
-          console.log(`📎 No exhibits found in ${source}`);
+          console.log('📎 No exhibits found in sessionStorage');
         }
       } catch (e) {
         console.error('Error parsing saved exhibits:', e);
       }
     } else {
-      console.log('📎 No saved exhibits found in sessionStorage or localStorage');
+      console.log('📎 No saved exhibits found in sessionStorage');
     }
     
     // Clear restoration flag after a short delay to allow configuration to restore

@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Check, ChevronRight, Search, ArrowRight, RefreshCw, X } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
-import { scopeExhibitsForCombination } from '../utils/exhibitCombination';
+import { scopeExhibitsForCombination, DEFAULT_EXHIBIT_COMBINATION } from '../utils/exhibitCombination';
 
 interface Exhibit {
   _id: string;
@@ -1058,8 +1058,19 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 
     // Group the full exhibit set exactly as the list does, then build an id -> folder-name map.
     const { visibleResult } = buildExhibitGroups(exhibits);
+
+    // Outside Multi combination there's exactly one active pair, so a chip for any other pair is stale.
+    const isSinglePairScope = restrictToCombination || combination !== DEFAULT_EXHIBIT_COMBINATION;
+    const activeCombination = (combination || '').toLowerCase();
+
     const idToFolderName = new Map<string, string>();
     visibleResult.forEach((group) => {
+      if (isSinglePairScope) {
+        const belongsToActiveCombination = (group.exhibits || []).some((ex) =>
+          (ex.combinations || []).some((c) => (c || '').toLowerCase() === activeCombination)
+        );
+        if (!belongsToActiveCombination) return;
+      }
       (group.exhibits || []).forEach((ex) => {
         if (ex?._id) idToFolderName.set(ex._id.toString(), group.name);
       });
@@ -1077,7 +1088,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     });
 
     return names;
-  }, [selectedExhibits, exhibits]);
+  }, [selectedExhibits, exhibits, combination, restrictToCombination]);
 
   const handleRemoveMigrationType = (migrationName: string) => {
     const item = Array.isArray(processedExhibits)
