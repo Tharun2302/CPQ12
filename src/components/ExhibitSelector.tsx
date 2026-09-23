@@ -414,6 +414,8 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   // Auto-select exhibits that belong to the currently selected combination
   useEffect(() => {
     if (!combination || combination === 'all' || exhibits.length === 0) return;
+    // Multi combination is hand-picked; auto-selecting would tick exhibits mis-tagged "multi-combination".
+    if (combination === DEFAULT_EXHIBIT_COMBINATION) return;
 
     const matchingIds = exhibits
       .filter(ex => ex.combinations?.some(c => c.toLowerCase() === combination.toLowerCase()))

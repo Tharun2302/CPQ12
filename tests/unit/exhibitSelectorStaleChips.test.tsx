@@ -78,3 +78,27 @@ describe('ExhibitSelector selected-combination chips', () => {
     expect(chips.getByText(/Teams to Slack/)).toBeTruthy();
   });
 });
+
+describe('ExhibitSelector Multi combination auto-select', () => {
+  it('does not auto-select exhibits tagged "multi-combination"', async () => {
+    const MIS_TAGGED = [
+      exhibit({ _id: 'e1', name: 'Box to Dropbox - Standard Include', combinations: ['box-to-dropbox'] }),
+      exhibit({ _id: 'e2', name: 'Teams to Slack - Standard Include', combinations: ['multi-combination'] }),
+    ];
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) =>
+      String(input).includes('/api/exhibits')
+        ? json({ success: true, exhibits: MIS_TAGGED })
+        : json({ success: true, combinations: [] })
+    ));
+    const onExhibitsChange = vi.fn();
+
+    render(
+      <ExhibitSelector combination="multi-combination" selectedExhibits={['e1']} onExhibitsChange={onExhibitsChange} />
+    );
+    await screen.findByText(/Selected combinations/i);
+    await new Promise((r) => setTimeout(r, 50));
+
+    const addedMisTagged = onExhibitsChange.mock.calls.some(([ids]) => ids.includes('e2'));
+    expect(addedMisTagged).toBe(false);
+  });
+});
