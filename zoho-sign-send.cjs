@@ -14,7 +14,7 @@
 //   resolvePageSizes(buffer)            -> { [1-based page]: { width, height } }   (optional)
 //   claimSend(documentId, claim)        -> boolean  ATOMIC: true for exactly one concurrent caller
 //   releaseSend(documentId, token)      -> void     drops the claim when no Zoho request exists
-//   saveZohoRequest(documentId, patch)  -> void   persisted BEFORE submit
+//   saveZohoRequest(documentId, patch, token) -> boolean  BEFORE submit; true only if token holds the claim
 //   saveRecipientAction(recipientId, patch) -> void
 //   saveSent(documentId, patch)         -> void
 //   saveError(documentId, lastError)    -> void
@@ -55,9 +55,9 @@ const REMINDER_PERIOD_MAX = 30;
 const NOTES_MAX_LENGTH = 500;
 const REQUEST_NAME_MAX_LENGTH = 200;
 
-// Long enough to outlive a create + submit (each capped at a 60s HTTP timeout), short enough that
-// a process that died holding the claim does not lock the document out of Zoho for good.
-const ZOHO_SEND_CLAIM_TTL_MS = 5 * 60 * 1000;
+// Covers claim -> saveZohoRequest only; a create with retries, Retry-After and a token refresh
+// can run ~8 minutes. A process that died holding the claim frees the document after this.
+const ZOHO_SEND_CLAIM_TTL_MS = 15 * 60 * 1000;
 
 // Anything not listed maps to 502: the browser learns "Zoho refused this" and the precise cause
 // stays in zoho_last_error, where it cannot leak account detail into a response body.
@@ -276,7 +276,7 @@ function createZohoSignSender(deps) {
   if (!store) throw zohoSignError(ZOHO_ERROR_CODES.INVALID_INPUT, 'createZohoSignSender requires a store');
   if (!client) throw zohoSignError(ZOHO_ERROR_CODES.INVALID_INPUT, 'createZohoSignSender requires a Zoho client');
   if (typeof store.claimSend !== 'function' || typeof store.releaseSend !== 'function') {
-    throw zohoSignError(ZOHO_ERROR_CODES.INVALID_INPUT, 'createZohoSignSender requires store.claimSend and store.releaseSend');
+    throw zohoSignError(ZOHO_ERROR_CODES.INVALID_INPUT, 'createZohoSignSender requires claimSend and releaseSend');
   }
 
   const redact = createRedactor([config.clientSecret, config.refreshToken, config.webhookSecret]);
@@ -460,13 +460,21 @@ function createZohoSignSender(deps) {
     // Persisted BEFORE submit, deliberately: a crash between the two calls then leaves a
     // recoverable CPQ record pointing at a real Zoho draft, rather than an orphan at Zoho that
     // nothing here can find again.
-    await store.saveZohoRequest(documentId, {
+    const saved = await store.saveZohoRequest(documentId, {
       provider: 'zoho',
       zoho_request_id: requestId,
       zoho_document_ids: zohoDocumentIds,
       zoho_dc: config.dc,
       zoho_request_status: String((zohoRequest && zohoRequest.request_status) || 'draft'),
-    });
+    }, claimToken);
+    if (saved !== true) {
+      // Our claim went stale during a slow create and another send took over. Stopping before
+      // submit leaves this Zoho draft unsent, so no signer is emailed twice.
+      warn(`Zoho Sign lost the send claim for document ${documentId}; request ${requestId} left unsubmitted`);
+      return fail(ZOHO_ALREADY_SENT.status, ZOHO_ALREADY_SENT.error, ZOHO_ALREADY_SENT.code);
+    }
+    // zoho_request_id now blocks any further claim by itself, so the lease has done its job.
+    await releaseClaim(documentId, claimToken);
 
     const { actionIds, unmatched } = matchZohoActionIds(zohoRequest && zohoRequest.actions, mapped.actions);
     if (unmatched.length > 0) {

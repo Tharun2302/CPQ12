@@ -123,7 +123,12 @@ function makeStore(overrides: Record<string, unknown> = {}, sharedCalls?: string
     findFields: vi.fn(async () => fields()),
     loadPdf: vi.fn(async () => ({ buffer: Buffer.from('%PDF-1.4 fake'), fileName: 'Order Form.pdf' })),
     resolvePageSizes: vi.fn(async () => ({ 1: { width: 612, height: 792 } })),
-    saveZohoRequest: vi.fn(async (_id: string, patch: any) => { calls.push('saveZohoRequest'); writes.request = patch; }),
+    saveZohoRequest: vi.fn(async (_id: string, patch: any, token?: string) => {
+      calls.push('saveZohoRequest');
+      if (writes.request || !claimState.claim || claimState.claim.token !== token) return false;
+      writes.request = patch;
+      return true;
+    }),
     saveRecipientAction: vi.fn(async (id: string, patch: any) => { calls.push('saveRecipientAction'); writes.recipients.push({ id, patch }); }),
     saveSent: vi.fn(async (_id: string, patch: any) => { calls.push('saveSent'); writes.sent = patch; }),
     saveError: vi.fn(async (_id: string, patch: any) => { calls.push('saveError'); writes.error = patch; }),
@@ -283,7 +288,7 @@ describe('zoho-sign-send: the send sequence', () => {
     const result = await service.send({ documentId: DOC_ID, actorEmail: CREATOR, body: {}, ip: '10.0.0.1' });
 
     expect(result.status).toBe(200);
-    expect(calls).toEqual(['claimSend', 'createRequest', 'saveZohoRequest', 'submitRequest', 'saveRecipientAction', 'saveRecipientAction', 'saveSent']);
+    expect(calls).toEqual(['claimSend', 'createRequest', 'saveZohoRequest', 'releaseSend', 'submitRequest', 'saveRecipientAction', 'saveRecipientAction', 'saveSent']);
     expect(calls.indexOf('saveZohoRequest')).toBeLessThan(calls.indexOf('submitRequest'));
     expect(store.writes.request).toMatchObject({
       provider: 'zoho',
@@ -622,9 +627,9 @@ describe('zoho-sign-send: concurrent sends of the same document', () => {
     expect(loser.status).toBe(alreadySentStatus);
     expect(loser.body).toEqual({ success: false, ...alreadySent });
     expect(loser.body.code).toBe('ZOHO_ALREADY_SENT');
-    // The loser must not record an error or release the winner's claim.
+    // Only the winner releases, and only after its request id is saved; the loser writes nothing.
     expect(store.saveError).not.toHaveBeenCalled();
-    expect(store.releaseSend).not.toHaveBeenCalled();
+    expect(store.releaseSend).toHaveBeenCalledTimes(1);
   });
 
   it('still sends only once when five sends arrive together', async () => {
@@ -684,13 +689,56 @@ describe('zoho-sign-send: concurrent sends of the same document', () => {
     expect(store.claimState.claim).toBeNull();
   });
 
-  it('keeps the claim once a Zoho request exists, even if submit fails', async () => {
+  it('once the request id is saved, a retry after a failed submit is refused without a new envelope', async () => {
     const client = makeClient({
       submitRequest: vi.fn(async () => { throw zohoSignError(ZOHO_ERROR_CODES.SERVER_ERROR, 'Zoho Sign is having trouble.'); }),
     });
-    const { service, store } = buildSender({ client });
+    const store = makeStore();
+    // The real findDocument would now see the saved request id.
+    store.findDocument.mockImplementation(async () => draftDocument(store.writes.request || {}));
+    const { service } = buildSender({ client, store });
     expect((await send(service)).status).toBe(502);
+    expect((await send(service)).body.code).toBe('ZOHO_ALREADY_SENT');
+    expect(client.createRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes over a claim left stale by a crashed send', async () => {
+    const { service, store } = buildSender();
+    store.claimState.claim = { token: 'dead', at: new Date(new Date('2026-09-14T10:00:00.000Z').getTime() - ZOHO_SEND_CLAIM_TTL_MS - 1) };
+    expect((await send(service)).status).toBe(200);
+  });
+
+  it('is refused while an earlier, still-live claim is held', async () => {
+    const { service, store, client } = buildSender();
+    store.claimState.claim = { token: 'alive', at: new Date('2026-09-14T09:59:00.000Z') };
+    expect((await send(service)).body.code).toBe('ZOHO_ALREADY_SENT');
+    expect(client.createRequest).not.toHaveBeenCalled();
+  });
+
+  it('never submits when its lease was taken over during a slow create', async () => {
+    const store = makeStore();
+    const good = makeClient();
+    const client = makeClient({
+      createRequest: vi.fn(async () => {
+        // Another send takes the stale claim while our create is still at Zoho.
+        store.claimState.claim = { token: 'newer', at: new Date() };
+        return good.createRequest();
+      }),
+    });
+    const { service } = buildSender({ store, client });
+    const result = await send(service);
+    expect(result.body.code).toBe('ZOHO_ALREADY_SENT');
+    expect(client.submitRequest).not.toHaveBeenCalled();
+    expect(store.saveSent).not.toHaveBeenCalled();
+    expect(store.claimState.claim).toEqual(expect.objectContaining({ token: 'newer' }));
+  });
+
+  it('keeps the claim when saving the request id throws, so a retry cannot create a second envelope', async () => {
+    const store = makeStore({ saveZohoRequest: vi.fn(async () => { throw new Error('mongo blip'); }) });
+    const { service } = buildSender({ store });
+    await expect(send(service)).rejects.toThrow('mongo blip');
     expect(store.releaseSend).not.toHaveBeenCalled();
+    expect(store.claimState.claim).not.toBeNull();
   });
 
   it('returns the real Zoho error even when releasing the claim fails', async () => {

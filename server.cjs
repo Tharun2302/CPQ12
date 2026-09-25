@@ -8871,8 +8871,13 @@ const zohoSignMongoStore = {
       { $unset: { zoho_send_claim: '' } },
     );
   },
-  async saveZohoRequest(documentId, patch) {
-    await db.collection('esign_documents').updateOne({ _id: new ObjectId(documentId) }, { $set: patch });
+  // Conditional on the claim so a send whose lease went stale cannot overwrite the new holder's request.
+  async saveZohoRequest(documentId, patch, token) {
+    const result = await db.collection('esign_documents').updateOne(
+      { _id: new ObjectId(documentId), 'zoho_send_claim.token': token, zoho_request_id: { $in: [null, ''] } },
+      { $set: patch },
+    );
+    return result.modifiedCount === 1;
   },
   async saveRecipientAction(recipientId, patch) {
     await db.collection('esign_recipients').updateOne({ _id: new ObjectId(recipientId) }, { $set: patch });
