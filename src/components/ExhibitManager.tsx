@@ -21,6 +21,7 @@ import {
 import { BACKEND_URL } from '../config/api';
 import { matchesAgreementFilter, agreementsSupportingExhibits } from '../utils/exhibitCombination';
 import { getCombinationsForCategory } from '../utils/exhibitAutoDetect';
+import { isPossibleDuplicateResponse, duplicateConfirmMessage } from '../utils/exhibitDuplicates';
 import { useAuth } from '../hooks/useAuth';
 import '../assets/docx-preview.css';
 import { SUPPRESS_PII } from '../analytics/privacy';
@@ -707,13 +708,19 @@ const ExhibitManager: React.FC = () => {
       formDataToSend.append('keywords', JSON.stringify(formData.keywords));
       formDataToSend.append('isRequired', formData.isRequired.toString());
 
-      const response = await fetch(`${BACKEND_URL}/api/exhibits`, {
+      const send = () => fetch(`${BACKEND_URL}/api/exhibits`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: formDataToSend,
       });
 
-      const data = await response.json();
+      let response = await send();
+      let data = await response.json();
+      if (isPossibleDuplicateResponse(response.status, data) && window.confirm(duplicateConfirmMessage(data))) {
+        formDataToSend.append('allowDuplicate', 'true');
+        response = await send();
+        data = await response.json();
+      }
 
       if (data.success) {
         setUploadSuccess('Exhibit uploaded successfully!');
@@ -953,13 +960,19 @@ const ExhibitManager: React.FC = () => {
       formDataToSend.append('isRequired', formData.isRequired.toString());
 
       const exhibitId = editingExhibit._id || editingExhibit.id;
-      const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}`, {
+      const send = () => fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: formDataToSend,
       });
 
-      const data = await response.json();
+      let response = await send();
+      let data = await response.json();
+      if (isPossibleDuplicateResponse(response.status, data) && window.confirm(duplicateConfirmMessage(data))) {
+        formDataToSend.append('allowDuplicate', 'true');
+        response = await send();
+        data = await response.json();
+      }
 
       if (data.success) {
         setUploadSuccess('Exhibit updated successfully!');
@@ -1119,13 +1132,19 @@ const ExhibitManager: React.FC = () => {
         payload.append('file', inlineEditFile);
       }
 
-      const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}`, {
+      const send = () => fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: payload
       });
 
-      const data = await response.json();
+      let response = await send();
+      let data = await response.json();
+      if (isPossibleDuplicateResponse(response.status, data) && window.confirm(duplicateConfirmMessage(data))) {
+        payload.append('allowDuplicate', 'true');
+        response = await send();
+        data = await response.json();
+      }
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to update exhibit');
       }

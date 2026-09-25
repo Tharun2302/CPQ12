@@ -3185,6 +3185,15 @@ app.delete('/api/settings/exhibit-admins/:email', async (req, res) => {
 });
 
 // Upload new exhibit (POST)
+const { checkExhibitDuplicates, duplicateRulesForEdit, isDuplicateOverride } = require('./exhibit-duplicates.cjs');
+
+/** Every exhibit's identifying fields; the base64 file bodies are never needed to compare. */
+async function findExhibitDuplicateCandidates() {
+  return await db.collection('exhibits')
+    .find({}, { projection: { name: 1, fileName: 1, combinations: 1, planType: 1, includeType: 1 } })
+    .toArray();
+}
+
 app.post('/api/exhibits', upload.single('file'), async (req, res) => {
   try {
     if (!db) {
@@ -3353,6 +3362,14 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
         error: 'Exhibit with this filename already exists',
         existingId: existing._id
       });
+    }
+
+    if (!isDuplicateOverride(req.body.allowDuplicate)) {
+      const duplicateCheck = checkExhibitDuplicates({
+        candidate: exhibitDoc,
+        existing: await findExhibitDuplicateCandidates(),
+      });
+      if (duplicateCheck) return res.status(duplicateCheck.status).json(duplicateCheck.body);
     }
 
     // Check if file already exists in folder (to prevent overwriting manually added files)
@@ -3552,6 +3569,19 @@ app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
       } catch (e) {
         updateData.keywords = [req.body.keywords];
       }
+    }
+
+    // Must run before the file block below, which writes to and deletes from backend-exhibits/.
+    const proposed = req.file ? { ...updateData, fileName: req.file.originalname } : updateData;
+    const duplicateRules = duplicateRulesForEdit(existing, proposed);
+    if (duplicateRules.length > 0 && !isDuplicateOverride(req.body.allowDuplicate)) {
+      const duplicateCheck = checkExhibitDuplicates({
+        candidate: { ...existing, ...proposed },
+        existing: await findExhibitDuplicateCandidates(),
+        excludeId: id,
+        reasons: duplicateRules,
+      });
+      if (duplicateCheck) return res.status(duplicateCheck.status).json(duplicateCheck.body);
     }
 
     // Update file if new file provided
