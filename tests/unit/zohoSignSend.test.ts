@@ -20,6 +20,7 @@ type SendResult = { status: number; body: Record<string, any> };
 
 const {
   ZOHO_MAX_PDF_BYTES,
+  ZOHO_SEND_CLAIM_TTL_MS,
   isValidObjectIdString,
   isZohoManagedDocument,
   validateZohoSendOptions,
@@ -31,6 +32,7 @@ const {
   createZohoSignSender,
 } = sender as {
   ZOHO_MAX_PDF_BYTES: number;
+  ZOHO_SEND_CLAIM_TTL_MS: number;
   isValidObjectIdString: (value: unknown) => boolean;
   isZohoManagedDocument: (doc: unknown) => boolean;
   validateZohoSendOptions: (body: unknown) => { errors: string[]; options: Record<string, unknown> };
@@ -98,9 +100,24 @@ function fields() {
 function makeStore(overrides: Record<string, unknown> = {}, sharedCalls?: string[]) {
   const calls: string[] = sharedCalls || [];
   const writes: Record<string, any> = { request: null, sent: null, error: null, recipients: [] as any[] };
+  // Stands in for the Mongo compare-and-set: the check and the write happen with no await
+  // between them, so exactly one of any number of concurrent callers wins, as one updateOne does.
+  const claimState: { claim: { token: string; at: Date } | null } = { claim: null };
   const base = {
     calls,
     writes,
+    claimState,
+    claimSend: vi.fn(async (_id: string, claim: { token: string; at: Date; staleBefore: Date }) => {
+      calls.push('claimSend');
+      if (writes.request) return false;
+      if (claimState.claim && claimState.claim.at >= claim.staleBefore) return false;
+      claimState.claim = { token: claim.token, at: claim.at };
+      return true;
+    }),
+    releaseSend: vi.fn(async (_id: string, token: string) => {
+      calls.push('releaseSend');
+      if (claimState.claim && claimState.claim.token === token) claimState.claim = null;
+    }),
     findDocument: vi.fn(async () => draftDocument()),
     findRecipients: vi.fn(async () => recipients()),
     findFields: vi.fn(async () => fields()),
@@ -266,7 +283,7 @@ describe('zoho-sign-send: the send sequence', () => {
     const result = await service.send({ documentId: DOC_ID, actorEmail: CREATOR, body: {}, ip: '10.0.0.1' });
 
     expect(result.status).toBe(200);
-    expect(calls).toEqual(['createRequest', 'saveZohoRequest', 'submitRequest', 'saveRecipientAction', 'saveRecipientAction', 'saveSent']);
+    expect(calls).toEqual(['claimSend', 'createRequest', 'saveZohoRequest', 'submitRequest', 'saveRecipientAction', 'saveRecipientAction', 'saveSent']);
     expect(calls.indexOf('saveZohoRequest')).toBeLessThan(calls.indexOf('submitRequest'));
     expect(store.writes.request).toMatchObject({
       provider: 'zoho',
@@ -565,6 +582,132 @@ describe('zoho-sign-send: Zoho failures', () => {
   it('still reports success when the audit write fails', async () => {
     const { service } = buildSender({ logAudit: vi.fn(async () => { throw new Error('audit_logs unavailable'); }) });
     expect((await service.send({ documentId: DOC_ID, actorEmail: CREATOR, body: {} })).status).toBe(200);
+  });
+});
+
+// Two sends for one document arriving together both pass the findDocument read, because neither
+// has persisted a Zoho request id yet. Before the atomic claim, both created an envelope and the
+// signer received every Zoho email twice.
+describe('zoho-sign-send: concurrent sends of the same document', () => {
+  const send = (service: { send: (input: Record<string, unknown>) => Promise<SendResult> }) =>
+    service.send({ documentId: DOC_ID, actorEmail: CREATOR, body: {} });
+
+  it('creates exactly one Zoho request when two sends arrive at the same time', async () => {
+    const calls: string[] = [];
+    const store = makeStore({}, calls);
+    const client = makeClient({}, calls);
+    const { service } = buildSender({ store, client, calls });
+
+    const results = await Promise.all([send(service), send(service)]);
+
+    // Both got past the read check, so this really is the race and not a sequential repeat.
+    expect(store.findDocument).toHaveBeenCalledTimes(2);
+    expect(store.claimSend).toHaveBeenCalledTimes(2);
+    expect(client.createRequest).toHaveBeenCalledTimes(1);
+    expect(client.submitRequest).toHaveBeenCalledTimes(1);
+    expect(store.saveZohoRequest).toHaveBeenCalledTimes(1);
+    expect(store.saveSent).toHaveBeenCalledTimes(1);
+    expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+  });
+
+  it('answers the losing request with the existing "already sent" response', async () => {
+    const { service, store } = buildSender();
+
+    const [first, second] = await Promise.all([send(service), send(service)]);
+    const loser = first.status === 409 ? first : second;
+    const winner = first.status === 409 ? second : first;
+    const { status: alreadySentStatus, ...alreadySent } = checkDocumentSendable({ provider: 'zoho' })!;
+
+    expect(winner.body.document.zoho_request_id).toBe('9000000012345');
+    expect(loser.status).toBe(alreadySentStatus);
+    expect(loser.body).toEqual({ success: false, ...alreadySent });
+    expect(loser.body.code).toBe('ZOHO_ALREADY_SENT');
+    // The loser must not record an error or release the winner's claim.
+    expect(store.saveError).not.toHaveBeenCalled();
+    expect(store.releaseSend).not.toHaveBeenCalled();
+  });
+
+  it('still sends only once when five sends arrive together', async () => {
+    const { service, client } = buildSender();
+    const results = await Promise.all(Array.from({ length: 5 }, () => send(service)));
+    expect(client.createRequest).toHaveBeenCalledTimes(1);
+    expect(results.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(results.filter((r) => r.body.code === 'ZOHO_ALREADY_SENT')).toHaveLength(4);
+  });
+
+  it('claims with a unique token and a stale cutoff one TTL before now', async () => {
+    const { service, store } = buildSender();
+    await send(service);
+
+    const [id, claim] = store.claimSend.mock.calls[0];
+    const at = new Date('2026-09-14T10:00:00.000Z');
+    expect(id).toBe(DOC_ID);
+    expect(typeof claim.token).toBe('string');
+    expect(claim.token.length).toBeGreaterThan(0);
+    expect(claim.at).toEqual(at);
+    expect(claim.staleBefore).toEqual(new Date(at.getTime() - ZOHO_SEND_CLAIM_TTL_MS));
+  });
+
+  it('does not claim when validation fails, so a fixed document can still be sent', async () => {
+    const store = makeStore({ findRecipients: vi.fn(async () => []) });
+    const { service } = buildSender({ store });
+    expect((await send(service)).status).toBe(400);
+    expect(store.claimSend).not.toHaveBeenCalled();
+  });
+
+  it('releases the claim when Zoho refuses the create, so the user can retry', async () => {
+    const calls: string[] = [];
+    const store = makeStore({}, calls);
+    const good = makeClient({}, calls);
+    let attempt = 0;
+    const client = makeClient({
+      createRequest: vi.fn(async () => {
+        attempt += 1;
+        if (attempt === 1) throw zohoSignError(ZOHO_ERROR_CODES.RATE_LIMITED, 'Zoho Sign is rate limiting us.');
+        return good.createRequest();
+      }),
+    }, calls);
+    const { service } = buildSender({ store, client, calls });
+
+    expect((await send(service)).status).toBe(429);
+    expect(store.releaseSend).toHaveBeenCalledWith(DOC_ID, store.claimSend.mock.calls[0][1].token);
+    expect(store.claimState.claim).toBeNull();
+
+    expect((await send(service)).status).toBe(200);
+  });
+
+  it('releases the claim when Zoho returns no request id', async () => {
+    const client = makeClient({ createRequest: vi.fn(async () => ({ request_status: 'draft' })) });
+    const { service, store } = buildSender({ client });
+    expect((await send(service)).status).toBe(502);
+    expect(store.releaseSend).toHaveBeenCalledTimes(1);
+    expect(store.claimState.claim).toBeNull();
+  });
+
+  it('keeps the claim once a Zoho request exists, even if submit fails', async () => {
+    const client = makeClient({
+      submitRequest: vi.fn(async () => { throw zohoSignError(ZOHO_ERROR_CODES.SERVER_ERROR, 'Zoho Sign is having trouble.'); }),
+    });
+    const { service, store } = buildSender({ client });
+    expect((await send(service)).status).toBe(502);
+    expect(store.releaseSend).not.toHaveBeenCalled();
+  });
+
+  it('returns the real Zoho error even when releasing the claim fails', async () => {
+    const store = makeStore({ releaseSend: vi.fn(async () => { throw new Error('mongo down'); }) });
+    const client = makeClient({
+      createRequest: vi.fn(async () => { throw zohoSignError(ZOHO_ERROR_CODES.RATE_LIMITED, 'Zoho Sign is rate limiting us.'); }),
+    });
+    const { service } = buildSender({ store, client });
+    const result = await send(service);
+    expect(result.status).toBe(429);
+    expect(result.body.code).toBe(ZOHO_ERROR_CODES.RATE_LIMITED);
+  });
+
+  it('refuses to build a sender whose store cannot claim atomically', () => {
+    const store = makeStore();
+    Reflect.deleteProperty(store, 'claimSend');
+    expect(() => createZohoSignSender({ config: workingConfig(), client: makeClient(), store })).toThrow(/claimSend/);
   });
 });
 

@@ -1453,26 +1453,32 @@ async function sendEsignCompletedNotificationToAllRecipients(doc) {
  *  unsigned original must not be advertised as "the completed agreement".
  *  Async because the poller reads its documents without the multi-megabyte `signed_file_data`
  *  blob, so its presence is confirmed with a projected existence check rather than by value. */
-async function esignSignedArtifactAvailable(doc) {
-  if (!doc) return false;
+async function resolveEsignSignedPdf(doc) {
+  if (!doc) return null;
   const filePath = doc.signed_file_path || doc.zoho_signed_file_path;
   if (filePath) {
     try {
-      if (fs.existsSync(filePath)) return true;
+      if (fs.existsSync(filePath)) return fs.readFileSync(filePath);
     } catch { /* fall through to the stored copy */ }
   }
-  if (doc.signed_file_data) return true;
-  if (!db || !isValidObjectIdString(String(doc._id || ''))) return false;
+  if (doc.signed_file_data) return Buffer.from(doc.signed_file_data, 'base64');
+  // The poller reads its documents without the base64 blobs, so the stored copy is fetched by
+  // id here rather than expected on the row it was handed.
+  if (!db || !isValidObjectIdString(String(doc._id || ''))) return null;
   try {
     const row = await db.collection('esign_documents').findOne(
-      { _id: new ObjectId(String(doc._id)), signed_file_data: { $exists: true, $ne: null } },
-      { projection: { _id: 1 } },
+      { _id: new ObjectId(String(doc._id)) },
+      { projection: { signed_file_data: 1 } },
     );
-    return row !== null;
-  } catch {
-    return false;
-  }
+    if (row && row.signed_file_data) return Buffer.from(row.signed_file_data, 'base64');
+  } catch { /* treated as unavailable below */ }
+  return null;
 }
+
+/** SendGrid rejects a message over 30MB once base64 inflates it by a third. Past this the
+ *  completion email still goes out, just without the attachment — the link still reaches the
+ *  executed copy, and reporting the agreement late or not at all would be worse. */
+const ESIGN_COMPLETION_ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024;
 
 /** The public origin for a creator-facing link. `APP_BASE_URL` is the variable the rest of the
  *  e-sign links use and the only one the bootstrap loader at the top of this file guarantees.
@@ -1516,12 +1522,16 @@ async function sendZohoSignCompletionEmailToCreator(doc, at) {
 
   const creatorEmail = getEsignDocumentCreatorNotifyEmail(doc);
   const agreementLink = buildAgreementLink(esignCompletionEmailBaseUrl(), documentId);
+  // Resolved once and used for both purposes: it is the proof the agreement is really executed
+  // AND the copy the creator receives. Holding the email until this exists is what stops a
+  // "completed" notice going out while only the unsigned original can be served.
+  const signedPdf = await resolveEsignSignedPdf(doc);
   const decision = evaluateCompletionEmail({
     doc,
     recipients,
     creatorEmail,
     agreementLink,
-    signedFileAvailable: await esignSignedArtifactAvailable(doc),
+    signedFileAvailable: signedPdf !== null,
   });
 
   if (!decision.send) {
@@ -1539,12 +1549,24 @@ async function sendZohoSignCompletionEmailToCreator(doc, at) {
   // `completion_email_attempts` is NOT touched here. The poller counts the attempt before it
   // calls this, in the same write that persists the status, so the budget still closes even if
   // everything below is lost.
+  // The fully executed copy travels with the notice, matching the in-house completion email at
+  // sendEsignCompletedNotificationToAllRecipients. It also means the creator has the contract in
+  // hand without following the link, which is the part of this flow that is not behind auth.
+  const attachments = [];
+  if (signedPdf.length <= ESIGN_COMPLETION_ATTACHMENT_MAX_BYTES) {
+    const attachName = String(fileName).toLowerCase().endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+    attachments.push({ content: signedPdf, filename: attachName, contentType: 'application/pdf' });
+  } else {
+    console.warn(`📧 E-sign completion email: signed PDF for ${documentId} is ${signedPdf.length} bytes — sending without the attachment.`);
+  }
+
   const { subject, html } = buildCompletionEmail({
     documentName: fileName,
     creatorEmail,
     creatorName: (doc && doc.requested_by_name) || '',
     completedAt,
     agreementLink,
+    hasAttachment: attachments.length > 0,
   });
 
   if (!process.env.SENDGRID_API_KEY) {
@@ -1556,7 +1578,7 @@ async function sendZohoSignCompletionEmailToCreator(doc, at) {
   }
 
   try {
-    const result = await sendEmail(creatorEmail, subject, html);
+    const result = await sendEmail(creatorEmail, subject, html, attachments);
     if (result && result.success) {
       console.log('✅ E-sign completion email sent to creator', creatorEmail, 'for', documentId);
       // The idempotency marker. Written only here, only after SendGrid accepted the message.
@@ -8825,6 +8847,29 @@ const zohoSignMongoStore = {
       sizes[index + 1] = { width: page.getWidth(), height: page.getHeight() };
     });
     return sizes;
+  },
+  // One updateOne is atomic per document, so of two concurrent sends only one can match this filter.
+  async claimSend(documentId, claim) {
+    const result = await db.collection('esign_documents').updateOne(
+      {
+        _id: new ObjectId(documentId),
+        status: 'draft',
+        provider: { $ne: 'zoho' },
+        zoho_request_id: { $in: [null, ''] },
+        $or: [
+          { zoho_send_claim: null },
+          { 'zoho_send_claim.at': { $lt: claim.staleBefore } },
+        ],
+      },
+      { $set: { zoho_send_claim: { token: claim.token, at: claim.at } } },
+    );
+    return result.modifiedCount === 1;
+  },
+  async releaseSend(documentId, token) {
+    await db.collection('esign_documents').updateOne(
+      { _id: new ObjectId(documentId), 'zoho_send_claim.token': token },
+      { $unset: { zoho_send_claim: '' } },
+    );
   },
   async saveZohoRequest(documentId, patch) {
     await db.collection('esign_documents').updateOne({ _id: new ObjectId(documentId) }, { $set: patch });

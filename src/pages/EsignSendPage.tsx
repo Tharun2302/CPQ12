@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Mail, Loader2, ListChecks } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
@@ -18,6 +18,8 @@ const EsignSendPage: React.FC = () => {
   const [doc, setDoc] = useState<{ file_name: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  // `sending` only disables the button after a re-render, so a fast double click would send twice.
+  const sendInFlightRef = useRef(false);
   const [sendForSignatureResult, setSendForSignatureResult] = useState<string | null>(null);
   // Never persisted: every visit to this screen starts on the in-house provider.
   const [provider, setProvider] = useState<EsignProvider>('cpq');
@@ -40,7 +42,8 @@ const EsignSendPage: React.FC = () => {
   }, [documentId, navigate]);
 
   const handleSendForSignature = async () => {
-    if (!documentId) return;
+    if (!documentId || sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
     setSending(true);
     setSendForSignatureResult(null);
     try {
@@ -69,6 +72,7 @@ const EsignSendPage: React.FC = () => {
     } catch {
       setSendForSignatureResult('Failed to send.');
     } finally {
+      sendInFlightRef.current = false;
       setSending(false);
     }
   };

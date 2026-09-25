@@ -143,18 +143,27 @@ function buildCompletionEmail(input) {
   const completedOn = formatCompletedOn(opts.completedAt);
   const link = String(opts.agreementLink || '');
 
+  // Two closing lines rather than one conditional sentence: an attachment that was dropped for
+  // size must not leave the body promising a document that is not there.
+  const attachmentLine = opts.hasAttachment
+    ? '<p>Please find the fully executed document attached to this email for your records.</p>'
+    : '';
+  const linkBlock = link
+    ? `<p>You can also access the completed agreement here:</p><p><a href="${escapeHtml(link)}">${escapeHtml(link)}</a></p>`
+    : '';
+
   const subject = `Agreement Completed – ${sanitizeSubjectFileName(documentName)}`;
   const html = `
     <p>Hi ${escapeHtml(greeting)},</p>
-    <p>The agreement "${escapeHtml(documentName)}" has been successfully completed.</p>
+    <p>Everyone has signed the agreement "${escapeHtml(documentName)}". It has been successfully completed.</p>
     <p>All recipients have completed their signatures. The completed agreement is now available for your review.</p>
     <p>
       <strong>Agreement:</strong> ${escapeHtml(documentName)}<br />
       <strong>Status:</strong> Completed<br />
       <strong>Completed On:</strong> ${escapeHtml(completedOn)}
     </p>
-    <p>You can access the completed agreement here:</p>
-    <p><a href="${escapeHtml(link)}">${escapeHtml(link)}</a></p>
+    ${attachmentLine}
+    ${linkBlock}
     <p>Regards,<br />CPQ Team</p>
   `;
   return { subject, html };
@@ -201,10 +210,9 @@ function evaluateCompletionEmail(input) {
     return { send: false, permanent: true, reason: 'no-creator-email' };
   }
 
-  if (String(opts.agreementLink || '').trim() === '') {
-    return { send: false, permanent: true, reason: 'no-agreement-link' };
-  }
-
+  // The link is optional, NOT required. The executed PDF travels with this email, so a missing
+  // or unconfigured origin costs the creator a convenience link — it must not cost them the
+  // contract itself. The body omits the link block when there is none.
   return { send: true, permanent: false, reason: 'ready' };
 }
 

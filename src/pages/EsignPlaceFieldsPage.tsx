@@ -274,6 +274,9 @@ const EsignPlaceFieldsPage: React.FC = () => {
 
   const placeFieldsTourAutoStartedRef = useRef(false);
   const placeFieldsTourTimeoutRef = useRef<number | null>(null);
+  // The button's disabled state lags a render and briefly re-enables between the field save and
+  // the send, so a second click could otherwise start a second send.
+  const sendInFlightRef = useRef(false);
 
   useEffect(() => {
     if (loading || !doc || placeFieldsTourAutoStartedRef.current || !shouldAutoStartPlaceFieldsTour()) return;
@@ -779,7 +782,16 @@ const EsignPlaceFieldsPage: React.FC = () => {
 
   /** Save fields then send for signature (no navigation to send page). */
   const handleSendForSignature = async () => {
-    if (!documentId) return;
+    if (!documentId || sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
+    try {
+      await sendForSignature(documentId);
+    } finally {
+      sendInFlightRef.current = false;
+    }
+  };
+
+  const sendForSignature = async (documentId: string) => {
     setSendForSignatureResult(null);
 
     const fieldCheck = validateSignatureFieldsBeforeSend(

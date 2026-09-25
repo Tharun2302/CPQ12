@@ -12,6 +12,8 @@
 //   findFields(documentId)              -> [signature_fields row]
 //   loadPdf(doc)                        -> { buffer, fileName } | null
 //   resolvePageSizes(buffer)            -> { [1-based page]: { width, height } }   (optional)
+//   claimSend(documentId, claim)        -> boolean  ATOMIC: true for exactly one concurrent caller
+//   releaseSend(documentId, token)      -> void     drops the claim when no Zoho request exists
 //   saveZohoRequest(documentId, patch)  -> void   persisted BEFORE submit
 //   saveRecipientAction(recipientId, patch) -> void
 //   saveSent(documentId, patch)         -> void
@@ -24,6 +26,8 @@ const {
   ZOHO_ERROR_CODES,
   zohoSignError,
 } = require('./zoho-sign-auth.cjs');
+
+const { randomUUID } = require('crypto');
 
 const { createRedactor } = require('./zoho-sign-client.cjs');
 
@@ -50,6 +54,10 @@ const REMINDER_PERIOD_MIN = 1;
 const REMINDER_PERIOD_MAX = 30;
 const NOTES_MAX_LENGTH = 500;
 const REQUEST_NAME_MAX_LENGTH = 200;
+
+// Long enough to outlive a create + submit (each capped at a 60s HTTP timeout), short enough that
+// a process that died holding the claim does not lock the document out of Zoho for good.
+const ZOHO_SEND_CLAIM_TTL_MS = 5 * 60 * 1000;
 
 // Anything not listed maps to 502: the browser learns "Zoho refused this" and the precise cause
 // stays in zoho_last_error, where it cannot leak account detail into a response body.
@@ -166,20 +174,21 @@ function validateZohoSendOptions(body) {
   return { errors, options };
 }
 
+const ZOHO_ALREADY_SENT = Object.freeze({
+  status: 409,
+  error: 'This document has already been handed to Zoho Sign.',
+  code: 'ZOHO_ALREADY_SENT',
+});
+
 /**
  * Whether this document may be handed to Zoho at all. Returns null when it may.
  *
- * The zoho_request_id check comes first and is the important one: it is what stops a double
- * click creating two signature requests at Zoho for the same contract, because E2 persists that
- * id before it submits.
+ * The zoho_request_id check comes first: it refuses a repeat send once E2 has persisted that id.
+ * Being a read, it cannot stop two concurrent sends — the atomic claimSend in send() does that.
  */
 function checkDocumentSendable(doc) {
   if (doc && (doc.zoho_request_id || doc.provider === 'zoho')) {
-    return {
-      status: 409,
-      error: 'This document has already been handed to Zoho Sign.',
-      code: 'ZOHO_ALREADY_SENT',
-    };
+    return Object.assign({}, ZOHO_ALREADY_SENT);
   }
   if (doc && doc.status === 'sent') {
     return { status: 409, error: 'This document has already been sent.', code: 'ALREADY_SENT' };
@@ -266,6 +275,9 @@ function createZohoSignSender(deps) {
   if (!config) throw zohoSignError(ZOHO_ERROR_CODES.INVALID_INPUT, 'createZohoSignSender requires a config');
   if (!store) throw zohoSignError(ZOHO_ERROR_CODES.INVALID_INPUT, 'createZohoSignSender requires a store');
   if (!client) throw zohoSignError(ZOHO_ERROR_CODES.INVALID_INPUT, 'createZohoSignSender requires a Zoho client');
+  if (typeof store.claimSend !== 'function' || typeof store.releaseSend !== 'function') {
+    throw zohoSignError(ZOHO_ERROR_CODES.INVALID_INPUT, 'createZohoSignSender requires store.claimSend and store.releaseSend');
+  }
 
   const redact = createRedactor([config.clientSecret, config.refreshToken, config.webhookSecret]);
 
@@ -287,6 +299,15 @@ function createZohoSignSender(deps) {
     } catch (e) {
       // A failure to record a failure must not replace the real error the caller is about to see.
       warn(`Zoho Sign could not record the last error for document ${documentId}`);
+    }
+  }
+
+  async function releaseClaim(documentId, token) {
+    try {
+      await store.releaseSend(documentId, token);
+    } catch (e) {
+      // The lease expires on its own, so a failed release only delays a retry.
+      warn(`Zoho Sign could not release the send claim for document ${documentId}`);
     }
   }
 
@@ -400,6 +421,19 @@ function createZohoSignSender(deps) {
       reminderPeriod: options.reminderPeriod,
     });
 
+    // The findDocument check above is a read, so two near-simultaneous sends both pass it. This
+    // compare-and-set is what lets only one of them create an envelope at Zoho.
+    const claimedAt = now();
+    const claimToken = randomUUID();
+    const claimed = await store.claimSend(documentId, {
+      token: claimToken,
+      at: claimedAt,
+      staleBefore: new Date(claimedAt.getTime() - ZOHO_SEND_CLAIM_TTL_MS),
+    });
+    if (claimed !== true) {
+      return fail(ZOHO_ALREADY_SENT.status, ZOHO_ALREADY_SENT.error, ZOHO_ALREADY_SENT.code);
+    }
+
     let zohoRequest;
     try {
       zohoRequest = await client.createRequest({
@@ -408,6 +442,7 @@ function createZohoSignSender(deps) {
       });
     } catch (error) {
       await recordFailure(documentId, error);
+      await releaseClaim(documentId, claimToken);
       return fail(httpStatusForZohoError(error), error.message, error.code || ZOHO_ERROR_CODES.API_ERROR);
     }
 
@@ -415,6 +450,7 @@ function createZohoSignSender(deps) {
     if (requestId === '') {
       const error = zohoSignError(ZOHO_ERROR_CODES.API_ERROR, 'Zoho Sign did not return a request id.');
       await recordFailure(documentId, error);
+      await releaseClaim(documentId, claimToken);
       return fail(502, error.message, error.code);
     }
 
@@ -524,6 +560,7 @@ function createZohoSignSender(deps) {
 
 module.exports = {
   ZOHO_MAX_PDF_BYTES,
+  ZOHO_SEND_CLAIM_TTL_MS,
   OBJECT_ID_PATTERN,
   ZOHO_ACTION_TYPES,
   isValidObjectIdString,

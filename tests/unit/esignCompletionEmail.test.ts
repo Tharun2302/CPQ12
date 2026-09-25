@@ -161,10 +161,10 @@ describe('esign-completion-email — send decision', () => {
     }
   });
 
-  // Case 8
-  it('permanently skips when no agreement link can be built', () => {
+  // Case 8: the executed PDF is attached, so a missing link costs a convenience, not the contract.
+  it('still sends when no agreement link can be built, because the PDF is attached', () => {
     expect(completion.evaluateCompletionEmail({ ...base, agreementLink: '' }))
-      .toMatchObject({ send: false, permanent: true, reason: 'no-agreement-link' });
+      .toMatchObject({ send: true, reason: 'ready' });
   });
 
   it('gives up after the retry budget is spent so a broken mailer cannot loop forever', () => {
@@ -204,6 +204,41 @@ describe('esign-completion-email — message and link', () => {
     expect(mail.html).toContain('<strong>Status:</strong> Completed');
     expect(mail.html).toContain(completion.formatCompletedOn(NOW));
     expect(mail.html).toContain('https://cpq.example/esign/doc1/status');
+  });
+
+  it('tells the creator the executed document is attached', () => {
+    const mail = completion.buildCompletionEmail({
+      documentName: 'Teams to Slack Outscope.pdf',
+      creatorEmail: 'creator@cloudfuze.com',
+      completedAt: NOW,
+      agreementLink: 'https://cpq.example/esign/doc1/status',
+      hasAttachment: true,
+    });
+    expect(mail.html).toContain('Everyone has signed the agreement');
+    expect(mail.html).toContain('fully executed document attached to this email');
+  });
+
+  it('never promises an attachment that was dropped for size', () => {
+    const mail = completion.buildCompletionEmail({
+      documentName: 'Huge.pdf',
+      creatorEmail: 'creator@cloudfuze.com',
+      completedAt: NOW,
+      agreementLink: 'https://cpq.example/esign/doc1/status',
+      hasAttachment: false,
+    });
+    expect(mail.html).not.toContain('attached to this email');
+    // The link is still there, so the creator can still reach the executed copy.
+    expect(mail.html).toContain('https://cpq.example/esign/doc1/status');
+  });
+
+  it('omits the link block entirely when no link could be built', () => {
+    const mail = completion.buildCompletionEmail({
+      documentName: 'a.pdf', creatorEmail: 'c@x.com', completedAt: NOW,
+      agreementLink: '', hasAttachment: true,
+    });
+    expect(mail.html).not.toContain('<a href');
+    expect(mail.html).not.toContain('access the completed agreement here');
+    expect(mail.html).toContain('fully executed document attached');
   });
 
   it('escapes a document name so an uploaded filename cannot inject markup', () => {
