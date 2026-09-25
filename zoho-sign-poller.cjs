@@ -35,6 +35,10 @@ const {
 // hammering the next document in the batch would spend the same budget the user's sends need.
 const MAX_COOLDOWN_TICKS = 8;
 
+// A lost write after SendGrid has accepted the completion email is what produces a duplicate on
+// the next tick, so that one write gets a few immediate goes before the tick moves on.
+const EMAIL_RESULT_WRITE_ATTEMPTS = 3;
+
 /**
  * @param {object} deps
  * @param {object} deps.config   resolved zoho-sign-config object
@@ -48,6 +52,10 @@ function createZohoSignPoller(deps) {
   const now = (deps && deps.now) || (() => new Date());
   const logger = deps && typeof deps.logger === 'function' ? deps.logger : null;
   const audit = (deps && typeof deps.logAudit === 'function') ? deps.logAudit : null;
+  // OPTIONAL. Called once a document has actually reached `completed` in CPQ with its executed
+  // PDF stored, so the creator can be told the agreement is done. Returns a patch to persist
+  // (or nothing). Left out, every existing behaviour below is unchanged.
+  const notifyCompleted = (deps && typeof deps.notifyCompleted === 'function') ? deps.notifyCompleted : null;
 
   if (!config) throw new Error('createZohoSignPoller requires a config');
   if (!client) throw new Error('createZohoSignPoller requires a Zoho client');
@@ -82,6 +90,21 @@ function createZohoSignPoller(deps) {
     } catch (e) {
       log(`Zoho Sign poll could not write the audit row for document ${documentId}`);
     }
+  }
+
+  /** Never throws. Retries because the alternative to a lost write here is a duplicate email. */
+  async function persistEmailResult(documentId, patch) {
+    for (let attempt = 1; attempt <= EMAIL_RESULT_WRITE_ATTEMPTS; attempt += 1) {
+      try {
+        await store.saveDocumentPatch(documentId, patch);
+        return true;
+      } catch (e) {
+        if (attempt === EMAIL_RESULT_WRITE_ATTEMPTS) {
+          log(`Zoho Sign poll could not record the completion email result for document ${documentId}`);
+        }
+      }
+    }
+    return false;
   }
 
   /**
@@ -158,6 +181,31 @@ function createZohoSignPoller(deps) {
       }
     }
 
+    // Completion is judged on the state the document will have AFTER this tick's patch, not the
+    // stale row read at selection time — on the very tick that completes a document those differ.
+    const docAfterPatch = Object.assign({}, doc, docPatch);
+    // Exactly two things start a completion email: THIS tick moving the document to completed,
+    // or a previous tick having already claimed it and not finished. A document that was
+    // completed before the feature shipped matches neither, so switching this on cannot mail out
+    // the back catalogue — not even the historic rows the signed-PDF branch above re-selects,
+    // which stay selectable on their own merits and simply never trigger an email.
+    const completedOnThisTick = docPatch.status === 'completed';
+    const completionClaimOpen = doc.completion_email_pending === true;
+    const completionEmailDue = notifyCompleted !== null
+      && String(docAfterPatch.status || '') === 'completed'
+      && !docAfterPatch.completion_email_sent_at
+      && !docAfterPatch.completion_email_skipped_reason
+      && (completedOnThisTick || completionClaimOpen);
+
+    if (completionEmailDue) {
+      // Claimed AND counted before the mail is attempted, in the same write that persists the
+      // status. Losing everything after this point therefore cannot resend without bound: the
+      // attempt is already on the record, so the retry budget still closes.
+      docPatch.completion_email_pending = true;
+      const priorAttempts = Number(doc.completion_email_attempts || 0);
+      docPatch.completion_email_attempts = (Number.isFinite(priorAttempts) ? priorAttempts : 0) + 1;
+    }
+
     let recipientUpdates = [];
     try {
       const recipients = (await store.findRecipients(documentId)) || [];
@@ -190,6 +238,27 @@ function createZohoSignPoller(deps) {
       // handler and silently discard the rest of the batch.
       log(`Zoho Sign poll could not persist the status for document ${documentId}`);
       return 'failed';
+    }
+
+    // The creator's "everyone has signed" email. Runs only AFTER the status write above has
+    // succeeded, so the document is already durably completed before any mail is attempted.
+    //
+    // Deliberately cannot affect the outcome of this poll: the whole block is swallowed, and no
+    // branch of it writes `status` or `zoho_request_status`. A mailer outage must never roll a
+    // fully executed agreement back out of `completed`.
+    if (completionEmailDue) {
+      let emailPatch = null;
+      try {
+        emailPatch = await notifyCompleted(Object.assign({}, doc, patch), at);
+      } catch (error) {
+        log(`Zoho Sign poll could not send the completion email for document ${documentId}`);
+      }
+      // Persisted in its OWN attempt, separate from the send. `completion_email_sent_at` is the
+      // only marker that stops a resend, so losing this write after SendGrid has accepted the
+      // message is precisely what would put a duplicate in the creator's inbox next tick.
+      if (emailPatch && Object.keys(emailPatch).length > 0) {
+        await persistEmailResult(documentId, emailPatch);
+      }
     }
 
     const changed = Object.keys(docPatch).length > 0 || recipientUpdates.length > 0;
@@ -298,6 +367,14 @@ function buildDueDocumentsQuery(cutoff) {
           // this the document is terminal and the artifact is never retrieved, so "Completed"
           // would keep serving the unsigned original forever. It self-heals, then drops out.
           { zoho_request_status: 'completed', signed_file_path: { $exists: false } },
+          // Completed, but the creator's completion email has not resolved yet. Without this a
+          // document that completed and then failed to send its email is terminal on both counts
+          // and the email is lost for good. The flag is written only by pollDocument, only on the
+          // tick that completes a document, and is cleared once the email resolves either way —
+          // so a document completed before the feature shipped carries no flag and is never
+          // selected here. It self-heals, then drops out, exactly like the branch above, and the
+          // attempt budget bounds how long it can stay.
+          { zoho_request_status: 'completed', completion_email_pending: true },
         ],
       },
       {

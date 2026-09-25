@@ -128,6 +128,12 @@ const {
   esignProgressActionLabel,
 } = require('./esign-progress-utils.cjs');
 
+const {
+  buildAgreementLink,
+  buildCompletionEmail,
+  evaluateCompletionEmail,
+} = require('./esign-completion-email.cjs');
+
 /** Email to notify for creator-facing e-sign events (matches list "Created by" when uploaded_by is not an address). */
 function getEsignDocumentCreatorNotifyEmail(doc) {
   return esignDocumentCreatorEmail(doc);
@@ -1439,6 +1445,138 @@ async function sendEsignCompletedNotificationToAllRecipients(doc) {
     } catch (err) {
       console.warn('E-sign completion notification failed for', email, err?.message || err);
     }
+  }
+}
+
+/** True once CPQ actually holds the executed PDF — disk first, then the stored copy, which is
+ *  the same order every download route resolves. A link to a page that can only serve the
+ *  unsigned original must not be advertised as "the completed agreement".
+ *  Async because the poller reads its documents without the multi-megabyte `signed_file_data`
+ *  blob, so its presence is confirmed with a projected existence check rather than by value. */
+async function esignSignedArtifactAvailable(doc) {
+  if (!doc) return false;
+  const filePath = doc.signed_file_path || doc.zoho_signed_file_path;
+  if (filePath) {
+    try {
+      if (fs.existsSync(filePath)) return true;
+    } catch { /* fall through to the stored copy */ }
+  }
+  if (doc.signed_file_data) return true;
+  if (!db || !isValidObjectIdString(String(doc._id || ''))) return false;
+  try {
+    const row = await db.collection('esign_documents').findOne(
+      { _id: new ObjectId(String(doc._id)), signed_file_data: { $exists: true, $ne: null } },
+      { projection: { _id: 1 } },
+    );
+    return row !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** The public origin for a creator-facing link. `APP_BASE_URL` is the variable the rest of the
+ *  e-sign links use and the only one the bootstrap loader at the top of this file guarantees.
+ *  In production an unset origin yields '' — the completion email is skipped rather than sent
+ *  with a localhost link that the creator cannot open. */
+function esignCompletionEmailBaseUrl() {
+  const configured = String(process.env.APP_BASE_URL || process.env.BASE_URL || '').trim();
+  if (configured) return configured;
+  return process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5173';
+}
+
+/**
+ * "Everyone has completed the signature" — the creator's email for a fully executed Zoho Sign
+ * agreement. The poller calls this once the document is durably `completed` and its executed
+ * PDF is stored.
+ *
+ * Returns the patch the poller should persist, and NEVER returns `status`, `zoho_request_status`
+ * or any other Zoho field: a mail failure must leave a completed agreement completed. The
+ * returned flags decide one thing only — whether a later tick tries again.
+ */
+async function sendZohoSignCompletionEmailToCreator(doc, at) {
+  const documentId = String((doc && doc._id) || '');
+  const completedAt = at instanceof Date ? at : new Date();
+  const fileName = (doc && doc.file_name) || 'Document';
+
+  // Fresh recipient rows. The poller wrote this tick's recipient statuses moments ago, so the
+  // list it selected the document with is already stale.
+  let recipients = [];
+  if (db) {
+    try {
+      recipients = await db.collection('esign_recipients')
+        .find(esignRecipientsDocumentFilter(doc._id))
+        .sort({ order: 1, _id: 1 })
+        .toArray();
+    } catch (err) {
+      console.warn('📧 E-sign completion email: could not read recipients for', documentId, err?.message || err);
+      // Transient and not an attempt: nothing was sent, so the retry budget is untouched.
+      return { completion_email_pending: true };
+    }
+  }
+
+  const creatorEmail = getEsignDocumentCreatorNotifyEmail(doc);
+  const agreementLink = buildAgreementLink(esignCompletionEmailBaseUrl(), documentId);
+  const decision = evaluateCompletionEmail({
+    doc,
+    recipients,
+    creatorEmail,
+    agreementLink,
+    signedFileAvailable: await esignSignedArtifactAvailable(doc),
+  });
+
+  if (!decision.send) {
+    // Requirement 6: a document with no usable creator address stays completed, is logged, and
+    // is NOT marked as emailed — it is only taken out of the retry queue, because no number of
+    // retries will invent an address.
+    if (decision.permanent) {
+      console.warn(`📧 E-sign completion email skipped for ${documentId} (${fileName}): ${decision.reason}`);
+      return { completion_email_pending: false, completion_email_skipped_reason: decision.reason };
+    }
+    console.log(`📧 E-sign completion email deferred for ${documentId} (${fileName}): ${decision.reason}`);
+    return { completion_email_pending: true };
+  }
+
+  // `completion_email_attempts` is NOT touched here. The poller counts the attempt before it
+  // calls this, in the same write that persists the status, so the budget still closes even if
+  // everything below is lost.
+  const { subject, html } = buildCompletionEmail({
+    documentName: fileName,
+    creatorEmail,
+    creatorName: (doc && doc.requested_by_name) || '',
+    completedAt,
+    agreementLink,
+  });
+
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('📧 E-sign completion email: SENDGRID_API_KEY not set — creator not emailed.');
+    return {
+      completion_email_pending: true,
+      completion_email_error: { reason: 'sendgrid-not-configured', at: completedAt },
+    };
+  }
+
+  try {
+    const result = await sendEmail(creatorEmail, subject, html);
+    if (result && result.success) {
+      console.log('✅ E-sign completion email sent to creator', creatorEmail, 'for', documentId);
+      // The idempotency marker. Written only here, only after SendGrid accepted the message.
+      return {
+        completion_email_sent_at: completedAt,
+        completion_email_pending: false,
+          completion_email_error: null,
+      };
+    }
+    console.warn('❌ E-sign completion email not sent to creator', creatorEmail, result && result.error);
+    return {
+      completion_email_pending: true,
+      completion_email_error: { reason: String((result && result.error) || 'send-failed'), at: completedAt },
+    };
+  } catch (err) {
+    console.warn('E-sign completion email to creator failed', creatorEmail, err?.message || err);
+    return {
+      completion_email_pending: true,
+      completion_email_error: { reason: String(err?.message || 'send-threw'), at: completedAt },
+    };
   }
 }
 
@@ -8715,6 +8853,10 @@ const zohoSignPollerStore = {
     if (!db) return [];
     return await db.collection('esign_documents')
       .find(buildDueDocumentsQuery(cutoff))
+      // The base64 copies of the original and executed PDFs run to megabytes each and nothing in
+      // the poll path reads their contents. Left in, a full batch of documents awaiting their
+      // completion email would pull hundreds of megabytes of strings into the tick.
+      .project({ file_data: 0, signed_file_data: 0, review_merged_file_data: 0 })
       .sort({ zoho_last_polled_at: 1 })
       .limit(limit)
       .toArray();
@@ -8787,6 +8929,7 @@ function getZohoSignRuntime() {
     client,
     store: zohoSignPollerStore,
     logAudit,
+    notifyCompleted: sendZohoSignCompletionEmailToCreator,
     logger: (message) => console.warn(`⚠️ ${message}`),
   });
   zohoSignRuntime = { config, auth, client, sender, poller };
