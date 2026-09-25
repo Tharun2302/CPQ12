@@ -21,6 +21,7 @@ type SendResult = { status: number; body: Record<string, any> };
 const {
   ZOHO_MAX_PDF_BYTES,
   isValidObjectIdString,
+  isZohoManagedDocument,
   validateZohoSendOptions,
   checkDocumentSendable,
   creatorNote,
@@ -31,6 +32,7 @@ const {
 } = sender as {
   ZOHO_MAX_PDF_BYTES: number;
   isValidObjectIdString: (value: unknown) => boolean;
+  isZohoManagedDocument: (doc: unknown) => boolean;
   validateZohoSendOptions: (body: unknown) => { errors: string[]; options: Record<string, unknown> };
   checkDocumentSendable: (doc: unknown) => { status: number; error: string; code: string } | null;
   creatorNote: (name: unknown, email: unknown) => string;
@@ -590,5 +592,33 @@ describe('creatorNote', () => {
 
   it('stays inside the 500-character notes limit Zoho enforces', () => {
     expect(creatorNote('A'.repeat(400), `${'b'.repeat(400)}@example.com`).length).toBeLessThanOrEqual(500);
+  });
+});
+
+describe('isZohoManagedDocument — which reminder path a document takes', () => {
+  // The in-house reminder selects recipients by signing_token. A Zoho recipient never has one,
+  // so sending a Zoho document down that path matched zero recipients and silently emailed
+  // nobody while reporting success. This predicate is the fork that prevents it.
+  it('is true only for a Zoho document that actually reached Zoho', () => {
+    expect(isZohoManagedDocument({ provider: 'zoho', zoho_request_id: '610752000000061001' })).toBe(true);
+  });
+
+  it('is false for an in-house document', () => {
+    expect(isZohoManagedDocument({ provider: 'cpq' })).toBe(false);
+    expect(isZohoManagedDocument({})).toBe(false);
+  });
+
+  it('is false when the Zoho send never produced a request id', () => {
+    // A send that failed before create returned leaves provider set with nothing addressable.
+    expect(isZohoManagedDocument({ provider: 'zoho' })).toBe(false);
+    expect(isZohoManagedDocument({ provider: 'zoho', zoho_request_id: '' })).toBe(false);
+    expect(isZohoManagedDocument({ provider: 'zoho', zoho_request_id: '   ' })).toBe(false);
+    expect(isZohoManagedDocument({ provider: 'zoho', zoho_request_id: null })).toBe(false);
+  });
+
+  it('tolerates a missing or non-object document', () => {
+    expect(isZohoManagedDocument(undefined)).toBe(false);
+    expect(isZohoManagedDocument(null)).toBe(false);
+    expect(isZohoManagedDocument('zoho')).toBe(false);
   });
 });

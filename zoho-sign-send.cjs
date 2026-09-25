@@ -97,6 +97,22 @@ function isValidObjectIdString(value) {
 }
 
 /**
+ * Whether Zoho, not CPQ, owns this document's signer communications.
+ *
+ * Both halves matter. `provider` alone is not enough: a send that failed before Zoho returned a
+ * request id leaves provider set with nothing to address at Zoho, and calling a Zoho endpoint
+ * with an empty id would be a 400 from Zoho rather than a clean CPQ answer.
+ *
+ * This is the reminder route's fork. The in-house reminder selects recipients by
+ * `signing_token`, which a Zoho recipient never has — so routing a Zoho document down that path
+ * matches zero recipients and reports success having emailed nobody.
+ */
+function isZohoManagedDocument(doc) {
+  if (!doc || typeof doc !== 'object') return false;
+  return doc.provider === 'zoho' && isNonEmptyString(doc.zoho_request_id);
+}
+
+/**
  * Backend validation of the request body (design §12.4).
  *
  * Absent keys are not defaults — they are simply omitted, so Zoho applies its own account
@@ -511,6 +527,7 @@ module.exports = {
   OBJECT_ID_PATTERN,
   ZOHO_ACTION_TYPES,
   isValidObjectIdString,
+  isZohoManagedDocument,
   creatorNote,
   validateZohoSendOptions,
   checkDocumentSendable,

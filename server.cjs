@@ -7594,7 +7594,11 @@ app.get('/api/esign/documents/:id', async (req, res) => {
         signed_file_path: doc.signed_file_path,
         void_reason: doc.void_reason || null,
         voided_by: doc.voided_by || null,
-        voided_at: doc.voided_at || null
+        voided_at: doc.voided_at || null,
+        // Same two fields the agreement-status list returns, so the detail drawer and the row
+        // agree on which service holds the signature.
+        provider: doc.provider || 'cpq',
+        zoho_request_status: doc.zoho_request_status || null
       }
     });
   } catch (error) {
@@ -7949,17 +7953,31 @@ app.post('/api/esign/documents/:id/void', async (req, res) => {
       { document_id: docId },
       { $unset: { signing_token: '' } }
     );
-    await db.collection('esign_documents').updateOne(
-      { _id: docId },
-      {
-        $set: {
-          status: 'voided',
-          voided_at: new Date(),
-          voided_by: actorEmail || null,
-          void_reason: voidReason,
-        },
+    // A Zoho document must also leave the poll set. Zoho does not know about a CPQ-side void and
+    // keeps reporting `inprogress`, so without this the poller would map that straight back to
+    // `sent` on its next tick and silently un-void the contract.
+    const voidPatch = {
+      status: 'voided',
+      voided_at: new Date(),
+      voided_by: actorEmail || null,
+      void_reason: voidReason,
+    };
+    if (isZohoManagedDocument(doc)) {
+      voidPatch.zoho_request_status = 'recalled';
+      try {
+        await getZohoSignRuntime().client.recall(doc.zoho_request_id);
+      } catch (recallErr) {
+        // The CPQ-side void still stands; the document is simply not recalled at Zoho, so
+        // recipients may still be able to sign there. Surfaced, never silently swallowed.
+        console.error('❌ Zoho Sign recall failed during void:', recallErr?.code || recallErr?.message);
+        voidPatch.zoho_last_error = {
+          code: String(recallErr?.code || 'ZOHO_API_ERROR'),
+          message: 'Voided in CPQ but Zoho Sign could not be recalled. Recall it in Zoho directly.',
+          at: new Date(),
+        };
       }
-    );
+    }
+    await db.collection('esign_documents').updateOne({ _id: docId }, { $set: voidPatch });
     await db.collection('esign_signature_secrets').deleteMany({
       $or: [{ document_id: docId }, { document_id: docId.toString() }],
     });
@@ -7991,6 +8009,44 @@ app.post('/api/esign/documents/:id/remind', async (req, res) => {
     if (doc.status !== 'sent') {
       return res.status(400).json({ success: false, error: 'Only documents with status "sent" can be reminded' });
     }
+
+    // Zoho owns the signer's link, so Zoho has to send the reminder. The in-house path below
+    // selects on signing_token, which a Zoho recipient never has — so without this branch the
+    // query matched nothing and the reminder silently did nothing at all.
+    if (doc.provider === 'zoho' && doc.zoho_request_id) {
+      const zohoConfig = getZohoSignConfig();
+      if (!zohoSignEnabled(zohoConfig) || !zohoSignConfigured(zohoConfig)) {
+        return res.status(503).json({ success: false, error: 'Zoho Sign is not configured.', code: 'ZOHO_NOT_CONFIGURED' });
+      }
+      const pending = await db.collection('esign_recipients').countDocuments({
+        ...esignRecipientsDocumentFilter(docId),
+        status: { $in: ['pending', 'viewed'] },
+      });
+      if (pending === 0) {
+        return res.status(400).json({ success: false, error: 'No pending recipients to remind' });
+      }
+      try {
+        // Zoho reminds every pending signer on the request; it is not addressable per recipient.
+        await getZohoSignRuntime().client.remind(doc.zoho_request_id);
+      } catch (zohoErr) {
+        console.error('❌ Zoho Sign reminder failed:', zohoErr?.code || zohoErr?.message);
+        return res.status(502).json({
+          success: false,
+          error: zohoErr?.message || 'Zoho Sign could not send the reminder.',
+          code: zohoErr?.code || 'ZOHO_API_ERROR',
+        });
+      }
+      try {
+        await logAudit(docId.toString(), 'manual_reminder_sent', actorEmail || req.ip || 'system', req.ip || null, { provider: 'zoho' });
+      } catch (_) { /* non-fatal */ }
+      return res.json({
+        success: true,
+        message: `Zoho Sign will email ${pending} pending recipient${pending === 1 ? '' : 's'}.`,
+        sent: pending,
+        provider: 'zoho',
+      });
+    }
+
     if (!process.env.SENDGRID_API_KEY) {
       return res.status(500).json({ success: false, error: 'Email service not configured' });
     }
@@ -8514,7 +8570,8 @@ const {
   createZohoSignAuth,
 } = require('./zoho-sign-auth.cjs');
 const { createZohoSignClient } = require('./zoho-sign-client.cjs');
-const { createZohoSignSender } = require('./zoho-sign-send.cjs');
+const { createZohoSignSender, isValidObjectIdString, isZohoManagedDocument } = require('./zoho-sign-send.cjs');
+const { createZohoSignPoller, buildDueDocumentsQuery } = require('./zoho-sign-poller.cjs');
 
 // Reminders are emails to customers and a send is an irreversible external action, so this is
 // the tightest limiter in the file. 10/min/IP, per design §8 E2.
@@ -8648,6 +8705,63 @@ const zohoSignMongoStore = {
   },
 };
 
+/** The Mongo half of the poller's store contract. Reads and writes only Zoho-provider rows. */
+// The poller runs on a timer with no request behind it, so `db` may legitimately be absent at
+// boot or after a dropped connection. Every method degrades to a no-op rather than throwing a
+// TypeError into the tick handler.
+const zohoSignPollerStore = {
+  /** Served by the { provider, zoho_request_status, zoho_last_polled_at } sparse index. */
+  async findDueDocuments(cutoff, limit) {
+    if (!db) return [];
+    return await db.collection('esign_documents')
+      .find(buildDueDocumentsQuery(cutoff))
+      .sort({ zoho_last_polled_at: 1 })
+      .limit(limit)
+      .toArray();
+  },
+  async findRecipients(documentId) {
+    if (!db) return [];
+    return await db.collection('esign_recipients')
+      .find(esignRecipientsDocumentFilter(documentId))
+      .sort({ order: 1, _id: 1 })
+      .toArray();
+  },
+  async saveDocumentPatch(documentId, patch) {
+    // Same id guard the send path uses (isValidObjectIdString) so a malformed stored id is a
+    // skipped write rather than a throw out of the batch.
+    if (!db || !isValidObjectIdString(documentId)) return;
+    await db.collection('esign_documents').updateOne({ _id: new ObjectId(documentId) }, { $set: patch });
+  },
+  async saveRecipientPatch(recipientId, patch) {
+    if (!db || !isValidObjectIdString(recipientId)) return;
+    await db.collection('esign_recipients').updateOne({ _id: new ObjectId(recipientId) }, { $set: patch });
+  },
+  /**
+   * The executed PDF Zoho returns, stored the same way the in-house signing path stores its own
+   * (server.cjs:10671) — same directory, same filename shape — so every existing download,
+   * preview and bulk-download route resolves it with no provider branch.
+   *
+   * @returns {object} the fields to merge into the document's status patch
+   */
+  async saveSignedPdf(documentId, buffer) {
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+      throw new Error('Zoho Sign returned an empty signed PDF');
+    }
+    const outPath = path.join(signedDir, `signed-${documentId}-${Date.now()}.pdf`);
+    fs.writeFileSync(outPath, buffer);
+    const patch = {
+      signed_file_path: outPath,
+      // Kept alongside signed_file_path so the feature survives the file being lost, exactly as
+      // the in-house path does. Mongo caps a document at 16MB, so oversized PDFs keep the file
+      // on disk only rather than failing the whole status update.
+      zoho_signed_file_path: outPath,
+    };
+    const base64 = buffer.toString('base64');
+    if (base64.length < 12 * 1024 * 1024) patch.signed_file_data = base64;
+    return patch;
+  },
+};
+
 let zohoSignRuntime = null;
 
 /** One auth instance and one client per process — the single-flight refresh lock depends on it. */
@@ -8668,8 +8782,31 @@ function getZohoSignRuntime() {
     logAudit,
     logger: (message) => console.warn(`⚠️ ${message}`),
   });
-  zohoSignRuntime = { config, auth, client, sender };
+  const poller = createZohoSignPoller({
+    config,
+    client,
+    store: zohoSignPollerStore,
+    logAudit,
+    logger: (message) => console.warn(`⚠️ ${message}`),
+  });
+  zohoSignRuntime = { config, auth, client, sender, poller };
   return zohoSignRuntime;
+}
+
+/**
+ * Status flows one way without this: CPQ sends to Zoho and never learns the outcome, so the
+ * tracking page stays on "Sent" forever. Webhooks need a public HTTPS callback that dev does not
+ * have (design §9.1), so polling is the mechanism that actually works today.
+ */
+function startZohoSignPoller() {
+  const config = getZohoSignConfig();
+  if (!zohoSignEnabled(config) || !zohoSignConfigured(config) || config.pollEnabled !== true) return;
+  try {
+    getZohoSignRuntime().poller.start();
+    console.log(`🔄 Zoho Sign status poller started (every ${Math.round(config.pollIntervalMs / 1000)}s, batch ${config.pollBatch})`);
+  } catch (error) {
+    console.error('❌ Zoho Sign poller failed to start:', error?.message);
+  }
 }
 
 // Status is polled by every prepare page on mount, so it gets its own, looser limiter than the
@@ -10779,6 +10916,13 @@ app.get('/api/esign/agreement-status', async (req, res) => {
         signed_at: d.signed_at,
         voided_at: d.voided_at,
         status: d.status,
+        // Which service actually collected the signature. Everything created before the provider
+        // split went through the in-house flow, so an absent field genuinely means 'cpq' — the
+        // dashboard can then label every row instead of leaving 341 of them ambiguous.
+        provider: d.provider || 'cpq',
+        // Zoho's own word for the state, shown as a sub-label where it is more precise than
+        // CPQ's (an expired Zoho request reads as 'voided' in CPQ — design §6.4).
+        zoho_request_status: d.zoho_request_status || null,
         recipients: recs
       };
     });
@@ -13030,4 +13174,5 @@ setTimeout(() => {
   setInterval(runEsignExpiryReminderJob, ESIGN_EXPIRY_REMINDER_INTERVAL_MS);
   runAutoReminderJob();
   setInterval(runAutoReminderJob, AUTO_REMINDER_INTERVAL_MS);
+  startZohoSignPoller();
 }, 2 * 60 * 1000);
