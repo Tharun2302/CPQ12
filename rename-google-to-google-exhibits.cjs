@@ -1,7 +1,7 @@
 const { MongoClient } = require('mongodb');
 require('dotenv').config();
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://saitharunreddy2302_db_user:Saireddy2302@cluster1.zycf9g5.mongodb.net/?retryWrites=true&w=majority&appName=Cluster1';
+const MONGODB_URI = require('./scripts/lib/requireMongoUri.cjs')();
 const DB_NAME = process.env.DB_NAME || 'cpq_database';
 
 const renames = [

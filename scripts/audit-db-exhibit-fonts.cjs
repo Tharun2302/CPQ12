@@ -3,7 +3,7 @@ const AdmZip = require('adm-zip');
 require('dotenv').config();
 
 // Read-only audit of fonts/sizes in the DB-served exhibits (exhibits.fileData base64 docx).
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://saitharunreddy2302_db_user:Saireddy2302@cluster1.zycf9g5.mongodb.net/?retryWrites=true&w=majority&appName=Cluster1';
+const MONGODB_URI = require('./lib/requireMongoUri.cjs')();
 const DB_NAME = process.env.DB_NAME || 'cpq_database';
 
 function scan(xml) {
