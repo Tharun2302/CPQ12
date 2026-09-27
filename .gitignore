@@ -83,3 +83,7 @@ onlyoffice-debug/
 # Throwaway E2E test harness output (screenshots, audit JSON) — never commit
 tmp-e2e/
 .cpq-monitor/
+
+# Maintenance mode switches (runtime state on the server, see deploymentgigitaldocker/maintenance/README.md)
+deploymentgigitaldocker/maintenance/on
+deploymentgigitaldocker/maintenance/bypass*.conf

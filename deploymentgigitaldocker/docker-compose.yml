@@ -122,6 +122,7 @@ services:
       - "8443:8443"           # OnlyOffice (https://zenop.ai:8443)
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./maintenance:/etc/nginx/maintenance:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - app
