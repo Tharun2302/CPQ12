@@ -9,6 +9,7 @@ const fs = require('fs');
 const { exec } = require('child_process');
 const { MongoClient } = require('mongodb');
 const { pickEsignCarriedFields } = require('./esign-field-carry.cjs');
+const { DOCUMENTS_LIST_PROJECTION } = require('./documents-list-projection.cjs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { spawn } = require('child_process');
@@ -11753,7 +11754,7 @@ app.delete('/api/approval-workflows/:id', async (req, res) => {
 // Documents API
 // ========================================
 
-// Get all saved documents (without raw fileData)
+// Get all saved documents (heavy fields excluded, see documents-list-projection.cjs)
 app.get('/api/documents', async (req, res) => {
   try {
     if (!db) {
@@ -11765,7 +11766,7 @@ app.get('/api/documents', async (req, res) => {
 
     console.log('📄 Fetching PDF documents from database...');
     
-    // Pagination: by default return ALL matches (metadata only; binary fields excluded). Pass limit=<positive int> to cap (e.g. limit=100).
+    // Pagination: by default return ALL matches (heavy fields excluded). Pass limit=<positive int> to cap (e.g. limit=100).
     const skip = Math.max(0, parseInt(String(req.query.skip || 0), 10) || 0);
     const limitRaw = req.query.limit;
     const limitSingle = Array.isArray(limitRaw) ? limitRaw[0] : limitRaw;
@@ -11810,7 +11811,7 @@ app.get('/api/documents', async (req, res) => {
     const totalCount = await db.collection('documents').countDocuments(approvalMatch);
 
     const pipeline = [
-      { $project: { fileData: 0, docxFileData: 0 } },
+      { $project: DOCUMENTS_LIST_PROJECTION },
       ...(Object.keys(approvalMatch).length ? [{ $match: approvalMatch }] : []),
       { $sort: { createdAt: -1, generatedDate: -1 } },
       { $skip: skip },

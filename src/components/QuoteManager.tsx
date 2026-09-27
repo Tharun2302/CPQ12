@@ -141,9 +141,10 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
     setTimeout(() => setShowTemplateSyncNotification(false), 3000);
   }, [templates, quotes]);
 
+  // Not keyed on quotes/templates: each new array re-downloaded the whole list
   useEffect(() => {
     loadSavedDocuments();
-  }, [templates, quotes, loadSavedDocuments]);
+  }, [loadSavedDocuments]);
   
   // View a saved document
   const handleViewDocument = async (doc: SavedDocument) => {
