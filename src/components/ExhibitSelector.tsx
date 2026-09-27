@@ -1050,6 +1050,15 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 
   const hasAnyExhibits = filteredExhibits.length > 0;
 
+  // Totals come from the unsearched list so they stay stable while the user types.
+  const exhibitTotals = useMemo(() => {
+    const { visibleResult } = buildExhibitGroups(filteredExhibits);
+    return {
+      combinations: visibleResult.length,
+      exhibits: visibleResult.reduce((sum, group) => sum + group.exhibits.length, 0),
+    };
+  }, [filteredExhibits]);
+
   // Names of migration types that have at least one exhibit selected (for display below search).
   // Built from the SAME grouping function as the rendered list (run over ALL exhibits, not just
   // search-filtered ones, so the chips stay visible during search). Mapping each selected exhibit
@@ -1192,8 +1201,16 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           </div>
         ) : (
           <div className="bg-blue-50/30 rounded-lg border border-blue-200 p-4">
-            <div className="mb-3">
+            <div className="mb-3 flex items-center justify-between gap-2">
               <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Exhibits</h4>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="px-2 py-1 bg-white border border-blue-200 rounded-md text-gray-700">
+                  Total combinations: <span className="font-bold text-blue-700">{exhibitTotals.combinations}</span>
+                </span>
+                <span className="px-2 py-1 bg-white border border-blue-200 rounded-md text-gray-700">
+                  Total exhibits: <span className="font-bold text-blue-700">{exhibitTotals.exhibits}</span>
+                </span>
+              </div>
             </div>
             <div
               ref={listScrollRef}
