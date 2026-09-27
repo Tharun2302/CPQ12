@@ -72,7 +72,11 @@ const badgeClass = (status: string) => {
   }
 };
 
-const Sparkline: React.FC<{ data: number[]; stroke: string }> = ({ data, stroke }) => {
+const Sparkline: React.FC<{ data: number[]; stroke: string; invisible?: boolean }> = ({
+  data,
+  stroke,
+  invisible = false,
+}) => {
   const w = 48;
   const h = 14;
   const pad = 2;
@@ -89,11 +93,24 @@ const Sparkline: React.FC<{ data: number[]; stroke: string }> = ({ data, stroke 
     .join(' ');
 
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true" className="shrink-0">
+    <svg
+      width={w}
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      aria-hidden="true"
+      className={invisible ? 'shrink-0 invisible' : 'shrink-0'}
+    >
       <polyline points={points} fill="none" stroke={stroke} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" opacity="0.95" />
     </svg>
   );
 };
+
+const StatValue: React.FC<{ value: number; loading: boolean }> = ({ value, loading }) =>
+  loading ? (
+    <div className="h-6 w-10 rounded bg-gray-200 animate-pulse" aria-hidden="true" />
+  ) : (
+    <div className="text-2xl font-extrabold text-gray-900 tabular-nums leading-none">{value}</div>
+  );
 
 const getStep = (workflow: any, role: string) => {
   const steps = workflow?.workflowSteps || [];
@@ -196,10 +213,18 @@ const ApprovalDashboard: React.FC = () => {
 
   const {
     workflows,
+    isLoading,
     refreshWorkflows,
     updateWorkflow,
     deleteWorkflow,
   } = useApprovalWorkflows();
+
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  useEffect(() => {
+    if (!isLoading) setHasLoadedOnce(true);
+  }, [isLoading]);
+  // Focus and post-action refreshes must keep the current list on screen instead of a spinner
+  const isInitialLoading = isLoading && !hasLoadedOnce && workflows.length === 0;
 
   const flashToast = (msg: string) => {
     setActionToast(msg);
@@ -781,14 +806,14 @@ const ApprovalDashboard: React.FC = () => {
                     activeView === 'dashboard' ? 'shadow-md ring-1 ring-slate-200' : ''
                   }`}
                   aria-pressed={activeView === 'dashboard'}
-                  aria-label={`All approvals: ${all.length} items. Click to show the full list.`}
+                  aria-label={`All approvals: ${isInitialLoading ? 'loading' : `${all.length} items`}. Click to show the full list.`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="text-gray-500 text-xs font-semibold uppercase tracking-wide">All Approvals</div>
                   </div>
                   <div className="mt-1 flex items-end justify-between gap-2">
-                    <div className="text-2xl font-extrabold text-gray-900 tabular-nums leading-none">{all.length}</div>
-                    <Sparkline data={sparkAll} stroke="#64748B" />
+                    <StatValue value={all.length} loading={isInitialLoading} />
+                    <Sparkline data={sparkAll} stroke="#64748B" invisible={isInitialLoading} />
                   </div>
                 </button>
 
@@ -799,14 +824,14 @@ const ApprovalDashboard: React.FC = () => {
                     activeView === 'approved' ? 'shadow-md ring-1 ring-emerald-200' : ''
                   }`}
                   aria-pressed={activeView === 'approved'}
-                  aria-label={`Approved: ${approved.length} deals. Click to view all approved deals.`}
+                  aria-label={`Approved: ${isInitialLoading ? 'loading' : `${approved.length} deals`}. Click to view all approved deals.`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Approved</div>
                   </div>
                   <div className="mt-1 flex items-end justify-between gap-2">
-                    <div className="text-2xl font-extrabold text-gray-900 tabular-nums leading-none">{approved.length}</div>
-                    <Sparkline data={sparkApproved} stroke="#059669" />
+                    <StatValue value={approved.length} loading={isInitialLoading} />
+                    <Sparkline data={sparkApproved} stroke="#059669" invisible={isInitialLoading} />
                   </div>
                 </button>
 
@@ -816,14 +841,14 @@ const ApprovalDashboard: React.FC = () => {
                   className={`rounded-lg bg-white border border-gray-200 border-t-4 border-t-amber-400 px-2.5 sm:px-3 py-2.5 shadow-sm text-left w-full min-w-0 transition-all hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-0 ${
                     activeView === 'pending' ? 'shadow-md ring-1 ring-amber-200' : ''
                   }`}
-                  aria-label={`Pending approvals: ${pending.length} in queue. Click to view the pending list.`}
+                  aria-label={`Pending approvals: ${isInitialLoading ? 'loading' : `${pending.length} in queue`}. Click to view the pending list.`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Pending Approvals</div>
                   </div>
                   <div className="mt-1 flex items-end justify-between gap-2">
-                    <div className="text-2xl font-extrabold text-gray-900 tabular-nums leading-none">{pending.length}</div>
-                    <Sparkline data={sparkPending} stroke="#D97706" />
+                    <StatValue value={pending.length} loading={isInitialLoading} />
+                    <Sparkline data={sparkPending} stroke="#D97706" invisible={isInitialLoading} />
                   </div>
                 </button>
 
@@ -839,8 +864,8 @@ const ApprovalDashboard: React.FC = () => {
                     <div className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Rejected</div>
                   </div>
                   <div className="mt-1 flex items-end justify-between gap-2">
-                    <div className="text-2xl font-extrabold text-gray-900 tabular-nums leading-none">{rejected.length}</div>
-                    <Sparkline data={sparkRejected} stroke="#f87171" />
+                    <StatValue value={rejected.length} loading={isInitialLoading} />
+                    <Sparkline data={sparkRejected} stroke="#f87171" invisible={isInitialLoading} />
                   </div>
                 </button>
               </div>
@@ -896,11 +921,17 @@ const ApprovalDashboard: React.FC = () => {
                   </select>
                 </div>
                 <div className="flex h-full min-h-0 shrink-0 items-center justify-center text-sm text-gray-600 sm:text-base whitespace-nowrap lg:justify-self-end">
-                  Showing <span className="text-gray-900 font-semibold tabular-nums mx-0.5">{filteredList.length}</span>
-                  {(dateFilterActive || query.trim() || requesterFilter) && list.length !== filteredList.length && (
-                    <span className="text-gray-500"> of {list.length}</span>
+                  {isInitialLoading ? (
+                    'Loading…'
+                  ) : (
+                    <>
+                      Showing <span className="text-gray-900 font-semibold tabular-nums mx-0.5">{filteredList.length}</span>
+                      {(dateFilterActive || query.trim() || requesterFilter) && list.length !== filteredList.length && (
+                        <span className="text-gray-500"> of {list.length}</span>
+                      )}
+                      {' '}items
+                    </>
                   )}
-                  {' '}items
                 </div>
               </div>
             </div>
@@ -1284,7 +1315,17 @@ const ApprovalDashboard: React.FC = () => {
                 );
               })}
 
-              {filteredList.length === 0 && (
+              {isInitialLoading && (
+                <div
+                  role="status"
+                  className="col-span-full rounded-2xl bg-white border border-gray-200 p-8 flex flex-col items-center justify-center text-gray-600"
+                >
+                  <Loader2 className="h-8 w-8 animate-spin text-teal-600" aria-hidden="true" />
+                  <div className="mt-3 text-sm font-semibold">Loading approvals…</div>
+                </div>
+              )}
+
+              {!isInitialLoading && filteredList.length === 0 && (
                 <div className="col-span-full rounded-2xl bg-white border border-gray-200 p-8 text-center text-base text-gray-600">
                   {dateFilterActive && list.length > 0 ? (
                     <>
