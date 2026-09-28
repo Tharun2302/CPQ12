@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Check, ChevronRight, Search, ArrowRight, RefreshCw, X } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
-import { scopeExhibitsForCombination, DEFAULT_EXHIBIT_COMBINATION } from '../utils/exhibitCombination';
+import { scopeExhibitsForCombination, DEFAULT_EXHIBIT_COMBINATION, withPairCombinations } from '../utils/exhibitCombination';
 
 interface Exhibit {
   _id: string;
@@ -163,7 +163,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         console.log(`✅ Loaded ${data.exhibits?.length || 0} total exhibits from backend`);
         
         if (data.success) {
-          const fetched: Exhibit[] = data.exhibits || [];
+          const fetched: Exhibit[] = (data.exhibits || []).map(withPairCombinations);
           // Always set exhibits (even if empty array)
           setAllExhibits(fetched);
 
@@ -695,6 +695,14 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     
     // Group exhibits by base combination extracted from combinations field
     const groups: Map<string, Exhibit[]> = new Map();
+    // Folder labels come from either the combination key ("Onedrive To Onedrive") or the exhibit
+    // name ("Onedrive to Onedrive"); match them case-insensitively so one pair is one folder.
+    const folderLabelByKey = new Map<string, string>();
+    const canonicalFolder = (label: string): string => {
+      const key = label.toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!folderLabelByKey.has(key)) folderLabelByKey.set(key, label);
+      return folderLabelByKey.get(key)!;
+    };
     const ungrouped: Exhibit[] = [];
     // Track which exhibits have been added to a group to prevent duplicates
     const addedExhibitIds = new Set<string>();
@@ -808,6 +816,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           return;
         }
 
+        folderName = canonicalFolder(folderName);
         if (!groups.has(folderName)) {
           groups.set(folderName, []);
         }
@@ -827,7 +836,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           // (e.g. "Onedrive / Sharepoint Onedrive / Sharepoint"), so the dash is optional.
           const onedriveSharePointPattern = /^onedrive\s*\/\s*sharepoint\s*-?\s*onedrive\s*\/\s*sharepoint/i;
           if (onedriveSharePointPattern.test(exhibitName)) {
-            const folderName = 'OneDrive / SharePoint - OneDrive / SharePoint';
+            const folderName = canonicalFolder('OneDrive / SharePoint - OneDrive / SharePoint');
             if (!groups.has(folderName)) {
               groups.set(folderName, []);
             }
@@ -868,6 +877,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
             return;
           }
           
+          folderName = canonicalFolder(folderName);
           if (!groups.has(folderName)) {
             groups.set(folderName, []);
           }

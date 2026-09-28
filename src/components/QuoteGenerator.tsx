@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { PricingCalculation, ConfigurationData, Quote } from '../types/pricing';
 import { formatCurrency, getInstanceTypeCost, overagePerServerPerMonth, manageDataLineCost, manageUserLineCost } from '../utils/pricing';
 import { buildSprawlAgreementData, sprawlPerDataCost, withDiscountRow } from '../utils/sprawlAgreement';
+import { withPairCombinations } from '../utils/exhibitCombination';
 import {
   FileText,
   Download,
@@ -2401,7 +2402,7 @@ Quote ID: ${quoteData.id}
               if (metaResp.ok) {
                 const metaData = await metaResp.json();
                 if (metaData.success && metaData.exhibits) {
-                  allExhibits = metaData.exhibits;
+                  allExhibits = metaData.exhibits.map(withPairCombinations);
                 }
               }
 
@@ -5825,7 +5826,7 @@ Total Price: {{total price}}`;
             if (exhibitResponse.ok) {
               const exhibitData = await exhibitResponse.json();
               if (exhibitData.success && exhibitData.exhibits) {
-                const exhibits = exhibitData.exhibits;
+                const exhibits = exhibitData.exhibits.map(withPairCombinations);
                 
                 // Helper function to get combination label
                 const getCombinationLabel = (combinationValue: string): string => {
@@ -6244,7 +6245,7 @@ Total Price: {{total price}}`;
             const exhibitResponse = await fetch(`${BACKEND_URL}/api/exhibits`);
             if (exhibitResponse.ok) {
               const exhibitDataResponse = await exhibitResponse.json();
-              const allExhibits = exhibitDataResponse?.exhibits || [];
+              const allExhibits = (exhibitDataResponse?.exhibits || []).map(withPairCombinations);
 
               // Helper: extract base combination from exhibit (e.g. "slack-to-teams" from "slack-to-teams-include-basic")
               const getBaseCombination = (ex: any): string => {
@@ -8871,7 +8872,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               if (metaResp.ok) {
                 const metaData = await metaResp.json();
                 if (metaData.success && metaData.exhibits) {
-                  allExhibits = metaData.exhibits;
+                  allExhibits = metaData.exhibits.map(withPairCombinations);
                 }
               }
 

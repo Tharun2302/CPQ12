@@ -7,6 +7,9 @@ import {
   showExhibitSelector,
   isOverageAgreement,
   agreementsSupportingExhibits,
+  agreementsOwningExhibits,
+  pairCombinationFromName,
+  withPairCombinations,
   DEFAULT_EXHIBIT_COMBINATION,
 } from '../../src/utils/exhibitCombination';
 
@@ -219,5 +222,57 @@ describe('isOverageAgreement / agreementsSupportingExhibits', () => {
     ];
     expect(agreementsSupportingExhibits(all).map((c) => c.value))
       .toEqual(['mange+sprawl', 'multi-combination', 'data-sprawl']);
+  });
+});
+
+describe('agreementsOwningExhibits', () => {
+  // Attaching to Multi-Combination tagged exhibits 'multi-combination', detaching them from
+  // their pair, so a Basic SOW pulled the pair's Standard exhibits in alongside the Basic ones.
+  it('keeps Multi-Combination and overage out of the attach pickers', () => {
+    const all = [
+      { value: 'mange+sprawl', migrationType: 'Manage' },
+      { value: 'multi-combination', migrationType: 'Multi combination' },
+      { value: 'overage-agreement', migrationType: 'Overage Agreement' },
+      { value: 'data-sprawl', migrationType: 'Manage' },
+    ];
+    expect(agreementsOwningExhibits(all).map((c) => c.value))
+      .toEqual(['mange+sprawl', 'data-sprawl']);
+  });
+
+  it('drops Multi-Combination by slug even without a migrationType', () => {
+    expect(agreementsOwningExhibits([{ value: 'Multi-Combination' }])).toEqual([]);
+  });
+});
+
+describe('withPairCombinations', () => {
+  const MS_PAIR = 'microsoft-onedrive-sharepointonline-to-microsoft-onedrive-sharepointonline';
+
+  it('recovers the pair slug of a Basic exhibit tagged multi-combination from its name', () => {
+    expect(pairCombinationFromName('Onedrive to Onedrive Basic Plan - Basic Not Include')).toBe('onedrive-to-onedrive');
+    expect(pairCombinationFromName('Microsoft OneDrive/SharepointOnline to Microsoft OneDrive/SharePointOnline Basic Plan - Basic Include'))
+      .toBe(MS_PAIR);
+    // "&" becomes "and", matching how the upload form slugs a folder name
+    expect(pairCombinationFromName('Google (MyDrive & Shared Drive) to Microsoft (OneDrive & SharePoint Online) Basic Plan - Basic Include'))
+      .toBe('google-mydrive-and-shared-drive-to-microsoft-onedrive-and-sharepoint-online');
+  });
+
+  it('never changes planType, includeType or other fields', () => {
+    const ex = { _id: 'x', name: 'Onedrive to Onedrive Basic Plan - Basic Include', combinations: ['multi-combination'], planType: 'basic', includeType: 'included' };
+    expect(withPairCombinations(ex)).toEqual({ ...ex, combinations: ['onedrive-to-onedrive'] });
+    expect(ex.combinations).toEqual(['multi-combination']);
+  });
+
+  it('leaves correctly tagged and agreement-owned exhibits untouched', () => {
+    const pair = { name: 'Onedrive to Onedrive Standard Plan - Standard Include', combinations: ['onedrive-to-onedrive'] };
+    const sprawl = { name: 'Data Sprawl Standard Plan - Standard Include', combinations: ['data-sprawl'] };
+    expect(withPairCombinations(pair)).toBe(pair);
+    expect(withPairCombinations(sprawl)).toBe(sprawl);
+  });
+
+  it('keeps a genuine multi-combination exhibit (no pair in its name) as multi-combination', () => {
+    const generic = { name: 'Multi Combination General Terms', combinations: ['multi-combination'] };
+    expect(withPairCombinations(generic)).toBe(generic);
+    expect(scopeExhibitsForCombination([withPairCombinations(generic)], { combination: 'multi-combination' }))
+      .toHaveLength(1);
   });
 });

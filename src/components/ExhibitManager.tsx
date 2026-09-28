@@ -19,7 +19,7 @@ import {
   UserPlus
 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
-import { matchesAgreementFilter, agreementsSupportingExhibits } from '../utils/exhibitCombination';
+import { matchesAgreementFilter, agreementsSupportingExhibits, agreementsOwningExhibits, normalizeFolderKey } from '../utils/exhibitCombination';
 import { getCombinationsForCategory } from '../utils/exhibitAutoDetect';
 import { isPossibleDuplicateResponse, duplicateConfirmMessage } from '../utils/exhibitDuplicates';
 import { useAuth } from '../hooks/useAuth';
@@ -48,33 +48,6 @@ function generateNameFromCombination(combination: string): string {
   
   // If formatted is empty (e.g., only "to" was in the combination), use the original
   return formatted || combination.charAt(0).toUpperCase() + combination.slice(1).toLowerCase();
-}
-
-// Normalize folder/combo text into a stable slug key for grouping
-function normalizeFolderKey(input: string): string {
-  if (!input) return '';
-  let s = String(input).toLowerCase();
-  s = s
-    .replace(/&/g, 'and')
-    .replace(/\//g, '-') // treat "/" as separator
-    .replace(/[^a-z0-9]+/g, '-') // any non-alphanum -> "-"
-    .replace(/-+/g, '-') // collapse dashes
-    .replace(/^-+|-+$/g, ''); // trim
-
-  // Strip any trailing include/plan suffixes if user typed them into the folder name
-  s = s.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
-  s = s.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
-
-  // Collapse duplicated halves: "onedrive-sharepoint-onedrive-sharepoint" -> "onedrive-sharepoint"
-  const parts = s.split('-').filter(Boolean);
-  if (parts.length > 0 && parts.length % 2 === 0) {
-    const half = parts.length / 2;
-    const first = parts.slice(0, half).join('-');
-    const second = parts.slice(half).join('-');
-    if (first === second) s = first;
-  }
-
-  return s;
 }
 
 function buildCombinationKey(base: string, includeType: string, planType: string): string {
@@ -748,7 +721,7 @@ const ExhibitManager: React.FC = () => {
 
     // Reopen with the agreement-template picker already set, or the save would re-slug the
     // exhibit into a migration-pair folder and detach it from its template.
-    const attachedTemplate = templateCombinations.find((c) => c.value === exhibitCombination);
+    const attachedTemplate = attachableAgreements.find((c) => c.value === exhibitCombination);
     setSelectedTemplateCombination(attachedTemplate ? attachedTemplate.value : '');
     
     // Check if combination exists in predefined list
@@ -1283,6 +1256,12 @@ const ExhibitManager: React.FC = () => {
     [templateCombinations],
   );
 
+  // Multi-Combination owns no exhibits, so it is filterable but never attachable.
+  const attachableAgreements = useMemo(
+    () => agreementsOwningExhibits(templateCombinations),
+    [templateCombinations],
+  );
+
   const manageOnlySlugs = useMemo(
     () => templateCombinations.filter((c) => c.migrationType === 'Manage').map((c) => c.value),
     [templateCombinations],
@@ -1702,7 +1681,7 @@ const ExhibitManager: React.FC = () => {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="">Not attached to an agreement template</option>
-                      {selectableAgreements.map((c) => (
+                      {attachableAgreements.map((c) => (
                         <option key={c.value} value={c.value}>{c.label}</option>
                       ))}
                     </select>
@@ -1986,7 +1965,7 @@ const ExhibitManager: React.FC = () => {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="">Not attached to an agreement template</option>
-                      {selectableAgreements.map((c) => (
+                      {attachableAgreements.map((c) => (
                         <option key={c.value} value={c.value}>{c.label}</option>
                       ))}
                     </select>

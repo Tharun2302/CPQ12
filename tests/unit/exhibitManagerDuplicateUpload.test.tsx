@@ -14,12 +14,12 @@ import ExhibitManager from '../../src/components/ExhibitManager';
 // upload modal to prove the override is only ever sent after the admin says yes.
 
 const COMBINATIONS = [
-  { value: 'multi-combination', label: 'Multi-Combination', migrationType: 'Multi combination' },
+  { value: 'data-sprawl', label: 'Data Sprawl', migrationType: 'Manage' },
 ];
 
 const EXISTING = [{
   _id: 'e1', name: 'Egnyte to SharePoint Online Standard Plan - Standard Include', description: '',
-  fileName: 'egnyte-sp.docx', fileSize: 2048, category: 'content', combinations: ['multi-combination'],
+  fileName: 'egnyte-sp.docx', fileSize: 2048, category: 'content', combinations: ['data-sprawl'],
   planType: 'standard', includeType: 'included', displayOrder: 1, keywords: [], isRequired: false,
   createdAt: '2026-09-24T00:00:00.000Z', updatedAt: '2026-09-24T00:00:00.000Z',
 }];
@@ -29,7 +29,7 @@ const DUPLICATE_BODY = {
   code: 'POSSIBLE_DUPLICATE_EXHIBIT',
   error: 'This looks like a duplicate of "Egnyte to SharePoint Online Standard Plan - Standard Include".',
   duplicates: [{
-    id: 'e1', name: EXISTING[0].name, fileName: 'egnyte-sp.docx', combinations: ['multi-combination'],
+    id: 'e1', name: EXISTING[0].name, fileName: 'egnyte-sp.docx', combinations: ['data-sprawl'],
     planType: 'standard', includeType: 'included', reasons: ['same_combination_plan_include'],
   }],
 };
@@ -72,7 +72,7 @@ async function uploadDuplicate() {
   const { container } = render(<ExhibitManager />);
   await waitFor(() => expect(screen.getByRole('button', { name: /Upload Exhibit/ })).toBeTruthy());
   await user.click(screen.getAllByRole('button', { name: /Upload Exhibit/ })[0]);
-  await user.selectOptions(await screen.findByLabelText<HTMLSelectElement>('Agreement template'), 'multi-combination');
+  await user.selectOptions(await screen.findByLabelText<HTMLSelectElement>('Agreement template'), 'data-sprawl');
   await user.upload(
     container.querySelector('input[type="file"]') as HTMLInputElement,
     new File(['x'], 'Egnyte to Microsoft std- Include.docx', {

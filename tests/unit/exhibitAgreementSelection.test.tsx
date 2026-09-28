@@ -85,11 +85,12 @@ afterEach(() => {
 });
 
 describe('Agreement template selection', () => {
-  it('offers every Template Manager agreement, defaulting to none', async () => {
+  // Multi-Combination owns no exhibits; attaching to it detached exhibits from their pair.
+  it('offers every agreement that owns exhibits, defaulting to none', async () => {
     const { dropdown } = await openUploadModal();
     expect(dropdown.value).toBe('');
     const values = Array.from(dropdown.options).map((o) => o.value);
-    expect(values).toEqual(['', 'mange+sprawl', 'multi-combination', 'data-sprawl']);
+    expect(values).toEqual(['', 'mange+sprawl', 'data-sprawl']);
   });
 
   it('stores the slug verbatim, so "+" survives into the payload', async () => {
@@ -136,6 +137,42 @@ describe('Agreement template selection', () => {
     expect(combos(posted!)).toEqual(['data-sprawl']);
     expect(posted!.get('planType')).toBe('standard');
     expect(posted!.get('includeType')).toBe('included');
+  });
+});
+
+// Regression: picking Multi-Combination here replaced the exhibit's pair slug, so Basic
+// exhibits were stored as ['multi-combination'] and a Basic SOW pulled in Standard ones.
+describe('Uploading a migration-pair exhibit', () => {
+  async function uploadToFolder(plan: string, includeType: string) {
+    const { user, dropdown, container } = await openUploadModal();
+    expect(dropdown.value).toBe('');
+    await user.click(screen.getByPlaceholderText('Search or select existing combination'));
+    await user.click(await screen.findByText('Box to OneDrive', { selector: 'li' }));
+    await user.upload(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      new File(['x'], 'box-onedrive-basic.docx', {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+    );
+    await user.selectOptions(selectOffering(container, 'basic', 'standard', 'advanced'), plan);
+    await user.selectOptions(selectOffering(container, 'included', 'notincluded'), includeType);
+    await user.click(screen.getAllByRole('button', { name: /^Upload Exhibit$/ }).pop()!);
+    await waitFor(() => expect(posted).not.toBeNull());
+    return posted!;
+  }
+
+  it('stores a Basic Include exhibit under its pair, not multi-combination', async () => {
+    const body = await uploadToFolder('basic', 'included');
+    expect(combos(body)).toEqual(['box-to-onedrive']);
+    expect(body.get('planType')).toBe('basic');
+    expect(body.get('includeType')).toBe('included');
+  });
+
+  it('stores a Basic Not Include exhibit under the same pair', async () => {
+    const body = await uploadToFolder('basic', 'notincluded');
+    expect(combos(body)).toEqual(['box-to-onedrive']);
+    expect(body.get('planType')).toBe('basic');
+    expect(body.get('includeType')).toBe('notincluded');
   });
 });
 

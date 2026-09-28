@@ -128,3 +128,83 @@ export function agreementsSupportingExhibits<T extends { value: string; migratio
       && String(c.value || '').toLowerCase() !== OVERAGE_COMBINATION,
   );
 }
+
+/**
+ * Agreements an exhibit can be ATTACHED to in the upload / edit pickers.
+ *
+ * Multi-Combination is dropped as well: it owns no exhibits and draws from the migration-pair
+ * catalogue. Attaching to it stores the literal 'multi-combination' slug, which detaches the
+ * exhibit from its real pair, so the SOW can no longer tell which plans that pair has and pulls
+ * the other plan's exhibits in alongside it.
+ */
+export function agreementsOwningExhibits<T extends { value: string; migrationType?: string }>(
+  combinations: T[],
+): T[] {
+  return agreementsSupportingExhibits(combinations).filter(
+    (c) => String(c.value || '').toLowerCase() !== DEFAULT_EXHIBIT_COMBINATION
+      && c.migrationType !== 'Multi combination',
+  );
+}
+
+// Normalize folder/combo text into a stable slug key for grouping
+export function normalizeFolderKey(input: string): string {
+  if (!input) return '';
+  let s = String(input).toLowerCase();
+  s = s
+    .replace(/&/g, 'and')
+    .replace(/\//g, '-') // treat "/" as separator
+    .replace(/[^a-z0-9]+/g, '-') // any non-alphanum -> "-"
+    .replace(/-+/g, '-') // collapse dashes
+    .replace(/^-+|-+$/g, ''); // trim
+
+  // Strip any trailing include/plan suffixes if user typed them into the folder name
+  s = s.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
+  s = s.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
+
+  // Collapse duplicated halves: "onedrive-sharepoint-onedrive-sharepoint" -> "onedrive-sharepoint"
+  const parts = s.split('-').filter(Boolean);
+  if (parts.length > 0 && parts.length % 2 === 0) {
+    const half = parts.length / 2;
+    const first = parts.slice(0, half).join('-');
+    const second = parts.slice(half).join('-');
+    if (first === second) s = first;
+  }
+
+  return s;
+}
+
+/** "Onedrive to Onedrive Basic Plan - Basic Include" -> "Onedrive to Onedrive". */
+export function exhibitNameBase(name: string): string {
+  return String(name || '')
+    .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*-\s*(Basic|Standard|Advanced|Premium|Enterprise)?\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
+    .replace(/\s+-\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
+    .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*$/i, '')
+    .trim();
+}
+
+/**
+ * The migration pair an exhibit belongs to, recovered from its name, for exhibits wrongly
+ * tagged with the Multi-Combination agreement slug. Returns '' when the name does not
+ * describe a "<source> to <destination>" pair, so a genuinely generic exhibit is left alone.
+ */
+export function pairCombinationFromName(name: string): string {
+  const slug = normalizeFolderKey(exhibitNameBase(name));
+  return /^[a-z0-9]+(-[a-z0-9]+)*-to-[a-z0-9]+(-[a-z0-9]+)*$/.test(slug) ? slug : '';
+}
+
+/**
+ * Exhibit with its combinations as the selection logic should see them.
+ *
+ * Attaching an exhibit to the Multi-Combination agreement used to REPLACE its pair slug with
+ * 'multi-combination'. Every per-pair rule (plan fallback, include/not-include pairing, folder
+ * grouping) then saw that pair as missing its Basic exhibits and pulled in the Standard ones.
+ * Swapping the tag for the name's pair restores the pair without touching stored data.
+ */
+export function withPairCombinations<T extends { name?: string; combinations?: string[] }>(exhibit: T): T {
+  const tags = exhibit?.combinations;
+  if (!Array.isArray(tags) || !tags.some((c) => lower(c) === DEFAULT_EXHIBIT_COMBINATION)) return exhibit;
+  const pair = pairCombinationFromName(exhibit.name || '');
+  if (!pair) return exhibit;
+  const combinations = Array.from(new Set(tags.map((c) => (lower(c) === DEFAULT_EXHIBIT_COMBINATION ? pair : c))));
+  return { ...exhibit, combinations };
+}
