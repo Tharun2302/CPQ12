@@ -10,6 +10,7 @@ const { exec } = require('child_process');
 const { MongoClient } = require('mongodb');
 const { pickEsignCarriedFields } = require('./esign-field-carry.cjs');
 const { zohoSignEnabled, zohoSignConfigured, getZohoSignConfig } = require('./zoho-sign-config.cjs');
+const { DOCUMENTS_LIST_PROJECTION } = require('./documents-list-projection.cjs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { spawn } = require('child_process');
@@ -2514,9 +2515,13 @@ app.get('/api/templates', async (req, res) => {
     // blobs to be read from the database and sent over the network.
     //
     // Restrict the fields we return to keep the payload small and fast.
+    // Legacy templates archived by scripts/archive-legacy-agreement-templates.cjs are excluded
+    // from normal listing (they overrode Combination Manager uploads for Multi Combination and
+    // Manage). The records and their files are kept, not deleted; pass ?includeArchived=true to see them.
+    const includeArchived = req.query.includeArchived === 'true';
     const templatesCursor = db.collection('templates')
       .find(
-        {},
+        includeArchived ? {} : { archived: { $ne: true } },
         {
           projection: {
             fileData: 0, // never send the big binary/base64 data in the list call
@@ -3364,6 +3369,15 @@ app.delete('/api/settings/exhibit-admins/:email', async (req, res) => {
 });
 
 // Upload new exhibit (POST)
+const { checkExhibitDuplicates, duplicateRulesForEdit, isDuplicateOverride } = require('./exhibit-duplicates.cjs');
+
+/** Every exhibit's identifying fields; the base64 file bodies are never needed to compare. */
+async function findExhibitDuplicateCandidates() {
+  return await db.collection('exhibits')
+    .find({}, { projection: { name: 1, fileName: 1, combinations: 1, planType: 1, includeType: 1 } })
+    .toArray();
+}
+
 app.post('/api/exhibits', upload.single('file'), async (req, res) => {
   try {
     if (!db) {
@@ -3532,6 +3546,14 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
         error: 'Exhibit with this filename already exists',
         existingId: existing._id
       });
+    }
+
+    if (!isDuplicateOverride(req.body.allowDuplicate)) {
+      const duplicateCheck = checkExhibitDuplicates({
+        candidate: exhibitDoc,
+        existing: await findExhibitDuplicateCandidates(),
+      });
+      if (duplicateCheck) return res.status(duplicateCheck.status).json(duplicateCheck.body);
     }
 
     // Check if file already exists in folder (to prevent overwriting manually added files)
@@ -3731,6 +3753,19 @@ app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
       } catch (e) {
         updateData.keywords = [req.body.keywords];
       }
+    }
+
+    // Must run before the file block below, which writes to and deletes from backend-exhibits/.
+    const proposed = req.file ? { ...updateData, fileName: req.file.originalname } : updateData;
+    const duplicateRules = duplicateRulesForEdit(existing, proposed);
+    if (duplicateRules.length > 0 && !isDuplicateOverride(req.body.allowDuplicate)) {
+      const duplicateCheck = checkExhibitDuplicates({
+        candidate: { ...existing, ...proposed },
+        existing: await findExhibitDuplicateCandidates(),
+        excludeId: id,
+        reasons: duplicateRules,
+      });
+      if (duplicateCheck) return res.status(duplicateCheck.status).json(duplicateCheck.body);
     }
 
     // Update file if new file provided
@@ -12360,7 +12395,7 @@ app.delete('/api/approval-workflows/:id', async (req, res) => {
 // Documents API
 // ========================================
 
-// Get all saved documents (without raw fileData)
+// Get all saved documents (heavy fields excluded, see documents-list-projection.cjs)
 app.get('/api/documents', async (req, res) => {
   try {
     if (!db) {
@@ -12372,7 +12407,7 @@ app.get('/api/documents', async (req, res) => {
 
     console.log('📄 Fetching PDF documents from database...');
     
-    // Pagination: by default return ALL matches (metadata only; binary fields excluded). Pass limit=<positive int> to cap (e.g. limit=100).
+    // Pagination: by default return ALL matches (heavy fields excluded). Pass limit=<positive int> to cap (e.g. limit=100).
     const skip = Math.max(0, parseInt(String(req.query.skip || 0), 10) || 0);
     const limitRaw = req.query.limit;
     const limitSingle = Array.isArray(limitRaw) ? limitRaw[0] : limitRaw;
@@ -12417,7 +12452,7 @@ app.get('/api/documents', async (req, res) => {
     const totalCount = await db.collection('documents').countDocuments(approvalMatch);
 
     const pipeline = [
-      { $project: { fileData: 0, docxFileData: 0 } },
+      { $project: DOCUMENTS_LIST_PROJECTION },
       ...(Object.keys(approvalMatch).length ? [{ $match: approvalMatch }] : []),
       { $sort: { createdAt: -1, generatedDate: -1 } },
       { $skip: skip },

@@ -1,5 +1,16 @@
 import PizZip from 'pizzip';
 
+// Non-Word tools prefix XML parts with a UTF-8 BOM, which Chromium's DOMParser rejects outright.
+export const parseOoxml = (xml: string, parser: DOMParser): Document | null => {
+  const doc = parser.parseFromString(xml.replace(/^\uFEFF/, ''), 'text/xml');
+  const err = doc.getElementsByTagName('parsererror')[0];
+  if (err) {
+    console.warn(`   ⚠️  XML parse failed: ${(err.textContent || '').trim().slice(0, 200)}`);
+    return null;
+  }
+  return doc;
+};
+
 /**
  * Creates a title paragraph for exhibit groups
  */
@@ -218,9 +229,14 @@ export async function mergeDocxFiles(
 
         // Parse both style documents
         const parser = new DOMParser();
-        const mainStylesDoc = parser.parseFromString(mainStylesXml, 'text/xml');
-        const exhibitStylesDoc = parser.parseFromString(exhibitStylesXml, 'text/xml');
-        
+        const mainStylesDoc = parseOoxml(mainStylesXml, parser);
+        const exhibitStylesDoc = parseOoxml(exhibitStylesXml, parser);
+
+        if (!mainStylesDoc || !exhibitStylesDoc) {
+          console.log('   ⚠️  Could not parse styles XML, skipping style merge');
+          return;
+        }
+
         const mainStylesRoot = mainStylesDoc.getElementsByTagName('w:styles')[0];
         const exhibitStylesRoot = exhibitStylesDoc.getElementsByTagName('w:styles')[0];
         
@@ -264,7 +280,10 @@ export async function mergeDocxFiles(
 
     // Parse main document XML
     const parser = new DOMParser();
-    const mainDoc = parser.parseFromString(mainXml, 'text/xml');
+    const mainDoc = parseOoxml(mainXml, parser);
+    if (!mainDoc) {
+      throw new Error('Could not parse main document XML');
+    }
     const mainBody = mainDoc.getElementsByTagName('w:body')[0];
     const mainRoot = mainDoc.documentElement; // <w:document ...xmlns:* />
 
@@ -418,7 +437,10 @@ export async function mergeDocxFiles(
         return fail('Not a Word .docx file (no word/document.xml inside)');
       }
 
-      const exhibitDoc = parser.parseFromString(exhibitXml, 'text/xml');
+      const exhibitDoc = parseOoxml(exhibitXml, parser);
+      if (!exhibitDoc) {
+        return fail('The document XML could not be parsed');
+      }
       const exhibitBody = exhibitDoc.getElementsByTagName('w:body')[0];
       // IMPORTANT: Bring over any missing xmlns declarations so imported nodes serialize correctly.
       ensureNamespacesFromExhibit(exhibitDoc);

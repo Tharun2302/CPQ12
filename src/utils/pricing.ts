@@ -166,13 +166,20 @@ export function lookupContentSprawlRate(gb: number): number {
   return CONTENT_SPRAWL[CONTENT_SPRAWL.length - 1].rate;
 }
 
-// Full-precision sprawl cost (round for display only). Email uses the Message table.
+// Sprawl cost. Email uses the Message table.
 // Guards negative/non-finite inputs to 0 so quotes can never go negative.
+//
+// CONTENT IS BILLED IN WHOLE DOLLARS. The 2026 sheet's Content data cost is formatted
+// $#,##0 and that rounded figure is the price the customer is quoted, not merely how it
+// prints: 1–3 GB → $0, 4–9 → $1, 10–15 → $2, 16–21 → $3, 22–28 → $4, and on by the same
+// rule. Rounding here rather than at each display site is what keeps the Data Sprawl row,
+// the card total and the agreement's Total Price reconciling with one another.
+// Message/Email keep full precision — their rates are per-user and already dollar-scale.
 export function calcSprawlCost(type: 'Content' | 'Message' | 'Email', users: number, gb: number): number {
   const u = Number.isFinite(users) && users > 0 ? users : 0;
   const g = Number.isFinite(gb) && gb > 0 ? gb : 0;
   return type === 'Content'
-    ? lookupContentSprawlRate(g) * g
+    ? Math.round(lookupContentSprawlRate(g) * g)
     : lookupMessageSprawlRate(u) * u;
 }
 
@@ -288,6 +295,15 @@ export function sumSprawlLines(lines: SprawlLine[]): number {
   return lines.reduce((sum, line) => sum + line.cost, 0);
 }
 
+
+// A hand-typed agreement name decides whether the per-user licence is billed, so a slip in
+// spelling silently reprices the deal. "mange+sprawl" — a real agreement in this system —
+// read as standalone and dropped the licence line, because it is missing the 'a' in "manage".
+// Accepting the near-miss is safer than repricing a customer over a typo; the reverse error
+// (billing a licence that was not meant to be sold) needs a name with no "manage" in it at
+// all, which no misspelling of "manage" produces.
+const MANAGE_PREFIX = /man+a?ge/;
+
 // Which Manage pricing card the chosen agreement corresponds to. The Manage dropdown is
 // the plan selector: "Data Sprawl" sells sprawl only, "MANAGE + Sprawl" sells the licence
 // plus sprawl. The label is preferred because the dropdown's value is admin-defined.
@@ -299,7 +315,7 @@ export function manageAgreementCard(
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
   if (!slug.includes('sprawl')) return 'both';
-  return slug.includes('manage') ? 'combined' : 'standalone';
+  return MANAGE_PREFIX.test(slug) ? 'combined' : 'standalone';
 }
 
 // A selectedTier restored from sessionStorage or MongoDB predates sprawlLines, so
@@ -357,6 +373,7 @@ export function manageUserLineCost(
   config: ConfigurationData,
   calc?: Pick<PricingCalculation, 'sprawlType' | 'userCost'> | null
 ): number {
+  if (isManageSaasConfig(config)) return calculateManageSaasPricing(config.manageUsers).totalCost;
   const hasSprawl = normalizeSprawlTypes(config).length > 0;
   // Standalone Data Sprawl zeroes the license; recomputing it here would re-add it.
   if (hasSprawl && normalizeSprawlType(calc?.sprawlType) && (calc?.userCost || 0) === 0) return 0;
@@ -410,6 +427,38 @@ export function manageUserCost(users: number): number | 'CUSTOM' {
   return 'CUSTOM';
 }
 
+// Manage SaaS Application Management (no template chosen): flat per-user rate, billed
+// annually. The rate never changes with volume; only the user count does.
+export const MANAGE_SAAS_PRICE_PER_USER_MONTHLY = 5;
+export const MANAGE_SAAS_BILLING_MONTHS = 12;
+
+export interface ManageSaasPricing {
+  users: number;
+  pricePerUserMonthly: number;
+  months: number;
+  totalCost: number;
+}
+
+// Manage chosen with no template in the dropdown.
+export function isManageSaasConfig(config: ConfigurationData | undefined | null): boolean {
+  return config?.servicePlan === 'Manage' && !config?.migrationType;
+}
+
+export function calculateManageSaasPricing(users: unknown): ManageSaasPricing {
+  const raw = Math.floor(Number(users));
+  const safeUsers = Number.isFinite(raw) && raw > 0 ? raw : 0;
+  // Round to cents to avoid floating-point drift in the printed total.
+  const totalCost = Math.round(
+    safeUsers * MANAGE_SAAS_PRICE_PER_USER_MONTHLY * MANAGE_SAAS_BILLING_MONTHS * 100
+  ) / 100;
+  return {
+    users: safeUsers,
+    pricePerUserMonthly: MANAGE_SAAS_PRICE_PER_USER_MONTHLY,
+    months: MANAGE_SAAS_BILLING_MONTHS,
+    totalCost
+  };
+}
+
 // Manage Standalone — fixed per-GB rate.
 // Excel's K13 formula reads B56 (Migrate data input, typically in the 501–2,500
 // GB range), which always lands on the AB20 tier of $0.13/GB. To produce the
@@ -421,6 +470,21 @@ export function getManageDataRatePerGB(_dataGB: number): number {
 }
 
 function calculateManagePricing(config: ConfigurationData, tier: PricingTier): PricingCalculation {
+  // Flat per-user rate, so no license slab, sprawl lines or region multiplier apply.
+  if (isManageSaasConfig(config)) {
+    const saas = calculateManageSaasPricing(config.manageUsers);
+    const saasResult: PricingCalculation = {
+      userCost: saas.totalCost,
+      dataCost: 0,
+      migrationCost: 0,
+      instanceCost: 0,
+      totalCost: saas.totalCost,
+      tier
+    };
+    assertPricingInvariant(saasResult.userCost, saasResult.dataCost, saasResult.migrationCost, saasResult.instanceCost, saasResult.totalCost);
+    return saasResult;
+  }
+
   // Guard inputs: coerce to non-negative finite numbers (TS types erase at runtime,
   // and quotes can be reloaded from stored data — defend the money math directly).
   const rawGB = Number(config.manageDataGB ?? 0);
@@ -1456,6 +1520,18 @@ export function formatCurrency(amount: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount);
+}
+
+// Per-unit rates need four decimals, not two: the Content sprawl tiers run down to 0.04167,
+// and at 2dp both 0.05333 and 0.04667 render "$0.05", so two different tiers look identical
+// and the printed "rate × quantity" stops reconciling with the printed cost.
+export function formatUnitRate(rate: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(Number.isFinite(rate) ? rate : 0);
 }
 
 // Export the instance type cost function for use in templates

@@ -234,13 +234,18 @@ function calcSprawlLines(types, users, gb, usersByType) {
   });
 }
 
-// Email uses the Message table. Full precision (round for display only).
+// Email uses the Message table.
 // Guards negative/non-finite inputs to 0 so quotes can never go negative.
+//
+// CONTENT IS BILLED IN WHOLE DOLLARS — mirrors src/utils/pricing.ts. The 2026 sheet's
+// Content data cost is formatted $#,##0 and that rounded figure is the quoted price:
+// 1–3 GB → $0, 4–9 → $1, 10–15 → $2, 16–21 → $3, 22–28 → $4, and on by the same rule.
+// Message/Email keep full precision.
 function calcSprawlCost(sprawlType, users, gb) {
   const u = Number.isFinite(users) && users > 0 ? users : 0;
   const g = Number.isFinite(gb) && gb > 0 ? gb : 0;
   return sprawlType === 'Content'
-    ? lookupContentSprawlRate(g) * g
+    ? Math.round(lookupContentSprawlRate(g) * g)
     : lookupMessageSprawlRate(u) * u;
 }
 

@@ -1,7 +1,7 @@
 const { MongoClient } = require('mongodb');
 
 async function fixTemplateMetadata() {
-  const client = new MongoClient('mongodb+srv://tharunp:TharunP123@cluster0.8qjqj.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0');
+  const client = new MongoClient(require('./scripts/lib/requireMongoUri.cjs')());
   
   try {
     await client.connect();

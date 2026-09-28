@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Check, ChevronRight, Search, ArrowRight, RefreshCw, X } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { scopeExhibitsForCombination, DEFAULT_EXHIBIT_COMBINATION, withPairCombinations } from '../utils/exhibitCombination';
 
 interface Exhibit {
   _id: string;
@@ -20,15 +21,39 @@ interface ExhibitSelectorProps {
   selectedExhibits: string[];
   onExhibitsChange: (exhibitIds: string[]) => void;
   selectedTier?: { tier: { name: string } } | null;
+  /**
+   * Show only exhibits authored for `combination`, instead of the whole catalogue.
+   *
+   * Migration flows want every exhibit: Multi combination legitimately draws from any pair.
+   * An agreement template (data-sprawl, overage-agreement) has its own exhibits and must not
+   * offer 176 migration-pair documents that have nothing to do with it.
+   */
+  restrictToCombination?: boolean;
 }
 
 const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   combination,
   selectedExhibits,
   onExhibitsChange,
-  selectedTier
+  selectedTier,
+  restrictToCombination = false
 }) => {
-  const [exhibits, setExhibits] = useState<Exhibit[]>([]);
+  const [allExhibits, setAllExhibits] = useState<Exhibit[]>([]);
+  // Slugs of Manage-only agreements (data-sprawl, mange+sprawl). Their exhibits are hidden
+  // from migration flows; see scopeExhibitsForCombination.
+  const [manageOnlySlugs, setManageOnlySlugs] = useState<string[]>([]);
+
+  // Scoped at the source so every downstream rule — tier fallback, auto-select, required
+  // exhibits, the stale-selection cleanup — sees the same set and cannot reintroduce an
+  // out-of-scope exhibit behind the list's back.
+  const exhibits = useMemo(
+    () => scopeExhibitsForCombination(allExhibits, {
+      combination,
+      restrict: restrictToCombination,
+      excludeSlugs: manageOnlySlugs,
+    }),
+    [allExhibits, restrictToCombination, combination, manageOnlySlugs],
+  );
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -51,6 +76,27 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   useEffect(() => {
     loadExhibits();
   }, []); // Load all exhibits once on mount, regardless of combination
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/combinations`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled || !data?.success || !Array.isArray(data.combinations)) return;
+        setManageOnlySlugs(
+          data.combinations
+            .filter((c: any) => c?.value && c?.migrationType === 'Manage')
+            .map((c: any) => String(c.value)),
+        );
+      } catch {
+        // Worst case the migration catalogue shows a Manage exhibit; the Manage side, which
+        // is the one that must not leak, is scoped from `combination` alone and unaffected.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Validate restored selectedExhibits against loaded exhibits
   // This ensures restored selections are preserved even if they're restored after exhibits load
@@ -117,16 +163,26 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         console.log(`✅ Loaded ${data.exhibits?.length || 0} total exhibits from backend`);
         
         if (data.success) {
+          const fetched: Exhibit[] = (data.exhibits || []).map(withPairCombinations);
           // Always set exhibits (even if empty array)
-          setExhibits(data.exhibits || []);
-          
+          setAllExhibits(fetched);
+
+          // The auto-select below has to honour the same scope as the list. Left unscoped, a
+          // required migration-pair exhibit would attach itself to a data-sprawl quote, and a
+          // selection carried over from a previous configuration would survive as valid.
+          const inScope: Exhibit[] = scopeExhibitsForCombination(fetched, {
+            combination,
+            restrict: restrictToCombination,
+            excludeSlugs: manageOnlySlugs,
+          });
+
           // Auto-select required exhibits and clean up previously selected exhibits that are no longer required
-          if (data.exhibits && data.exhibits.length > 0) {
-            const requiredIds: string[] = data.exhibits
+          if (inScope.length > 0) {
+            const requiredIds: string[] = inScope
               .filter((ex: Exhibit) => ex.isRequired)
               .map((ex: Exhibit) => ex._id);
             
-            const allExhibitIds = data.exhibits.map((ex: Exhibit) => ex._id);
+            const allExhibitIds = inScope.map((ex: Exhibit) => ex._id);
             
             // Remove any selected exhibits that no longer exist
             const validSelections = selectedExhibits.filter(id => allExhibitIds.includes(id));
@@ -221,11 +277,11 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   // combination + include-type (Included/Not Included) pair. A combination only falls
   // back to the sibling tier (Basic <-> Standard) for the specific include-type variant
   // that's missing - it never overrides a variant the selected tier already has.
-  const resolveTierExhibitIds = (allExhibits: Exhibit[], tierName: string): Set<string> => {
+  const resolveTierExhibitIds = (candidates: Exhibit[], tierName: string): Set<string> => {
     const fallbackTier = FALLBACK_TIER[tierName];
     const byGroup = new Map<string, Exhibit[]>();
 
-    allExhibits.forEach(ex => {
+    candidates.forEach(ex => {
       const tier = getExhibitTier(ex);
       if (tier !== tierName && (!fallbackTier || tier !== fallbackTier)) return;
       const comboKey = (ex.combinations && ex.combinations.length > 0) ? ex.combinations[0] : 'all';
@@ -358,6 +414,8 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   // Auto-select exhibits that belong to the currently selected combination
   useEffect(() => {
     if (!combination || combination === 'all' || exhibits.length === 0) return;
+    // Multi combination is hand-picked; auto-selecting would tick exhibits mis-tagged "multi-combination".
+    if (combination === DEFAULT_EXHIBIT_COMBINATION) return;
 
     const matchingIds = exhibits
       .filter(ex => ex.combinations?.some(c => c.toLowerCase() === combination.toLowerCase()))
@@ -637,6 +695,14 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     
     // Group exhibits by base combination extracted from combinations field
     const groups: Map<string, Exhibit[]> = new Map();
+    // Folder labels come from either the combination key ("Onedrive To Onedrive") or the exhibit
+    // name ("Onedrive to Onedrive"); match them case-insensitively so one pair is one folder.
+    const folderLabelByKey = new Map<string, string>();
+    const canonicalFolder = (label: string): string => {
+      const key = label.toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!folderLabelByKey.has(key)) folderLabelByKey.set(key, label);
+      return folderLabelByKey.get(key)!;
+    };
     const ungrouped: Exhibit[] = [];
     // Track which exhibits have been added to a group to prevent duplicates
     const addedExhibitIds = new Set<string>();
@@ -750,6 +816,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           return;
         }
 
+        folderName = canonicalFolder(folderName);
         if (!groups.has(folderName)) {
           groups.set(folderName, []);
         }
@@ -769,7 +836,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           // (e.g. "Onedrive / Sharepoint Onedrive / Sharepoint"), so the dash is optional.
           const onedriveSharePointPattern = /^onedrive\s*\/\s*sharepoint\s*-?\s*onedrive\s*\/\s*sharepoint/i;
           if (onedriveSharePointPattern.test(exhibitName)) {
-            const folderName = 'OneDrive / SharePoint - OneDrive / SharePoint';
+            const folderName = canonicalFolder('OneDrive / SharePoint - OneDrive / SharePoint');
             if (!groups.has(folderName)) {
               groups.set(folderName, []);
             }
@@ -810,6 +877,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
             return;
           }
           
+          folderName = canonicalFolder(folderName);
           if (!groups.has(folderName)) {
             groups.set(folderName, []);
           }
@@ -992,6 +1060,15 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 
   const hasAnyExhibits = filteredExhibits.length > 0;
 
+  // Totals come from the unsearched list so they stay stable while the user types.
+  const exhibitTotals = useMemo(() => {
+    const { visibleResult } = buildExhibitGroups(filteredExhibits);
+    return {
+      combinations: visibleResult.length,
+      exhibits: visibleResult.reduce((sum, group) => sum + group.exhibits.length, 0),
+    };
+  }, [filteredExhibits]);
+
   // Names of migration types that have at least one exhibit selected (for display below search).
   // Built from the SAME grouping function as the rendered list (run over ALL exhibits, not just
   // search-filtered ones, so the chips stay visible during search). Mapping each selected exhibit
@@ -1002,8 +1079,19 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 
     // Group the full exhibit set exactly as the list does, then build an id -> folder-name map.
     const { visibleResult } = buildExhibitGroups(exhibits);
+
+    // Outside Multi combination there's exactly one active pair, so a chip for any other pair is stale.
+    const isSinglePairScope = restrictToCombination || combination !== DEFAULT_EXHIBIT_COMBINATION;
+    const activeCombination = (combination || '').toLowerCase();
+
     const idToFolderName = new Map<string, string>();
     visibleResult.forEach((group) => {
+      if (isSinglePairScope) {
+        const belongsToActiveCombination = (group.exhibits || []).some((ex) =>
+          (ex.combinations || []).some((c) => (c || '').toLowerCase() === activeCombination)
+        );
+        if (!belongsToActiveCombination) return;
+      }
       (group.exhibits || []).forEach((ex) => {
         if (ex?._id) idToFolderName.set(ex._id.toString(), group.name);
       });
@@ -1021,7 +1109,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     });
 
     return names;
-  }, [selectedExhibits, exhibits]);
+  }, [selectedExhibits, exhibits, combination, restrictToCombination]);
 
   const handleRemoveMigrationType = (migrationName: string) => {
     const item = Array.isArray(processedExhibits)
@@ -1123,8 +1211,16 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           </div>
         ) : (
           <div className="bg-blue-50/30 rounded-lg border border-blue-200 p-4">
-            <div className="mb-3">
+            <div className="mb-3 flex items-center justify-between gap-2">
               <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Exhibits</h4>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="px-2 py-1 bg-white border border-blue-200 rounded-md text-gray-700">
+                  Total combinations: <span className="font-bold text-blue-700">{exhibitTotals.combinations}</span>
+                </span>
+                <span className="px-2 py-1 bg-white border border-blue-200 rounded-md text-gray-700">
+                  Total exhibits: <span className="font-bold text-blue-700">{exhibitTotals.exhibits}</span>
+                </span>
+              </div>
             </div>
             <div
               ref={listScrollRef}

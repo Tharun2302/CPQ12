@@ -4,7 +4,8 @@ import { approvalWorkflowServiceMongoDB } from '../services/approvalWorkflowServ
 
 export const useApprovalWorkflows = () => {
   const [workflows, setWorkflows] = useState<ApprovalWorkflow[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  // The mount effect always loads, so the very first frame is already loading
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Load workflows from MongoDB on mount

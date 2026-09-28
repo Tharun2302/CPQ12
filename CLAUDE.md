@@ -441,6 +441,9 @@ All agents follow these standards automatically!
 - Choosing **production** = merging the working branch into `main`. Once a CI/CD pipeline is configured on `main`, any push to `main` auto-triggers the production deploy, so merge-to-main and production-deploy are ONE action — never merge to `main` without an explicit production approval at the target gate. (NOTE: `main` has no CI/CD pipeline yet; adding one is a separate, team-approved change. The PR-only quality-gate workflow in `.github/workflows/ci.yml` — tests + build on pull requests, no push trigger, no deploy jobs — is NOT that pipeline and does not change this rule)
 - State which flow was used when reporting the completed work
 
+### Catalog/Data Changes
+When a task involves catalog/data consistency — combinations, exhibits, templates, `planType`, `includeType`, pricing tiers, DOCX templates, DOCX placeholders, or the relationships between them — use the `catalog-steward` agent (`.claude/agents/catalog-steward.md`) to inspect the relevant data before making or recommending catalog changes. The Catalog Steward is read-only and must not modify database/catalog data; any fix it recommends still goes through the normal flow and gates above.
+
 ---
 
 ## 📞 Communication
@@ -494,6 +497,7 @@ All agents follow these standards automatically!
 |------|--------|--------|
 | 2026-07-06 | Initial CLAUDE.md creation | CloudFuze |
 | 2026-07-07 | Added Workflow Selection rule (GStack vs Direct) | CloudFuze |
+| 2026-09-25 | Added Catalog/Data Changes routing to the read-only `catalog-steward` agent | CloudFuze |
 
 ---
 

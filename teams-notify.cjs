@@ -14,15 +14,27 @@
 const https = require('https');
 const http = require('http');
 
+// A literal, not an env value: keeping this file free of configuration is the point — every
+// caller gets the same ceiling and there is no env to validate or get wrong.
+// 10s, not longer, because commit-explain.cjs calls this from a git hook under a 20s watchdog
+// that process.exit(0)s so `git commit` is never blocked; the post is its last step, so anything
+// above 10s eats the budget its AI layer and git subprocesses need. The CPQ Server Alerts flow
+// is a plain trigger -> post with no Response action, so it returns 202 well inside this.
+const POST_TIMEOUT_MS = 10000;
+
 /**
  * POSTs a JSON payload to a Microsoft Teams incoming webhook (via Power Automate).
  * Never throws and never rejects — every caller gets a boolean back, so a broken webhook or a
  * network failure degrades to "notification not sent" rather than crashing the caller.
  * @param {string} webhookUrl the target webhook URL; a falsy value is a no-op that resolves false
  * @param {object} payload the JSON body to send
+ * @param {{timeoutMs?: number}} [options] test seam only; production callers pass nothing
  * @returns {Promise<boolean>} true only on a 2xx response
  */
-function postToTeams(webhookUrl, payload) {
+function postToTeams(webhookUrl, payload, options) {
+  const timeoutMs = options && Number.isInteger(options.timeoutMs) && options.timeoutMs > 0
+    ? options.timeoutMs
+    : POST_TIMEOUT_MS;
   if (!webhookUrl) {
     console.log('[teams] No TEAMS_WEBHOOK_URL set — skipping notification.');
     return Promise.resolve(false);
@@ -47,12 +59,41 @@ function postToTeams(webhookUrl, payload) {
     headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
   };
   return new Promise((resolve) => {
-    const req = lib.request(opts, (res) => {
-      let data = '';
-      res.on('data', (d) => { data += d; });
-      res.on('end', () => resolve(res.statusCode >= 200 && res.statusCode < 300));
-    });
-    req.on('error', (e) => { console.error('[teams] error', e.message); resolve(false); });
+    let settled = false;
+    let guard = null;
+    let req = null;
+    // Sets the flag before destroying, so the error that destroy() raises re-enters and returns.
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      if (guard) clearTimeout(guard);
+      if (req) req.destroy();
+      resolve(ok);
+    };
+    // Wrapped like monitor-daily-checks.cjs does: a synchronous throw here would escape as a
+    // rejection and break the never-rejects contract above.
+    try {
+      req = lib.request(opts, (res) => {
+        // The body is never read, so draining beats buffering it into a string with no cap.
+        res.resume();
+        res.on('end', () => finish(res.statusCode >= 200 && res.statusCode < 300));
+        res.on('error', (e) => { console.error('[teams] error', e.message); finish(false); });
+      });
+    } catch (e) {
+      console.error('[teams] error', e.message);
+      finish(false);
+      return;
+    }
+    req.on('error', (e) => { console.error('[teams] error', e.message); finish(false); });
+    // Deliberately the ONLY timer. req.setTimeout measures socket inactivity and its clock starts
+    // at socket assignment, never before this guard's, so at a shared ceiling it can only fire
+    // second — it was dead code. This one bounds the whole attempt: DNS, connect, TLS and a
+    // webhook that answers one byte at a time, which no inactivity timer would ever end.
+    guard = setTimeout(() => {
+      console.error('[teams] error timeout');
+      finish(false);
+    }, timeoutMs);
+    if (typeof guard.unref === 'function') guard.unref();
     req.write(body);
     req.end();
   });

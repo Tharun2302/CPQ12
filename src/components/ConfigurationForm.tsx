@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import {
+  exhibitCombinationKey,
+  restrictExhibitsToCombination,
+  showExhibitSelector,
+} from '../utils/exhibitCombination';
+import { numberInputValue } from '../utils/numberInput';
 import { ConfigurationData, PricingTier } from '../types/pricing';
 import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X, Mail, ChevronDown, Plus, Layers } from 'lucide-react';
 import { trackConfiguration } from '../analytics/clarity';
 import ExhibitSelector from './ExhibitSelector';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
-import { PRICING_TIERS, calculateCombinationPricing, formatCurrency, normalizeSprawlTypes, withSprawlTypes, SPRAWL_TYPE_ORDER, sprawlRowLabel } from '../utils/pricing';
+import { PRICING_TIERS, calculateCombinationPricing, formatCurrency, calculateManageSaasPricing, normalizeSprawlTypes, withSprawlTypes, SPRAWL_TYPE_ORDER, sprawlRowLabel } from '../utils/pricing';
 import { getContentTimelineByServerType, formatServerTypeLabel, type SourceEnvironment, type ContentMigrationType } from '../utils/timelineProjection';
 import { BACKEND_URL } from '../config/api';
 import { SUPPRESS_PII } from '../analytics/privacy';
@@ -1340,7 +1346,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           type="number"
           min="0"
           step="1"
-          value={config.manageUsersByType?.[type] ?? config.manageUsers ?? ''}
+          value={numberInputValue(config.manageUsersByType?.[type], config.manageUsers)}
           onChange={(e) => {
             const v = e.target.value;
             setUsersForType(type, v === '' ? 0 : (parseInt(v) || 0));
@@ -1351,6 +1357,21 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         />
       </div>
     );
+
+    // Users are collected up front; type-specific fields depend on the template chosen.
+    if (!config.migrationType) {
+      return (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {usersField()}
+          </div>
+          <div className="mt-8">
+            {renderDiscountField()}
+          </div>
+          {renderManageSaasPricing()}
+        </>
+      );
+    }
 
     return (
       <>
@@ -1420,6 +1441,46 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           {renderDiscountField()}
         </div>
       </>
+    );
+  };
+
+  const renderManageSaasPricing = () => {
+    const pricing = calculateManageSaasPricing(config.manageUsers);
+    const discountPct = Math.min(Math.max(parseFloat(discountValue) || 0, 0), 100);
+    const discountedTotal = Math.round(pricing.totalCost * (1 - discountPct / 100) * 100) / 100;
+    return (
+      <div data-testid="manage-saas-pricing" className="mt-8 rounded-xl border-2 border-blue-100 bg-white/80 p-6">
+        <h4 className="text-lg font-bold text-gray-900 mb-4">Pricing</h4>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-100 text-gray-800">
+                <th className="px-4 py-3 text-left font-semibold">Job Requirement</th>
+                <th className="px-4 py-3 text-center font-semibold">Description</th>
+                <th className="px-4 py-3 text-center font-semibold">Price Per User (Billed Annually)</th>
+                <th className="px-4 py-3 text-right font-semibold">Price (USD)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t border-gray-200">
+                <td className="px-4 py-3 font-semibold text-gray-900">CloudFuze Manage SaaS Application Management</td>
+                <td className="px-4 py-3 text-center text-gray-700">{pricing.users} Users</td>
+                <td className="px-4 py-3 text-center font-semibold text-gray-900">{formatCurrency(pricing.pricePerUserMonthly)}/Month/user</td>
+                <td className="px-4 py-3 text-right font-bold text-gray-900">{formatCurrency(pricing.totalCost)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 text-xs text-gray-500">
+          {pricing.users} users × {formatCurrency(pricing.pricePerUserMonthly)} × {pricing.months} months
+        </p>
+        {discountPct > 0 && (
+          <div className="mt-4 flex justify-between items-center text-sm bg-blue-100 rounded p-3">
+            <span className="font-bold text-gray-900">Total after {discountPct}% discount:</span>
+            <span className="font-bold text-gray-900">{formatCurrency(discountedTotal)}</span>
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -2273,7 +2334,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       }}
                       className="w-full px-6 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white hover:border-slate-300 text-base font-medium"
                     >
-                      <option value="">Select Manage Template</option>
+                      <option value="">Manage</option>
                       {options.map(o => (
                         <option key={o.value} value={o.value}>{o.label}</option>
                       ))}
@@ -2768,11 +2829,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
-          {/* Exhibits selection - Show for Migrate service plan (all combination types) and optionally for Manage/Bundle */}
-          {config.servicePlan === 'Migrate' && config.combination && (
+          {/* Exhibits selection - Migrate uses config.combination; Manage identifies its agreement
+              by migrationType, because config.combination is pinned to 'manage-standalone' there.
+              Overage Agreement opts out entirely: see showExhibitSelector. */}
+          {showExhibitSelector(config) && (
             <div data-section="exhibits-selection">
               <ExhibitSelector
-                combination={config.combination || 'multi-combination'}
+                combination={exhibitCombinationKey(config)}
+                restrictToCombination={restrictExhibitsToCombination(config)}
                 selectedExhibits={selectedExhibits}
                 onExhibitsChange={onExhibitsChange}
                 // Multi-combination can include multiple migrations with different tiers.
@@ -3993,10 +4057,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           )}
 
           {/* MANAGE PLAN: its own full-width section, same shell as Project Configuration below */}
-          {migrationOrTimeline === 'migration' && config.servicePlan === 'Manage' && !!config.migrationType && (
+          {migrationOrTimeline === 'migration' && config.servicePlan === 'Manage' && (
             <div data-section="project-configuration" className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 rounded-2xl shadow-2xl border border-blue-100/50 p-8 backdrop-blur-sm mb-8">
               <div className="text-center mb-8">
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">Manage plan inputs</h3>
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Project Configuration</h3>
                 <p className="text-gray-600">Configure your Manage plan requirements</p>
               </div>
               {renderManagePlanInputs()}

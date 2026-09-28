@@ -6,6 +6,7 @@ import {
   calculateCombinationPricing,
   getRecommendedTier,
   formatCurrency,
+  formatUnitRate,
   getInstanceTypeCost,
   manageUserCost,
   getManageDataRatePerGB,
@@ -665,8 +666,8 @@ describe('Data Sprawl — rate tables', () => {
   });
 
   it('Content sprawl bills by GB and ignores users; Message ignores GB', () => {
-    // Content: 222 GB → 0.16 band → 0.16 × 222 = 35.52 (users ignored)
-    expect(calcSprawlCost('Content', 3001, 222)).toBeCloseTo(35.52, 6);
+    // Content: 222 GB → 0.16 band → 0.16 × 222 = 35.52, billed whole → $36 (users ignored)
+    expect(calcSprawlCost('Content', 3001, 222)).toBe(36);
     // Message: 3001 users → 1.60 band → 1.60 × 3001 = 4801.60 (GB ignored)
     expect(calcSprawlCost('Message', 3001, 222)).toBeCloseTo(4801.6, 6);
   });
@@ -716,11 +717,11 @@ describe('calculateManagePricing — Data Sprawl mode', () => {
       sprawlConfig({ manageSprawlType: 'Content', manageUsers: 3001, manageDataGB: 222 }),
       MANAGE
     );
-    // license unchanged (3001 users); sprawl = 0.16 × 222 = 35.52
+    // license unchanged (3001 users); sprawl = 0.16 × 222 = 35.52, billed whole → $36
     expect(calc.userCost).toBe(60020);
-    expect(calc.dataCost).toBeCloseTo(35.52, 6);
-    expect(calc.totalCost).toBeCloseTo(60055.52, 6);
-    expect(calc.sprawlStandalone?.totalCost).toBeCloseTo(35.52, 6);
+    expect(calc.dataCost).toBe(36);
+    expect(calc.totalCost).toBe(60056);
+    expect(calc.sprawlStandalone?.totalCost).toBe(36);
   });
 
   it('is FLAT — region multiplier does NOT apply to Manage/Sprawl', () => {
@@ -800,9 +801,9 @@ describe('pricing-logic.js — Data Sprawl backend mirror', () => {
 
   it('calcManage Content matches the frontend (3001 users / 222 GB)', () => {
     const mg = pricingLogic.calcManage({ users: 3001, e100GB: 222, sprawlType: 'Content' });
-    // license 60,020 + sprawl (0.16 × 222 = 35.52) = 60,055.52
-    expect(mg.total).toBeCloseTo(60055.52, 6);
-    expect(mg.sprawl.standalone.totalCost).toBeCloseTo(35.52, 6);
+    // license 60,020 + sprawl (0.16 × 222 = 35.52, billed whole → $36) = 60,056
+    expect(mg.total).toBe(60056);
+    expect(mg.sprawl.standalone.totalCost).toBe(36);
   });
 
   it('calcManage keeps the standalone when the license band is exceeded (>5000)', () => {
@@ -813,7 +814,7 @@ describe('pricing-logic.js — Data Sprawl backend mirror', () => {
 
   it('calcSprawlCost mirrors the frontend tables', () => {
     expect(pricingLogic.calcSprawlCost('Message', 70, 0)).toBeCloseTo(252, 6);
-    expect(pricingLogic.calcSprawlCost('Content', 0, 222)).toBeCloseTo(35.52, 6);
+    expect(pricingLogic.calcSprawlCost('Content', 0, 222)).toBe(36);
     expect(pricingLogic.calcSprawlCost('Email', 3001, 0)).toBe(pricingLogic.calcSprawlCost('Message', 3001, 0));
   });
 
@@ -1305,7 +1306,8 @@ describe('Data Sprawl (Standalone) — reference agreement rows', () => {
   // Agreed spec: the standalone plan prints one row (sprawl cost only, no license line),
   // so the row price and the Total Price are the same figure.
   const REFERENCE = [
-    { label: 'Data Sprawl', type: 'Content' as const, users: 32, gb: 345, price: 55.2 },
+    // Content bills whole: 345 GB x 0.16 = 55.20 -> $55. Message/Email keep their cents.
+    { label: 'Data Sprawl', type: 'Content' as const, users: 32, gb: 345, price: 55 },
     { label: 'Email Sprawl', type: 'Email' as const, users: 897, gb: 0, price: 2242.5 },
     { label: 'Message Sprawl', type: 'Message' as const, users: 1022, gb: 0, price: 2248.4 },
   ];
@@ -1417,12 +1419,13 @@ describe('Data Sprawl — multi-select', () => {
       MANAGE
     );
     expect(calc.sprawlLines?.map(l => l.type)).toEqual(['Content', 'Message']);
-    expect(calc.sprawlLines?.[0].cost).toBeCloseTo(55.2, 6);
+    expect(calc.sprawlLines?.[0].cost).toBe(55);
     expect(calc.sprawlLines?.[1].cost).toBeCloseTo(2248.4, 6);
-    expect(calc.sprawlCost).toBeCloseTo(2303.6, 6);
-    expect(calc.sprawlStandalone?.totalCost).toBeCloseTo(2303.6, 6);
+    // Content 55.20 → $55; Message keeps its cents.
+    expect(calc.sprawlCost).toBeCloseTo(2303.4, 6);
+    expect(calc.sprawlStandalone?.totalCost).toBeCloseTo(2303.4, 6);
     expect(calc.userCost).toBe(20440);
-    expect(calc.totalCost).toBeCloseTo(22743.6, 6);
+    expect(calc.totalCost).toBeCloseTo(22743.4, 6);
     expectInvariant(calc);
   });
 
@@ -1440,7 +1443,7 @@ describe('Data Sprawl — multi-select', () => {
       MANAGE
     );
     expect(calc.sprawlLines).toHaveLength(3);
-    expect(calc.sprawlCost).toBeCloseTo(55.2 + 2242.5 + 2242.5, 6);
+    expect(calc.sprawlCost).toBeCloseTo(55 + 2242.5 + 2242.5, 6);
     expectInvariant(calc);
   });
 
@@ -1476,13 +1479,13 @@ describe('Data Sprawl — multi-select', () => {
 
   it('sprawlDisplayTotal sums rounded rows so the printed column adds up', () => {
     const lines = calcSprawlLines(['Content', 'Message'], 1022, 345);
-    expect(sprawlDisplayTotal(lines)).toBeCloseTo(2303.6, 6);
+    expect(sprawlDisplayTotal(lines)).toBeCloseTo(2303.4, 6);
     expect(sumSprawlLines(lines)).toBeCloseTo(sprawlDisplayTotal(lines), 2);
   });
 
   it('agreement row cost equals the sum of the selected lines', () => {
     const config = cfg({ manageUsers: 1022, manageDataGB: 345, manageSprawlTypes: ['Content', 'Message'] });
-    expect(manageDataLineCost(config)).toBeCloseTo(2303.6, 6);
+    expect(manageDataLineCost(config)).toBeCloseTo(2303.4, 6);
     expect(manageUserLineCost(config, calculatePricing(config, MANAGE))).toBe(20440);
   });
 
@@ -1633,7 +1636,7 @@ describe('Data Sprawl — independent user count per type', () => {
     });
     const calc = calculatePricing(config, MANAGE);
     expect(calc.userCost).toBe(5999);              // 62 users -> 51-200 band
-    expect(calc.dataCost).toBeCloseTo(55.2, 6);    // 0.16 x 345, GB-based
+    expect(calc.dataCost).toBe(55);                // 0.16 x 345 = 55.20, billed whole
     expect(calc.sprawlLines?.[0].basis).toBe('gb');
     expectInvariant(calc);
   });
@@ -1669,5 +1672,104 @@ describe('Data Sprawl — independent user count per type', () => {
     const legacy = pricingLogic.calcManage({ users: 424, e100GB: 0, sprawlTypes: ['Message', 'Email'] });
     expect(legacy.breakdown.user).toBe(9999);
     legacy.sprawl.lines.forEach((l: { cost: number }) => expect(l.cost).toBeCloseTo(1187.2, 6));
+  });
+});
+
+describe('formatUnitRate — per-unit rate display', () => {
+  it('keeps every Content sprawl tier visually distinct', () => {
+    const rendered = DATA_SPRAWL_TABLES.CONTENT_SPRAWL.map(tier => formatUnitRate(tier.rate));
+    expect(new Set(rendered).size).toBe(rendered.length);
+  });
+
+  it('separates the two tiers that formatCurrency collapsed to $0.05', () => {
+    expect(formatCurrency(0.05333)).toBe(formatCurrency(0.04667));
+    expect(formatUnitRate(0.05333)).toBe('$0.0533');
+    expect(formatUnitRate(0.04667)).toBe('$0.0467');
+  });
+
+  it('shows four decimals only where they carry information', () => {
+    expect(formatUnitRate(0.16)).toBe('$0.16');
+    expect(formatUnitRate(0.11667)).toBe('$0.1167');
+    expect(formatUnitRate(0.04167)).toBe('$0.0417');
+  });
+
+  it('still reads as money for the whole-dollar Message tiers', () => {
+    expect(formatUnitRate(5)).toBe('$5.00');
+    expect(formatUnitRate(3.6)).toBe('$3.60');
+    expect(formatUnitRate(1.4)).toBe('$1.40');
+  });
+
+  it('renders a non-finite rate as $0.00 rather than $NaN', () => {
+    expect(formatUnitRate(Number.NaN)).toBe('$0.00');
+  });
+});
+
+describe('Data Sprawl (Standalone) — Content bills in whole dollars', () => {
+  const MANAGE = PRICING_TIERS[0];
+  const contentCfg = (gb: number): ConfigurationData => makeConfig({
+    servicePlan: 'Manage',
+    migrationType: 'Datasprawl',
+    manageSprawlTypes: ['Content'],
+    manageUsers: 35,
+    manageDataGB: gb,
+    customerLocation: '1',
+  });
+
+  // The agreed storage ranges. These are the customer-facing price, not a display format.
+  const RANGES: [number, number, number][] = [
+    [1, 3, 0],
+    [4, 9, 1],
+    [10, 15, 2],
+    [16, 21, 3],
+    [22, 28, 4],
+  ];
+
+  for (const [lo, hi, expected] of RANGES) {
+    it(`bills $${expected} for ${lo}–${hi} GB`, () => {
+      for (let gb = lo; gb <= hi; gb++) {
+        expect(calculatePricing(contentCfg(gb), MANAGE).sprawlStandalone?.totalCost).toBe(expected);
+      }
+    });
+  }
+
+  it('continues past the stated ranges on the same rule', () => {
+    expect(calculatePricing(contentCfg(29), MANAGE).sprawlStandalone?.totalCost).toBe(5);
+    expect(calculatePricing(contentCfg(345), MANAGE).sprawlStandalone?.totalCost).toBe(55);
+  });
+
+  it('applies to the MANAGE + Sprawl data line and its total', () => {
+    const calc = calculatePricing(contentCfg(1), MANAGE);
+    // 35 users → flat $2,499 licence; 1 GB × 0.16 = 0.16 → $0, so the total is exactly
+    // the licence and the printed column adds up.
+    expect(calc.dataCost).toBe(0);
+    expect(calc.totalCost).toBe(2499);
+    expect(calc.sprawlStandalone?.totalCost).toBe(0);
+  });
+
+  it('rounds the 10 GB MANAGE + Sprawl case to $2', () => {
+    const calc = calculatePricing(makeConfig({
+      servicePlan: 'Manage',
+      migrationType: 'Datasprawl',
+      manageSprawlTypes: ['Content'],
+      manageUsers: 1000,
+      manageDataGB: 10,
+      customerLocation: '1',
+    }), MANAGE);
+    // 1000 users → 501–5000 band → 20 × 1000 = 20,000 licence.
+    expect(calc.userCost).toBe(20000);
+    expect(calc.dataCost).toBe(2);        // 10 × 0.16 = 1.60 → $2
+    expect(calc.totalCost).toBe(20002);
+  });
+
+  it('does not round Message or Email', () => {
+    const calc = calculatePricing(makeConfig({
+      servicePlan: 'Manage',
+      migrationType: 'Datasprawl',
+      manageSprawlTypes: ['Message'],
+      manageUsers: 1022,
+      manageDataGB: 0,
+      customerLocation: '1',
+    }), MANAGE);
+    expect(calc.sprawlStandalone?.totalCost).toBeCloseTo(2248.4, 6);
   });
 });
