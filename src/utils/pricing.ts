@@ -373,6 +373,7 @@ export function manageUserLineCost(
   config: ConfigurationData,
   calc?: Pick<PricingCalculation, 'sprawlType' | 'userCost'> | null
 ): number {
+  if (isManageSaasConfig(config)) return calculateManageSaasPricing(config.manageUsers).totalCost;
   const hasSprawl = normalizeSprawlTypes(config).length > 0;
   // Standalone Data Sprawl zeroes the license; recomputing it here would re-add it.
   if (hasSprawl && normalizeSprawlType(calc?.sprawlType) && (calc?.userCost || 0) === 0) return 0;
@@ -426,6 +427,38 @@ export function manageUserCost(users: number): number | 'CUSTOM' {
   return 'CUSTOM';
 }
 
+// Manage SaaS Application Management (no template chosen): flat per-user rate, billed
+// annually. The rate never changes with volume; only the user count does.
+export const MANAGE_SAAS_PRICE_PER_USER_MONTHLY = 5;
+export const MANAGE_SAAS_BILLING_MONTHS = 12;
+
+export interface ManageSaasPricing {
+  users: number;
+  pricePerUserMonthly: number;
+  months: number;
+  totalCost: number;
+}
+
+// Manage chosen with no template in the dropdown.
+export function isManageSaasConfig(config: ConfigurationData | undefined | null): boolean {
+  return config?.servicePlan === 'Manage' && !config?.migrationType;
+}
+
+export function calculateManageSaasPricing(users: unknown): ManageSaasPricing {
+  const raw = Math.floor(Number(users));
+  const safeUsers = Number.isFinite(raw) && raw > 0 ? raw : 0;
+  // Round to cents to avoid floating-point drift in the printed total.
+  const totalCost = Math.round(
+    safeUsers * MANAGE_SAAS_PRICE_PER_USER_MONTHLY * MANAGE_SAAS_BILLING_MONTHS * 100
+  ) / 100;
+  return {
+    users: safeUsers,
+    pricePerUserMonthly: MANAGE_SAAS_PRICE_PER_USER_MONTHLY,
+    months: MANAGE_SAAS_BILLING_MONTHS,
+    totalCost
+  };
+}
+
 // Manage Standalone — fixed per-GB rate.
 // Excel's K13 formula reads B56 (Migrate data input, typically in the 501–2,500
 // GB range), which always lands on the AB20 tier of $0.13/GB. To produce the
@@ -437,6 +470,21 @@ export function getManageDataRatePerGB(_dataGB: number): number {
 }
 
 function calculateManagePricing(config: ConfigurationData, tier: PricingTier): PricingCalculation {
+  // Flat per-user rate, so no license slab, sprawl lines or region multiplier apply.
+  if (isManageSaasConfig(config)) {
+    const saas = calculateManageSaasPricing(config.manageUsers);
+    const saasResult: PricingCalculation = {
+      userCost: saas.totalCost,
+      dataCost: 0,
+      migrationCost: 0,
+      instanceCost: 0,
+      totalCost: saas.totalCost,
+      tier
+    };
+    assertPricingInvariant(saasResult.userCost, saasResult.dataCost, saasResult.migrationCost, saasResult.instanceCost, saasResult.totalCost);
+    return saasResult;
+  }
+
   // Guard inputs: coerce to non-negative finite numbers (TS types erase at runtime,
   // and quotes can be reloaded from stored data — defend the money math directly).
   const rawGB = Number(config.manageDataGB ?? 0);

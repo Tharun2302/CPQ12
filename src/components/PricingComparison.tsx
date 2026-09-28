@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CheckCircle } from 'lucide-react';
 import { PricingCalculation, ConfigurationData, PricingTier } from '../types/pricing';
-import { formatCurrency, formatUnitRate, PRICING_TIERS, calculateCombinationPricing, getManageDataRatePerGB, resolveSprawlLines, sprawlDisplayTotal, manageAgreementCard } from '../utils/pricing';
+import { formatCurrency, formatUnitRate, PRICING_TIERS, calculateCombinationPricing, getManageDataRatePerGB, resolveSprawlLines, sprawlDisplayTotal, manageAgreementCard, isManageSaasConfig, MANAGE_SAAS_PRICE_PER_USER_MONTHLY } from '../utils/pricing';
 
 interface PricingComparisonProps {
   calculations: PricingCalculation[];
@@ -889,7 +889,9 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                         <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
                           <span className="text-gray-700 font-medium">Per user cost:</span>
                           <span className="font-bold text-gray-900">
-                            {configuration && configuration.numberOfUsers > 0
+                            {isManageSaasConfig(configuration)
+                              ? `${formatCurrency(MANAGE_SAAS_PRICE_PER_USER_MONTHLY)}/Month/user`
+                              : configuration && configuration.numberOfUsers > 0
                               ? `${formatCurrency(calc.userCost / configuration.numberOfUsers)}/user`
                               : configuration?.servicePlan === 'Manage' && (configuration?.manageUsers ?? 0) > 0
                                 ? `${formatCurrency(calc.userCost / (configuration.manageUsers ?? 1))}/user`
@@ -911,21 +913,23 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                         </span>
                       </div>
                     )}
-                    {/* Data costs */}
-                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                      <span className="text-gray-700 font-medium">Data costs:</span>
-                      <span className="font-bold text-gray-900">{formatCurrency(calc.dataCost)}</span>
-                    </div>
-                    {/* Migration cost */}
-                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                      <span className="text-gray-700 font-medium">Migration cost:</span>
-                      <span className="font-bold text-gray-900">{formatCurrency(calc.migrationCost)}</span>
-                    </div>
-                    {/* Instances Cost */}
-                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                      <span className="text-gray-700 font-medium">Instances Cost:</span>
-                      <span className="font-bold text-gray-900">{formatCurrency(calc.instanceCost)}</span>
-                    </div>
+                    {/* The flat per-user Manage plan has no data, migration or instance charges. */}
+                    {!isManageSaasConfig(configuration) && (
+                      <>
+                        <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                          <span className="text-gray-700 font-medium">Data costs:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(calc.dataCost)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                          <span className="text-gray-700 font-medium">Migration cost:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(calc.migrationCost)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                          <span className="text-gray-700 font-medium">Instances Cost:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(calc.instanceCost)}</span>
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
               </div>
