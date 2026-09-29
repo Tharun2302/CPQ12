@@ -14,7 +14,7 @@ export const parseOoxml = (xml: string, parser: DOMParser): Document | null => {
 /**
  * Creates a title paragraph for exhibit groups
  */
-function createExhibitTitleParagraph(doc: Document, title: string): Element {
+function createExhibitTitleParagraph(doc: Document, title: string, fontSizePt?: number): Element {
   const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
   const p = doc.createElementNS(ns, 'w:p');
   
@@ -52,7 +52,16 @@ function createExhibitTitleParagraph(doc: Document, title: string): Element {
   // Uppercase text
   const caps = doc.createElementNS(ns, 'w:caps');
   rPr.appendChild(caps);
-  
+
+  if (fontSizePt) {
+    // OOXML sizes are in half-points
+    for (const tag of ['w:sz', 'w:szCs']) {
+      const sz = doc.createElementNS(ns, tag);
+      sz.setAttribute('w:val', String(fontSizePt * 2));
+      rPr.appendChild(sz);
+    }
+  }
+
   r.appendChild(rPr);
   
   const t = doc.createElementNS(ns, 'w:t');
@@ -60,6 +69,21 @@ function createExhibitTitleParagraph(doc: Document, title: string): Element {
   r.appendChild(t);
   p.appendChild(r);
   
+  return p;
+}
+
+// Separate unshaded paragraph so the gap doesn't widen the title bar's blue shading
+function createTitleSpacerParagraph(doc: Document, heightTwips = 200): Element {
+  const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const p = doc.createElementNS(ns, 'w:p');
+  const pPr = doc.createElementNS(ns, 'w:pPr');
+  const spacing = doc.createElementNS(ns, 'w:spacing');
+  spacing.setAttribute('w:before', '0');
+  spacing.setAttribute('w:after', '0');
+  spacing.setAttribute('w:line', String(heightTwips));
+  spacing.setAttribute('w:lineRule', 'exact');
+  pPr.appendChild(spacing);
+  p.appendChild(pPr);
   return p;
 }
 
@@ -707,9 +731,12 @@ export async function mergeDocxFiles(
         mainBody.insertBefore(pageBreak, mainBody.lastChild);
         
         // Add title for Included group (no page break after title)
-        const titleP = createExhibitTitleParagraph(mainDoc, 'Exhibit 1 - INCLUDED IN MIGRATION');
+        const titleP = createExhibitTitleParagraph(mainDoc, 'Exhibit 1 - INCLUDED IN MIGRATION', 12);
+        // Space-before is dropped at the top of a page, so a spacer is needed to clear the header logos
+        mainBody.insertBefore(createTitleSpacerParagraph(mainDoc), mainBody.lastChild);
         mainBody.insertBefore(titleP, mainBody.lastChild);
-        
+        mainBody.insertBefore(createTitleSpacerParagraph(mainDoc, 80), mainBody.lastChild);
+
         // Merge ALL Included exhibits (they will come right after the title)
         // For included exhibits, preserve the EXACT document structure - don't skip headings
         // Only filter out "NOT INCLUDED" content to maintain exact formatting and table structure
