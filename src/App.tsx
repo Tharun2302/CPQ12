@@ -4,6 +4,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from './types/pricing';
 import { calculateAllTiers, PRICING_TIERS, normalizeSprawlTypes } from './utils/pricing';
 import { readStoredConfiguration } from './utils/sessionConfig';
+import { templateChoiceChanged, templateSelectionKey } from './utils/templateSelection';
 
 // Lazy load components for code splitting and better performance
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -1339,20 +1340,19 @@ function App() {
       sessionStorage.removeItem('cpq_selected_exhibits');
     }
 
-    // If combination changed, trigger template re-selection.
-    // For Manage plans, migrationType is the effective "combination" (combination is always 'manage-standalone').
-    const manageAgreementChanged = config.servicePlan === 'Manage' && migrationTypeChanged;
-    if ((combinationChanged || manageAgreementChanged) && selectedTier) {
-      console.log('🔄 Combination/agreement changed, re-selecting template:', {
+    // Drop the old template even before a tier is picked, or it leaks into the next agreement
+    if (templateChoiceChanged(configuration, config)) {
+      console.log('🔄 Plan/combination/agreement changed, clearing template:', {
         oldCombination: configuration?.combination,
         newCombination: config.combination,
         migrationType: config.migrationType,
-        currentTier: selectedTier.tier.name
+        servicePlan: config.servicePlan
       });
       // Clear template so the combination-file auto-use effect can re-run
       setSelectedTemplate(null);
-      // Also try template manager auto-selection
-      const auto = autoSelectTemplateForPlan(selectedTier.tier.name, config);
+      const auto = selectedTier
+        ? autoSelectTemplateForPlan(selectedTier.tier.name, config)
+        : null;
       if (auto) {
         console.log('✅ Auto-selected new template for combination/agreement change:', {
           combination: config.combination,
@@ -1360,7 +1360,7 @@ function App() {
         });
         setSelectedTemplate(auto);
       } else {
-        console.log('⚠️ No matching template found for new combination, combination-file effect will handle it.');
+        console.log('⚠️ No template auto-picked yet; the combination-file effect or tier selection will choose it.');
       }
     }
     
@@ -1445,6 +1445,8 @@ function App() {
   // Auto-select a template based on chosen tier and configuration
   const autoSelectTemplateForPlan = (tierName: string, config?: ConfigurationData): any | null => {
     if (!templates || templates.length === 0) return null;
+    // With no combination or agreement chosen, the tier-name fallback would pick an unrelated template
+    if (!templateSelectionKey(config)) return null;
 
     const safeTier = (tierName || '').toLowerCase();
     const migration = (config?.migrationType || '').toLowerCase();
