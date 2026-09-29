@@ -1,0 +1,15 @@
+# Changelog
+
+## Unreleased
+
+### Fixed
+- **Configure page: exhibits from a previous type no longer end up in the agreement.** After going Combination → Overage or Manage → back to Combination, the exhibit picker showed nothing ticked, but the generated agreement still contained the earlier Combination or Data-Sprawl exhibits from hidden per-pair rows. Clicking a plan tab, choosing Combination or Overage, or choosing a Manage template now clears both the ticked exhibits and those rows, so the document matches the screen (`src/components/ConfigurationForm.tsx`, `tests/unit/exhibitTypeSwitchClear.test.tsx`).
+- **Configure page: switching plans no longer keeps the previous agreement template.** Generating a Multi combination agreement, switching to Manage, then back to Migrate and choosing Overage used a stale template until the page was refreshed. Clicking a plan tab now drops the old template, and a new one is picked only once a combination or agreement is chosen, so Overage loads its own template straight away (`src/utils/templateSelection.ts`, `tests/unit/templateSelection.test.ts`).
+- **Approval workflow: stale approval pages can no longer overturn a decision.** Technical and Legal approvers share one group-mailbox link, so a teammate's already-open page could still Approve or Deny after someone else had acted. `PUT /api/approval-workflows/:id/step/:stepNumber` now refuses these clicks with HTTP 409, and the Team Lead, Technical and Legal pages show the reason (for example "This document is already approved by the Technical Team.") and reload the real status.
+  - Opening an approval email link after that step is already decided now opens the document read-only, with a banner and footer saying who approved or denied it and when. Before, the page landed on an empty dashboard. Each link is handled once, so the document no longer reopens after an action and the preview is not fetched twice.
+  - Steps must be decided in order. A closed step, or a step on an approved or denied deal, cannot be changed, except that Legal can still mark the Deal Desk step "Notified" after approval. A Deal Desk "deny" cannot reopen an approved deal.
+  - When two people click at the same moment, exactly one click wins and the other gets the 409 message. Only the target step is written, so a teammate's comment is no longer lost.
+  - The request body accepts only `status` (`approved` or `denied`) and `comments` (text, at most 10,000 characters). Empty requests, other statuses and malformed step numbers are rejected. The old `/step/99` and `/step/abc` paths that approved a whole deal now return 404.
+  - The creator's denial email is sent only after the denial is saved.
+  - Rules live in `approval-step-guard.cjs` and are covered by `tests/unit/approvalStepGuard.test.ts`, `approvalWorkflowStepConflict.test.ts` and `approvalStaleAction.test.tsx`.
+  - Known and still open, planned for a later round: the approval routes still have no server-side authentication.

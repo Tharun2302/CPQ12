@@ -59,6 +59,9 @@ const resolveExhibitCategory = (exhibit: any): 'messaging' | 'content' | 'email'
   return 'content';
 };
 
+// Per-pair rows are merged into the agreement even when nothing is ticked, so a type switch must empty them
+const NO_EXHIBIT_ROWS = { messagingConfigs: [], contentConfigs: [], emailConfigs: [] };
+
 const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   onConfigurationChange, 
   onSubmit, 
@@ -2203,10 +2206,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     servicePlan: plan,
                     timelineProjection: '',
                     migrationType: '' as any,
-                    combination: ''
+                    combination: '',
+                    ...NO_EXHIBIT_ROWS
                   };
                   setConfig(newConfig);
                   setCombination('');
+                  onExhibitsChange([]);
                   onConfigurationChange(newConfig);
                   try {
                     sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
@@ -2267,9 +2272,16 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     const selectedCombo = apiCombinations.find(c => c.value === newCombination);
                     const newMigrationType = selectedCombo?.migrationType || '';
 
-                    const newConfig = { ...config, combination: newCombination, migrationType: newMigrationType as any, timelineProjection: '' };
+                    const newConfig = {
+                      ...config,
+                      combination: newCombination,
+                      migrationType: newMigrationType as any,
+                      timelineProjection: '',
+                      ...NO_EXHIBIT_ROWS
+                    };
                     setConfig(newConfig);
                     setCombination(newCombination);
+                    onExhibitsChange([]);
                     onConfigurationChange(newConfig);
                     try {
                       sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
@@ -2321,8 +2333,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           // Clear manageUsers when switching to a no-users agreement
                           // so the pricing calculation doesn't use a stale value
                           manageUsers: newRequiresUsers ? config.manageUsers : 0,
+                          ...NO_EXHIBIT_ROWS,
                         };
                         setConfig(newConfig);
+                        onExhibitsChange([]);
                         onConfigurationChange(newConfig);
                         try {
                           sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
