@@ -11,6 +11,12 @@ const { MongoClient } = require('mongodb');
 const { pickEsignCarriedFields } = require('./esign-field-carry.cjs');
 const { zohoSignEnabled, zohoSignConfigured, getZohoSignConfig } = require('./zoho-sign-config.cjs');
 const { DOCUMENTS_LIST_PROJECTION } = require('./documents-list-projection.cjs');
+const {
+  parseStepNumber,
+  sanitizeStepUpdates,
+  areAllApprovalStepsComplete,
+  applyStepUpdate
+} = require('./approval-step-guard.cjs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { spawn } = require('child_process');
@@ -11706,28 +11712,6 @@ app.post('/api/approval-workflows', async (req, res) => {
   }
 });
 
-// Helper function to check if all approval steps (Team, Tech, Legal) are approved
-function areAllApprovalStepsComplete(workflowSteps) {
-  if (!Array.isArray(workflowSteps)) return false;
-  
-  const approvalRoles = ['Team Approval', 'Technical Team', 'Legal Team'];
-  const approvalSteps = workflowSteps.filter(s => approvalRoles.includes(s.role));
-  
-  const teamStep = approvalSteps.find(s => s.role === 'Team Approval');
-  const techStep = approvalSteps.find(s => s.role === 'Technical Team');
-  const legalStep = approvalSteps.find(s => s.role === 'Legal Team');
-  
-  const hasTeamApproval = !!teamStep;
-  
-  // If Team Approval exists, all three must be approved. Otherwise, just Tech and Legal.
-  return hasTeamApproval
-    ? (teamStep?.status === 'approved' &&
-       techStep?.status === 'approved' &&
-       legalStep?.status === 'approved')
-    : (techStep?.status === 'approved' &&
-       legalStep?.status === 'approved');
-}
-
 // Get all approval workflows
 app.get('/api/approval-workflows', async (req, res) => {
   try {
@@ -11993,6 +11977,34 @@ app.put('/api/approval-workflows/:id', async (req, res) => {
   }
 });
 
+function notifyCreatorOfDenial(workflow, deniedStep, comments) {
+  try {
+    const toEmail = workflow.creatorEmail || process.env.WORKFLOW_FALLBACK_EMAIL || 'abhilasha.kandakatla@cloudfuze.com';
+    console.log('📧 Denial notification prepared:', {
+      to: toEmail,
+      deniedBy: deniedStep.role,
+      workflowId: workflow.id,
+      documentId: workflow.documentId
+    });
+    if (toEmail && isEmailConfigured) {
+      const subject = `Approval Denied by ${deniedStep.role || 'Approver'} - ${workflow.documentId}`;
+      const html = generateDenialEmailHTML({
+        workflowData: { ...workflow, workflowId: workflow.id },
+        deniedBy: deniedStep.role || 'Approver',
+        comments: comments || deniedStep.comments || ''
+      });
+      // Best-effort; do not block the API on email failure
+      sendEmail(toEmail, subject, html)
+        .then(() => console.log('✅ Denial notification email sent to creator:', toEmail))
+        .catch(err => {
+          console.error('❌ Failed to send denial email to creator:', err);
+        });
+    }
+  } catch (e) {
+    console.error('❌ Error preparing denial notification:', e);
+  }
+}
+
 // Update workflow step
 app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
   try {
@@ -12004,132 +12016,45 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
     }
 
     const { id, stepNumber } = req.params;
-    const stepUpdates = req.body;
-    
-    console.log('📝 Updating workflow step:', id, stepNumber, stepUpdates);
-    
-    // Get current workflow
-    const workflow = await db.collection('approval_workflows').findOne({ id: id });
+
+    console.log('📝 Updating workflow step:', id, stepNumber, req.body);
+
+    const sanitized = sanitizeStepUpdates(req.body);
+    if (!sanitized.ok) {
+      return res.status(sanitized.httpStatus).json({ success: false, code: sanitized.code, error: sanitized.error });
+    }
+    const stepUpdates = sanitized.updates;
+
+    const workflows = db.collection('approval_workflows');
+    const workflow = await workflows.findOne({ id: id });
     if (!workflow) {
       return res.status(404).json({
         success: false,
         error: 'Workflow not found'
       });
     }
-    
-    // Update the specific step
-    const updatedSteps = workflow.workflowSteps.map(step =>
-      step.step === parseInt(stepNumber)
-        ? { ...step, ...stepUpdates, timestamp: new Date().toISOString() }
-        : step
-    );
-    
-    // Update current step and status based on step updates
-    let newCurrentStep = workflow.currentStep;
-    let newStatus = workflow.status;
 
-    if (stepUpdates.status === 'approved') {
-      if (parseInt(stepNumber) < workflow.totalSteps) {
-        newCurrentStep = parseInt(stepNumber) + 1;
-        newStatus = 'in_progress';
-      } else {
-        newStatus = 'approved';
-      }
-
-      // Check if all approval steps (Team, Tech, Legal) are approved
-      // Deal Desk is just a notification, so it doesn't block approval status
-      const approvalRoles = ['Team Approval', 'Technical Team', 'Legal Team'];
-
-      // Get all approval steps (excluding Deal Desk)
-      const approvalSteps = updatedSteps.filter(s =>
-        approvalRoles.includes(s.role)
-      );
-
-      // Check if all required approval steps (Team, Tech, Legal) are approved
-      // Note: Some workflows might not have Team Approval (manual workflows), so we check what exists
-      const teamStep = approvalSteps.find(s => s.role === 'Team Approval');
-      const techStep = approvalSteps.find(s => s.role === 'Technical Team');
-      const legalStep = approvalSteps.find(s => s.role === 'Legal Team');
-
-      const hasTeamApproval = !!teamStep;
-      const hasTechApproval = !!techStep;
-      const hasLegalApproval = !!legalStep;
-
-      // If Team Approval exists, all three must be approved. Otherwise, just Tech and Legal.
-      const allRequiredApprovalsComplete = hasTeamApproval
-        ? (teamStep?.status === 'approved' &&
-           techStep?.status === 'approved' &&
-           legalStep?.status === 'approved')
-        : (techStep?.status === 'approved' &&
-           legalStep?.status === 'approved');
-
-      if (allRequiredApprovalsComplete) {
-        // Mark as approved when all required approval steps are approved
-        // Deal Desk notification can still be sent, but doesn't block approval
-        newStatus = 'approved';
-        console.log('✅ All required approval steps (Team, Tech, Legal) are approved. Workflow marked as approved.');
-        console.log('📋 Approval status check:', {
-          hasTeamApproval,
-          teamStatus: teamStep?.status,
-          techStatus: techStep?.status,
-          legalStatus: legalStep?.status,
-          allComplete: allRequiredApprovalsComplete
-        });
-
-        // Email notifications (Deal Desk, creator, next-step) are sent by the
-        // frontend via dedicated endpoints (/api/send-deal-desk-email, etc.)
-        // to avoid duplicate emails. This handler only updates DB state.
-      }
-    } else if (stepUpdates.status === 'denied') {
-      newStatus = 'denied';
-
-      // Notify the workflow creator about denial
-      try {
-        const deniedStep = workflow.workflowSteps.find(s => s.step === parseInt(stepNumber));
-        const toEmail = workflow.creatorEmail || process.env.WORKFLOW_FALLBACK_EMAIL || 'abhilasha.kandakatla@cloudfuze.com';
-        console.log('📧 Denial notification prepared:', {
-          to: toEmail,
-          deniedBy: deniedStep?.role,
-          workflowId: workflow.id,
-          documentId: workflow.documentId
-        });
-        if (toEmail && isEmailConfigured) {
-          const subject = `Approval Denied by ${deniedStep?.role || 'Approver'} - ${workflow.documentId}`;
-          const html = generateDenialEmailHTML({
-            workflowData: { ...workflow, workflowId: workflow.id },
-            deniedBy: deniedStep?.role || 'Approver',
-            comments: stepUpdates.comments || deniedStep?.comments || ''
-          });
-          // Best-effort; do not block the API on email failure
-          sendEmail(toEmail, subject, html)
-            .then(() => console.log('✅ Denial notification email sent to creator:', toEmail))
-            .catch(err => {
-              console.error('❌ Failed to send denial email to creator:', err);
-            });
-        }
-      } catch (e) {
-        console.error('❌ Error preparing denial notification:', e);
-      }
+    const outcome = await applyStepUpdate(workflows, workflow, parseStepNumber(stepNumber), stepUpdates);
+    if (!outcome.allowed) {
+      const raceNote = outcome.lostRace ? '(lost race)' : '';
+      console.warn('⚠️ Workflow step update rejected:', JSON.stringify(id), JSON.stringify(stepNumber), outcome.code, raceNote);
+      return res.status(outcome.httpStatus).json({ success: false, code: outcome.code, error: outcome.error });
     }
-    
-    const updateData = {
-      workflowSteps: updatedSteps,
-      currentStep: newCurrentStep,
-      status: newStatus,
-      updatedAt: new Date().toISOString()
-    };
-    
-    await db.collection('approval_workflows').updateOne(
-      { id: id },
-      { $set: updateData }
-    );
-    
+
+    if (outcome.nextStatus === 'approved' && workflow.status !== 'approved') {
+      // Next-step and Deal Desk emails go out from the frontend's dedicated endpoints, not here.
+      console.log('✅ All required approval steps (Team, Tech, Legal) are approved. Workflow marked as approved.');
+    }
+    if (stepUpdates.status === 'denied') {
+      notifyCreatorOfDenial(workflow, outcome.step, stepUpdates.comments);
+    }
+
     console.log('✅ Workflow step updated');
     res.json({
       success: true,
       message: 'Workflow step updated successfully'
     });
-    
+
   } catch (error) {
     console.error('❌ Error updating workflow step:', error);
     res.status(500).json({

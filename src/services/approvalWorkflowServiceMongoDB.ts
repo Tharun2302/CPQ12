@@ -2,16 +2,33 @@
 import { ApprovalWorkflow, ApprovalStep } from '../types/approval';
 import { BACKEND_URL } from '../config/api';
 
-/** Safely extract an error message from a non-ok response without crashing on empty bodies. */
-async function extractErrorMessage(response: Response, fallback: string): Promise<string> {
+/** Safely read the error message and code from a non-ok response without crashing on empty bodies. */
+async function readErrorBody(response: Response, fallback: string): Promise<{ message: string; code?: string }> {
   try {
     const text = await response.text();
-    if (!text) return `${fallback} (HTTP ${response.status})`;
+    if (!text) return { message: `${fallback} (HTTP ${response.status})` };
     const data = JSON.parse(text);
-    return data.error || data.message || fallback;
+    return {
+      message: data.error || data.message || fallback,
+      code: typeof data.code === 'string' ? data.code : undefined
+    };
   } catch {
-    return `${fallback} (HTTP ${response.status})`;
+    return { message: `${fallback} (HTTP ${response.status})` };
   }
+}
+
+async function extractErrorMessage(response: Response, fallback: string): Promise<string> {
+  return (await readErrorBody(response, fallback)).message;
+}
+
+export type WorkflowStepError = Error & { status: number; code?: string };
+
+/** True when the server refused a step action because the step is no longer open to this approver. */
+export function isStepAlreadyHandledError(err: unknown): err is WorkflowStepError {
+  if (!(err instanceof Error)) return false;
+  const { status, code } = err as Partial<WorkflowStepError>;
+  // CONFLICT means the step is still open, so the approver should be able to retry.
+  return status === 409 && code !== 'CONFLICT';
 }
 
 class ApprovalWorkflowServiceMongoDB {
@@ -124,7 +141,9 @@ class ApprovalWorkflowServiceMongoDB {
       });
 
       if (!response.ok) {
-        throw new Error(await extractErrorMessage(response, 'Failed to update workflow step'));
+        const { message, code } = await readErrorBody(response, 'Failed to update workflow step');
+        const stepError: WorkflowStepError = Object.assign(new Error(message), { status: response.status, code });
+        throw stepError;
       }
 
       console.log('✅ Workflow step updated in MongoDB');

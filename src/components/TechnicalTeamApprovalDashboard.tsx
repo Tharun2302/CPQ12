@@ -1,6 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Clock, User, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Eye, FileText, Loader2, RefreshCw } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+import { isStepAlreadyHandledError } from '../services/approvalWorkflowServiceMongoDB';
+import { getApprovalLinkNotice, ApprovalLinkNotice } from '../utils/approvalLinkNotice';
+import ApprovalLinkNoticeBox from './ApprovalLinkNoticeBox';
+import type { ApprovalWorkflow } from '../types/approval';
 import { BACKEND_URL } from '../config/api';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import { track } from '../analytics/clarity';
@@ -41,9 +45,11 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
   const [isSavingComment, setIsSavingComment] = useState(false);
   const [esignFields, setEsignFields] = useState<any[]>([]);
   const [approvalDocNumPages, setApprovalDocNumPages] = useState(1);
+  const [linkNotice, setLinkNotice] = useState<(ApprovalLinkNotice & { workflowId: string }) | null>(null);
+  const linkHandledForRef = useRef<string | null>(null);
   const PDF_SCALE = 1.5;
   const getFieldLabel = (type: string) => { const t = (type || 'signature').toLowerCase(); if (t === 'name') return 'Name'; if (t === 'title') return 'Title'; if (t === 'date') return 'Date'; if (t === 'text') return 'Text'; return 'Signature'; };
-  const { workflows, updateWorkflowStep } = useApprovalWorkflows();
+  const { workflows, updateWorkflowStep, refreshWorkflows } = useApprovalWorkflows();
   
   console.log('TechnicalTeamApprovalDashboard rendered for:', managerEmail);
   console.log('📊 Available workflows:', workflows.length);
@@ -53,49 +59,57 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const workflowId = urlParams.get('workflow') || initialWorkflowId;
+    // Handle each link once, so list reloads after an action never reopen the modal
+    if (!workflowId || linkHandledForRef.current === workflowId) return;
+    linkHandledForRef.current = workflowId;
 
-    if (workflowId) {
-      // First try to find in loaded workflows
-      const foundWorkflow = workflows.find(w => w.id === workflowId);
-      if (foundWorkflow) {
-        const manual = isManualWorkflow(foundWorkflow);
-        const awaitingTechnical = (!manual && foundWorkflow.currentStep === 2) || (manual && foundWorkflow.currentStep === 1);
-        if (awaitingTechnical) {
-          console.log('🔗 Opening document preview from Gmail link for workflow:', workflowId);
-          handleViewDocument(foundWorkflow);
-        }
-      } else {
-        // Fetch directly from API (handles workflows not in local store, or store not yet loaded)
-        console.log('🔄 Fetching specific workflow from API:', workflowId);
-        fetchSpecificWorkflow(workflowId);
-      }
+    // First try to find in loaded workflows
+    const foundWorkflow = workflows.find(w => w.id === workflowId);
+    if (foundWorkflow) {
+      openFromEmailLink(foundWorkflow);
+    } else {
+      // Fetch directly from API (handles workflows not in local store, or store not yet loaded)
+      console.log('🔄 Fetching specific workflow from API:', workflowId);
+      fetchSpecificWorkflow(workflowId);
     }
   }, [workflows, initialWorkflowId]);
+
+  // A link to a finished step still shows the document, read-only, with the reason it can't be approved
+  const openFromEmailLink = (workflow: ApprovalWorkflow) => {
+    const notice = getApprovalLinkNotice(workflow, 'Technical Team');
+    if (notice) {
+      setLinkNotice({ workflowId: workflow.id, ...notice });
+      handleViewWorkflow(workflow);
+      return;
+    }
+    const manual = isManualWorkflow(workflow);
+    const awaitingTechnical = (!manual && workflow.currentStep === 2) || (manual && workflow.currentStep === 1);
+    if (awaitingTechnical) {
+      handleViewDocument(workflow);
+    }
+  };
 
   const fetchSpecificWorkflow = async (workflowId: string) => {
     try {
       console.log('📄 Fetching specific workflow from API:', workflowId);
       const response = await fetch(`${BACKEND_URL}/api/approval-workflows/${workflowId}`);
-      
+
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.workflow) {
-          const w = result.workflow;
-          const manual = isManualWorkflow(w);
-          const awaitingTechnical = (!manual && w.currentStep === 2) || (manual && w.currentStep === 1);
-          if (awaitingTechnical) {
-            console.log('📋 Manager viewing workflow from API:', result.workflow);
-            console.log('🔗 Auto-opening document preview from Gmail link for workflow:', workflowId);
-            handleViewDocument(result.workflow);
-          }
+          openFromEmailLink(result.workflow);
         } else {
           console.error('❌ Workflow not found in API response:', workflowId);
+          linkHandledForRef.current = null;
         }
       } else {
         console.error('❌ Failed to fetch workflow from API:', response.status);
+        // Let the full list load retry the link, as it did before the once-only guard
+        linkHandledForRef.current = null;
       }
     } catch (error) {
       console.error('❌ Error fetching specific workflow:', error);
+      linkHandledForRef.current = null;
     }
   };
 
@@ -169,6 +183,18 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
     } else {
       console.log('⚠️ No documentId in workflow');
     }
+  };
+
+  // A teammate on the shared mailbox already acted, so keep the buttons hidden and load the real status
+  const handleAlreadyHandled = async (workflowId: string, error: Error) => {
+    setHasTakenAction(prev => new Set(prev).add(workflowId));
+    alert(error.message);
+    setCommentText('');
+    setCommentWorkflowId(null);
+    setShowCommentModal(false);
+    setDenyAfterComment(false);
+    closeDocumentModal();
+    await refreshWorkflows();
   };
 
   const handleApprove = async (workflowId: string) => {
@@ -252,6 +278,10 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
       closeDocumentModal();
     } catch (error) {
       console.error('❌ Error approving workflow:', error);
+      if (isStepAlreadyHandledError(error)) {
+        await handleAlreadyHandled(workflowId, error);
+        return;
+      }
       // Remove from hasTakenAction if approval failed
       setHasTakenAction(prev => {
         const next = new Set(prev);
@@ -326,6 +356,10 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
       closeDocumentModal();
     } catch (error) {
       console.error('❌ Error denying workflow:', error);
+      if (isStepAlreadyHandledError(error)) {
+        await handleAlreadyHandled(workflowId, error);
+        return;
+      }
       // Remove from hasTakenAction if denial failed
       setHasTakenAction(prev => {
         const next = new Set(prev);
@@ -369,7 +403,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
       const manual = wf ? isManualWorkflow(wf) : false;
       const commentStep = manual ? 1 : 2;
 
-      updateWorkflowStep(commentWorkflowId, commentStep, { 
+      await updateWorkflowStep(commentWorkflowId, commentStep, {
         comments: commentText.trim(),
         timestamp: new Date().toISOString()
       });
@@ -389,6 +423,10 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
       setCommentWorkflowId(null);
     } catch (error) {
       console.error('❌ Error adding comment:', error);
+      if (isStepAlreadyHandledError(error)) {
+        await handleAlreadyHandled(commentWorkflowId, error);
+        return;
+      }
       alert('❌ Failed to add comment. Please try again.');
     } finally {
       setIsSavingComment(false);
@@ -729,6 +767,12 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
         </div>
       </div>
 
+      {linkNotice && (
+        <div role="status" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <ApprovalLinkNoticeBox tone={linkNotice.tone} message={linkNotice.message} onDismiss={() => setLinkNotice(null)} />
+        </div>
+      )}
+
       {/* Navigation Tabs */}
       <div className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -905,7 +949,9 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
 
             {/* Enhanced Action Buttons Footer */}
             <div className="flex items-center justify-between gap-2 sm:gap-4 p-3 sm:p-6 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-slate-50 flex-shrink-0 flex-wrap">
-               {modalOpenedFromTab === 'queue' ? (
+               {linkNotice && linkNotice.workflowId === selectedWorkflow?.id ? (
+                 <ApprovalLinkNoticeBox tone={linkNotice.tone} message={linkNotice.message} />
+               ) : modalOpenedFromTab === 'queue' ? (
                  (() => {
                   // Use latest workflow state from store to avoid stale selectedWorkflow after actions
                   const latestWorkflow = workflows.find(w => w.id === selectedWorkflow?.id) || selectedWorkflow;

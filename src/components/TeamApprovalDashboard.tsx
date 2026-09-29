@@ -1,5 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+import { isStepAlreadyHandledError } from '../services/approvalWorkflowServiceMongoDB';
+import { getApprovalLinkNotice, ApprovalLinkNotice } from '../utils/approvalLinkNotice';
+import ApprovalLinkNoticeBox from './ApprovalLinkNoticeBox';
+import type { ApprovalWorkflow } from '../types/approval';
 import { BACKEND_URL } from '../config/api';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import { FileText, X, Loader2, ThumbsUp, ThumbsDown, MessageCircle, User, BarChart3, Clock, CheckCircle, AlertCircle, Eye, PenLine } from 'lucide-react';
@@ -21,7 +25,7 @@ interface TeamApprovalDashboardProps {
 }
 
 const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWorkflowId } = {}) => {
-  const { workflows, updateWorkflowStep } = useApprovalWorkflows();
+  const { workflows, updateWorkflowStep, refreshWorkflows } = useApprovalWorkflows();
   const [activeTab, setActiveTab] = useState('queue');
   const [isActing, setIsActing] = useState(false);
   const [selectedWorkflow, setSelectedWorkflow] = useState<any>(null);
@@ -39,6 +43,8 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
   const [esignFields, setEsignFields] = useState<any[]>([]);
   const [esignRecipients, setEsignRecipients] = useState<Array<{ id: string; name: string; email: string }>>([]);
   const [approvalDocNumPages, setApprovalDocNumPages] = useState<number>(1);
+  const [linkNotice, setLinkNotice] = useState<(ApprovalLinkNotice & { workflowId: string }) | null>(null);
+  const linkHandledForRef = useRef<string | null>(null);
 
   const PDF_SCALE = 1.5;
   const getFieldLabel = (type: string) => {
@@ -61,6 +67,18 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
     { id: 'queue', label: 'My Approval Queue', icon: User, count: workflows.filter(w => (w.status === 'pending' || w.status === 'in_progress') && w.currentStep === 1).length },
     { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length }
   ];
+
+  // A teammate on the shared mailbox already acted, so keep the buttons hidden and load the real status
+  const handleAlreadyHandled = async (workflowId: string, error: Error) => {
+    setHasTakenAction(prev => new Set(prev).add(workflowId));
+    alert(error.message);
+    setCommentText('');
+    setCommentWorkflowId(null);
+    setShowCommentModal(false);
+    setDenyAfterComment(false);
+    closeDocumentModal();
+    await refreshWorkflows();
+  };
 
   const handleApprove = async (workflowId: string) => {
     if (isActing) return;
@@ -163,6 +181,11 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
       setIsActing(false);
     } catch (e) {
       console.error('❌ Error approving workflow:', e);
+      if (isStepAlreadyHandledError(e)) {
+        setIsActing(false);
+        await handleAlreadyHandled(workflowId, e);
+        return;
+      }
       // Remove from hasTakenAction if approval failed
       setHasTakenAction(prev => {
         const next = new Set(prev);
@@ -206,6 +229,11 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
       setIsActing(false);
     } catch (e) {
       console.error('❌ Error denying workflow:', e);
+      if (isStepAlreadyHandledError(e)) {
+        setIsActing(false);
+        await handleAlreadyHandled(workflowId, e);
+        return;
+      }
       // Remove from hasTakenAction if denial failed
       setHasTakenAction(prev => {
         const next = new Set(prev);
@@ -248,6 +276,10 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
       setCommentText('');
       setCommentWorkflowId(null);
     } catch (e) {
+      if (isStepAlreadyHandledError(e)) {
+        await handleAlreadyHandled(commentWorkflowId, e);
+        return;
+      }
       alert('❌ Failed to add comment. Please try again.');
     } finally {
       setIsSavingComment(false);
@@ -434,12 +466,14 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const workflowId = urlParams.get('workflow') || initialWorkflowId;
-    if (!workflowId) return;
+    // Handle each link once, so list reloads after an action never reopen the modal
+    if (!workflowId || linkHandledForRef.current === workflowId) return;
+    linkHandledForRef.current = workflowId;
 
     const fromStore = workflows.find(w => w.id === workflowId);
     if (fromStore && fromStore.currentStep === 1) {
       console.log('🔗 Opening document from email link for workflow:', workflowId);
-      handleViewWorkflow(fromStore);
+      openFromEmailLink(fromStore);
       return;
     }
 
@@ -453,16 +487,28 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
           const result = await resp.json();
           if (result.success && result.workflow) {
             console.log('📋 Team viewing workflow from API:', result.workflow);
-            handleViewWorkflow(result.workflow);
+            openFromEmailLink(result.workflow);
           } else {
             console.error('❌ Workflow not found in API:', workflowId);
+            linkHandledForRef.current = null;
           }
+        } else {
+          // Let the full list load retry the link, as it did before the once-only guard
+          linkHandledForRef.current = null;
         }
       } catch (error) {
         console.error('❌ Error fetching workflow from email link:', error);
+        linkHandledForRef.current = null;
       }
     })();
   }, [workflows, initialWorkflowId]);
+
+  // A link to a finished step still shows the document, with the reason it can't be approved
+  const openFromEmailLink = (wf: ApprovalWorkflow) => {
+    const notice = getApprovalLinkNotice(wf, 'Team Approval');
+    if (notice) setLinkNotice({ workflowId: wf.id, ...notice });
+    handleViewWorkflow(wf);
+  };
 
   const renderTabContent = () => {
     // Filter workflows for team approval-specific view
@@ -681,6 +727,12 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
           </div>
         </div>
       </div>
+
+      {linkNotice && (
+        <div role="status" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <ApprovalLinkNoticeBox tone={linkNotice.tone} message={linkNotice.message} onDismiss={() => setLinkNotice(null)} />
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <div className="bg-white border-b border-gray-200 shadow-sm">
@@ -915,7 +967,9 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
 
             {/* Action Buttons - Only show when opened from "My Approval Queue" tab and it's user's turn */}
             <div className="flex items-center justify-between gap-2 sm:gap-3 p-3 sm:p-6 border-t border-gray-200 bg-gray-50 flex-shrink-0 flex-wrap">
-               {modalOpenedFromTab === 'queue' ? (
+               {linkNotice && linkNotice.workflowId === selectedWorkflow?.id ? (
+                 <ApprovalLinkNoticeBox tone={linkNotice.tone} message={linkNotice.message} />
+               ) : modalOpenedFromTab === 'queue' ? (
                  (() => {
                   // Use latest workflow state from store to avoid stale selectedWorkflow after actions
                   const latestWorkflow = workflows.find(w => w.id === selectedWorkflow?.id) || selectedWorkflow;
