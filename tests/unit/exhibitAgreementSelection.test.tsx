@@ -84,13 +84,29 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+// Picker-only choice for the pair route; must never reach the POST body.
+const MULTI_PICK = '__multi-combination-pair__';
+
 describe('Agreement template selection', () => {
   // Multi-Combination owns no exhibits; attaching to it detached exhibits from their pair.
-  it('offers every agreement that owns exhibits, defaulting to none', async () => {
+  it('offers Multi-Combination plus every agreement that owns exhibits, defaulting to Multi-Combination', async () => {
     const { dropdown } = await openUploadModal();
-    expect(dropdown.value).toBe('');
+    expect(dropdown.value).toBe(MULTI_PICK);
     const values = Array.from(dropdown.options).map((o) => o.value);
-    expect(values).toEqual(['', 'mange+sprawl', 'data-sprawl']);
+    expect(values).toEqual([MULTI_PICK, 'mange+sprawl', 'data-sprawl']);
+  });
+
+  it('labels the pair route with the Template Manager name for Multi-Combination', async () => {
+    const { dropdown } = await openUploadModal();
+    const option = Array.from(dropdown.options).find((o) => o.value === MULTI_PICK);
+    expect(option?.textContent).toBe('Multi-Combination');
+  });
+
+  it('keeps the folder required when Multi-Combination is chosen', async () => {
+    const { user, dropdown } = await openUploadModal();
+    await user.selectOptions(dropdown, MULTI_PICK);
+    expect(dropdown.value).toBe(MULTI_PICK);
+    expect(screen.getByText('Folder *')).toBeTruthy();
   });
 
   it('stores the slug verbatim, so "+" survives into the payload', async () => {
@@ -143,9 +159,10 @@ describe('Agreement template selection', () => {
 // Regression: picking Multi-Combination here replaced the exhibit's pair slug, so Basic
 // exhibits were stored as ['multi-combination'] and a Basic SOW pulled in Standard ones.
 describe('Uploading a migration-pair exhibit', () => {
-  async function uploadToFolder(plan: string, includeType: string) {
+  async function uploadToFolder(plan: string, includeType: string, pickMulti = false) {
     const { user, dropdown, container } = await openUploadModal();
-    expect(dropdown.value).toBe('');
+    expect(dropdown.value).toBe(MULTI_PICK);
+    if (pickMulti) await user.selectOptions(dropdown, MULTI_PICK);
     await user.click(screen.getByPlaceholderText('Search or select existing combination'));
     await user.click(await screen.findByText('Box to OneDrive', { selector: 'li' }));
     await user.upload(
@@ -166,6 +183,12 @@ describe('Uploading a migration-pair exhibit', () => {
     expect(combos(body)).toEqual(['box-to-onedrive']);
     expect(body.get('planType')).toBe('basic');
     expect(body.get('includeType')).toBe('included');
+  });
+
+  it('stores the pair, never the picker value or multi-combination, when Multi-Combination is chosen', async () => {
+    const body = await uploadToFolder('standard', 'included', true);
+    expect(combos(body)).toEqual(['box-to-onedrive']);
+    expect(body.get('planType')).toBe('standard');
   });
 
   it('stores a Basic Not Include exhibit under the same pair', async () => {

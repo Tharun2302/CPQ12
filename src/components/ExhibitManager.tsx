@@ -114,6 +114,9 @@ function DownloadAllButton({ exhibitCount, progress, disabled, onClick }: Downlo
 
 const TOTAL_CHIP_CLASS = 'px-2 py-1 bg-white border border-blue-200 rounded-md text-gray-700';
 
+// Picker-only sentinel; never saved, so it cannot collide with a real template value
+const MULTI_COMBINATION_PICK = '__multi-combination-pair__';
+
 function ExhibitTotals({ combinations, exhibits }: { combinations: number; exhibits: number }) {
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
@@ -1379,6 +1382,27 @@ const ExhibitManager: React.FC = () => {
     [templateCombinations],
   );
 
+  const multiCombinationLabel =
+    templateCombinations.find((c) => c.migrationType === 'Multi combination')?.label || 'Multi-Combination';
+
+  // Multi-Combination is the pair-folder route and the default, so it stores the pair slug, not a template
+  const agreementPickerValue = selectedTemplateCombination || MULTI_COMBINATION_PICK;
+
+  const handleAgreementTemplateChange = (next: string) => {
+    const isMulti = next === MULTI_COMBINATION_PICK;
+    setSelectedTemplateCombination(isMulti ? '' : next);
+    // The two pickers are alternatives; clear the folder fields so the
+    // form cannot describe two different combinations at once.
+    if (next && !isMulti) {
+      setCreateNewFolder(false);
+      setSelectedFolder('');
+      setNewFolderName('');
+      setCombinationFolderSearch('');
+      setUseCustomCombination(false);
+      setCustomCombination('');
+    }
+  };
+
   const manageOnlySlugs = useMemo(
     () => templateCombinations.filter((c) => c.migrationType === 'Manage').map((c) => c.value),
     [templateCombinations],
@@ -1801,24 +1825,11 @@ const ExhibitManager: React.FC = () => {
                     </label>
                     <select
                       id="agreement-template-upload"
-                      value={selectedTemplateCombination}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        setSelectedTemplateCombination(next);
-                        // The two pickers are alternatives; clear the folder fields so the
-                        // form cannot describe two different combinations at once.
-                        if (next) {
-                          setCreateNewFolder(false);
-                          setSelectedFolder('');
-                          setNewFolderName('');
-                          setCombinationFolderSearch('');
-                          setUseCustomCombination(false);
-                          setCustomCombination('');
-                        }
-                      }}
+                      value={agreementPickerValue}
+                      onChange={(e) => handleAgreementTemplateChange(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
-                      <option value="">Not attached to an agreement template</option>
+                      <option value={MULTI_COMBINATION_PICK}>{multiCombinationLabel}</option>
                       {attachableAgreements.map((c) => (
                         <option key={c.value} value={c.value}>{c.label}</option>
                       ))}
@@ -2085,24 +2096,11 @@ const ExhibitManager: React.FC = () => {
                     </label>
                     <select
                       id="agreement-template-edit"
-                      value={selectedTemplateCombination}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        setSelectedTemplateCombination(next);
-                        // The two pickers are alternatives; clear the folder fields so the
-                        // form cannot describe two different combinations at once.
-                        if (next) {
-                          setCreateNewFolder(false);
-                          setSelectedFolder('');
-                          setNewFolderName('');
-                          setCombinationFolderSearch('');
-                          setUseCustomCombination(false);
-                          setCustomCombination('');
-                        }
-                      }}
+                      value={agreementPickerValue}
+                      onChange={(e) => handleAgreementTemplateChange(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
-                      <option value="">Not attached to an agreement template</option>
+                      <option value={MULTI_COMBINATION_PICK}>{multiCombinationLabel}</option>
                       {attachableAgreements.map((c) => (
                         <option key={c.value} value={c.value}>{c.label}</option>
                       ))}
