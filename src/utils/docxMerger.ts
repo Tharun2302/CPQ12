@@ -153,13 +153,14 @@ export function stripUnsupportedForVerbatim(el: Element): VerbatimStripReport {
  * @param exhibitDocxBlobs - Array of exhibit DOCX blobs to append
  * @param exhibitMetadata - Optional array of exhibit metadata (name, category, includeType) for grouping
  * @param options - sectionTitle adds a header bar before ungrouped appends (no effect when exhibitMetadata is supplied)
+ *   keepAllContent turns off the Included / Not Included paragraph filter, so each file is appended as-is
  * @returns Promise<Blob> - The merged DOCX file
  */
 export async function mergeDocxFiles(
   mainDocx: Blob,
   exhibitDocxBlobs: Blob[],
   exhibitMetadata?: Array<{ name: string; category?: string; includeType?: 'included' | 'notincluded' }>,
-  options?: { sectionTitle?: string; verbatim?: boolean; onStripReport?: (report: VerbatimStripReport) => void }
+  options?: { sectionTitle?: string; verbatim?: boolean; keepAllContent?: boolean; onStripReport?: (report: VerbatimStripReport) => void }
 ): Promise<Blob> {
   try {
     console.log('📎 Starting DOCX merge...', {
@@ -401,6 +402,7 @@ export async function mergeDocxFiles(
       // Verbatim callers append a contract attachment: a silent skip would leave the
       // section header standing over nothing, so surface the failure instead.
       const verbatim = options?.verbatim === true;
+      const keepAllContent = options?.keepAllContent === true;
       const fail = (message: string): number => {
         if (verbatim) throw new Error(message);
         console.warn(`⚠️ ${message}, skipping`);
@@ -604,7 +606,7 @@ export async function mergeDocxFiles(
         }
         
         // Check if this is a paragraph (heading or content)
-        if (!verbatim && child.nodeName === 'w:p' && child instanceof Element) {
+        if (!verbatim && !keepAllContent && child.nodeName === 'w:p' && child instanceof Element) {
           const pElement = child as Element;
           
           // Get all text from this paragraph

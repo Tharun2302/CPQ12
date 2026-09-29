@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { PricingCalculation, ConfigurationData, Quote } from '../types/pricing';
 import { formatCurrency, getInstanceTypeCost, overagePerServerPerMonth, manageDataLineCost, manageUserLineCost } from '../utils/pricing';
 import { buildSprawlAgreementData, sprawlPerDataCost, withDiscountRow } from '../utils/sprawlAgreement';
-import { withPairCombinations } from '../utils/exhibitCombination';
+import { withPairCombinations, exhibitCombinationKey, restrictExhibitsToCombination } from '../utils/exhibitCombination';
+import { mergeManageExhibits } from '../utils/manageExhibitMerge';
 import {
   FileText,
   Download,
@@ -798,6 +799,25 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setScopeAttachmentError(`Not appended: ${message} The agreement itself was generated successfully.`);
+      return agreement;
+    }
+  };
+
+  // Unlike the Multi combination merge, a Manage exhibit that fails to load is reported, not dropped silently
+  const mergeManageAgreementExhibits = async (agreement: Blob): Promise<Blob> => {
+    try {
+      const { blob, failed } = await mergeManageExhibits(agreement, {
+        backendUrl: BACKEND_URL,
+        templateValue: exhibitCombinationKey(configuration),
+        selectedIds: selectedExhibits || [],
+      });
+      if (failed.length > 0) {
+        alert(`Warning: These exhibits could not be attached to the agreement:\n- ${failed.join('\n- ')}\n\nThe rest of the agreement was generated.`);
+      }
+      return blob;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Warning: The exhibits could not be attached to the agreement.\n\nError: ${message}\n\nThe main document was generated successfully.`);
       return agreement;
     }
   };
@@ -2699,6 +2719,9 @@ Quote ID: ${quoteData.id}
               console.error('❌ Error merging exhibits for email:', mergeError);
               // Continue with main document without exhibits
             }
+          }
+          if (restrictExhibitsToCombination(configuration) && uniqueSelectedExhibitsForMerge.length > 0) {
+            agreementBlob = await mergeManageAgreementExhibits(agreementBlob);
           }
           
           if (agreementBlob) {
@@ -9630,6 +9653,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               const errorMessage = mergeError instanceof Error ? mergeError.message : 'Unknown error';
               alert(`⚠️ Warning: Some exhibits could not be attached to the document.\n\nError: ${errorMessage}\n\nThe main document was generated successfully.`);
             }
+          }
+          if (restrictExhibitsToCombination(configuration) && (selectedExhibits || []).length > 0) {
+            processedDocument = await mergeManageAgreementExhibits(processedDocument);
           }
         } else {
           console.error('❌ DOCX processing failed:', result.error);
