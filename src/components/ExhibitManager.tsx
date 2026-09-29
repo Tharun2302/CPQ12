@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { saveAs } from 'file-saver';
 import { 
   Upload, 
   FileText, 
@@ -22,7 +23,17 @@ import { BACKEND_URL } from '../config/api';
 import { matchesAgreementFilter, agreementsSupportingExhibits, agreementsOwningExhibits, normalizeFolderKey } from '../utils/exhibitCombination';
 import { getCombinationsForCategory } from '../utils/exhibitAutoDetect';
 import { isPossibleDuplicateResponse, duplicateConfirmMessage } from '../utils/exhibitDuplicates';
+import {
+  buildExhibitsZip,
+  buildZipEntries,
+  bulkResultMessage,
+  exhibitsZipFileName,
+  withRequestTimeout,
+  type BulkResultMessage,
+  type ZipExhibit,
+} from '../utils/exhibitBulkDownload';
 import { useAuth } from '../hooks/useAuth';
+import BulkDownloadBanner from './BulkDownloadBanner';
 import '../assets/docx-preview.css';
 import { SUPPRESS_PII } from '../analytics/privacy';
 
@@ -30,6 +41,90 @@ function getAuthHeaders(): Record<string, string> {
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cpq_token') : null;
   if (!token) return {};
   return { Authorization: `Bearer ${token}` };
+}
+
+async function fetchExhibitFile(exhibit: ZipExhibit, signal?: AbortSignal): Promise<Response> {
+  const exhibitId = exhibit._id || exhibit.id;
+  if (!exhibitId) {
+    throw new Error('Exhibit ID is missing');
+  }
+
+  // The cache-buster matters: a replaced .docx keeps the same URL
+  const response = await fetch(
+    `${BACKEND_URL}/api/exhibits/${encodeURIComponent(exhibitId)}/file?t=${Date.now()}`,
+    { cache: 'no-store', headers: getAuthHeaders(), signal },
+  );
+  // Surface only the status; the server's error details can expose internals
+  if (!response.ok) {
+    throw new Error(`Failed to download file (${response.status})`);
+  }
+  return response;
+}
+
+const FILE_REQUEST_TIMEOUT_MS = 60_000;
+
+function fetchExhibitBytes(exhibit: ZipExhibit, signal: AbortSignal): Promise<ArrayBuffer> {
+  // The timeout spans the body read too, so a stalled stream is recorded as a failure
+  return withRequestTimeout(
+    async (requestSignal) => (await fetchExhibitFile(exhibit, requestSignal)).arrayBuffer(),
+    FILE_REQUEST_TIMEOUT_MS,
+    signal,
+  );
+}
+
+type BulkProgress = { done: number; total: number; phase: 'fetching' | 'zipping' };
+
+type DownloadAllButtonProps = {
+  exhibitCount: number;
+  progress: BulkProgress | null;
+  disabled: boolean;
+  onClick: () => void;
+};
+
+const DOWNLOAD_ALL_BUTTON_CLASS = [
+  'flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg',
+  'hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+].join(' ');
+
+function downloadAllLabel(exhibitCount: number, progress: BulkProgress | null): string {
+  if (!progress) return `Download All (${exhibitCount})`;
+  if (progress.phase === 'zipping') return 'Building ZIP…';
+  return `Downloading ${progress.done} / ${progress.total}`;
+}
+
+function DownloadAllButton({ exhibitCount, progress, disabled, onClick }: DownloadAllButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-busy={progress !== null}
+      title="Download every exhibit as one ZIP, with one folder per combination"
+      className={DOWNLOAD_ALL_BUTTON_CLASS}
+    >
+      {progress ? (
+        <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
+      ) : (
+        <Download className="w-5 h-5" aria-hidden="true" />
+      )}
+      {downloadAllLabel(exhibitCount, progress)}
+    </button>
+  );
+}
+
+const TOTAL_CHIP_CLASS = 'px-2 py-1 bg-white border border-blue-200 rounded-md text-gray-700';
+
+function ExhibitTotals({ combinations, exhibits }: { combinations: number; exhibits: number }) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      <span className={TOTAL_CHIP_CLASS}>
+        Total combinations: <span className="font-bold text-blue-700">{combinations}</span>
+      </span>
+      <span className={TOTAL_CHIP_CLASS}>
+        Total exhibits: <span className="font-bold text-blue-700">{exhibits}</span>
+      </span>
+    </div>
+  );
 }
 
 // Helper function to generate name from combination
@@ -110,6 +205,16 @@ export function deriveFolderName(exhibit: Exhibit): string | null {
   }
 
   return folderName.trim() || null;
+}
+
+function createdTime(exhibit: Exhibit): number {
+  // An unparseable date would make the comparator return NaN and scramble the order
+  const time = Date.parse(exhibit.createdAt || '');
+  return Number.isFinite(time) ? time : 0;
+}
+
+function compareNewestFirst(a: Exhibit, b: Exhibit): number {
+  return createdTime(b) - createdTime(a);
 }
 
 export function buildFolderGroups(list: Exhibit[]): ExhibitFolder[] {
@@ -262,6 +367,10 @@ const ExhibitManager: React.FC = () => {
   const [isSavingInlineEdit, setIsSavingInlineEdit] = useState(false);
   const [isDownloadingInlineDoc, setIsDownloadingInlineDoc] = useState(false);
   const [downloadingExhibitId, setDownloadingExhibitId] = useState<string | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<BulkProgress | null>(null);
+  const [bulkMessage, setBulkMessage] = useState<BulkResultMessage | null>(null);
+  // Doubles as a synchronous double-click guard, since the disabled state lands a render later
+  const bulkAbortRef = useRef<AbortController | null>(null);
   const [editingExhibit, setEditingExhibit] = useState<Exhibit | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('');
@@ -356,6 +465,9 @@ const ExhibitManager: React.FC = () => {
   useEffect(() => {
     loadExhibits();
   }, []);
+
+  // Leaving the page mid-download must stop the requests and never save a stale ZIP
+  useEffect(() => () => bulkAbortRef.current?.abort(), []);
 
   // Cleanup viewer when modal closes
   useEffect(() => {
@@ -976,34 +1088,7 @@ const ExhibitManager: React.FC = () => {
       setInlineEditError(null);
       setInlineEditSuccess(null);
 
-      const exhibitId = exhibit._id || exhibit.id;
-      if (!exhibitId) {
-        throw new Error('Exhibit ID is missing');
-      }
-
-      console.log('Fetching exhibit file:', exhibitId);
-      const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file?t=${Date.now()}`, {
-        cache: 'no-store'
-      });
-      
-      if (!response.ok) {
-        // Try to get error message from JSON response
-        let errorMessage = `Failed to fetch exhibit file (${response.status})`;
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch {
-          // If not JSON, try text
-          try {
-            const errorText = await response.text();
-            if (errorText) errorMessage = errorText;
-          } catch {
-            // Use default message
-          }
-        }
-        console.error('Failed to fetch exhibit:', response.status, errorMessage);
-        throw new Error(errorMessage);
-      }
+      const response = await fetchExhibitFile(exhibit);
 
       // Check if response is actually a blob
       const contentType = response.headers.get('content-type');
@@ -1149,18 +1234,7 @@ const ExhibitManager: React.FC = () => {
   };
 
   const downloadExhibitFile = async (exhibit: Exhibit) => {
-    const exhibitId = exhibit._id || exhibit.id;
-    if (!exhibitId) {
-      throw new Error('Exhibit ID is missing');
-    }
-
-    const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file?t=${Date.now()}`, {
-      cache: 'no-store'
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to download file (${response.status})`);
-    }
-
+    const response = await fetchExhibitFile(exhibit);
     const blob = await response.blob();
     const downloadUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1195,6 +1269,49 @@ const ExhibitManager: React.FC = () => {
       setInlineEditError(error?.message || 'Failed to download document');
     } finally {
       setIsDownloadingInlineDoc(false);
+    }
+  };
+
+  const handleDownloadAll = async () => {
+    if (bulkAbortRef.current || exhibits.length === 0) return;
+    const controller = new AbortController();
+    bulkAbortRef.current = controller;
+    const { signal } = controller;
+    setBulkMessage(null);
+
+    try {
+      // Built from the full list so search and filters never shrink the archive
+      const folders = allFolderGroups;
+      const entries = buildZipEntries(folders);
+      const total = entries.length;
+      setBulkProgress({ done: 0, total, phase: 'fetching' });
+      const onProgress = (done: number) => {
+        if (!signal.aborted) setBulkProgress({ done, total, phase: 'fetching' });
+      };
+
+      const { zip, succeeded, failed } = await buildExhibitsZip(
+        entries,
+        (exhibit) => fetchExhibitBytes(exhibit, signal),
+        { onProgress },
+      );
+      if (signal.aborted) return;
+
+      if (succeeded > 0) {
+        setBulkProgress({ done: total, total, phase: 'zipping' });
+        // Yield once so "Building ZIP…" paints before the synchronous generate blocks the thread
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (signal.aborted) return;
+        // .docx files are already deflate-compressed, so recompressing only costs time
+        saveAs(zip.generate({ type: 'blob', compression: 'STORE' }), exhibitsZipFileName());
+      }
+      setBulkMessage(bulkResultMessage({ total, succeeded, failed: failed.length, folders }));
+    } catch {
+      if (!signal.aborted) {
+        setBulkMessage({ kind: 'error', text: 'Could not build the ZIP file. Please try again.' });
+      }
+    } finally {
+      bulkAbortRef.current = null;
+      if (!signal.aborted) setBulkProgress(null);
     }
   };
 
@@ -1267,8 +1384,10 @@ const ExhibitManager: React.FC = () => {
     [templateCombinations],
   );
 
-  // Filter and sort exhibits (newest first)
-  const filteredExhibits = useMemo(() => exhibits
+  // One sorted list feeds both the screen and Download All, so ZIP numbers match the cards
+  const sortedExhibits = useMemo(() => [...exhibits].sort(compareNewestFirst), [exhibits]);
+
+  const filteredExhibits = useMemo(() => sortedExhibits
     .filter(exhibit => {
       const q = (searchTerm || '').toLowerCase();
       const matchesSearch =
@@ -1278,15 +1397,13 @@ const ExhibitManager: React.FC = () => {
       const matchesCategory = !filterCategory || exhibit.category === filterCategory;
       const matchesAgreement = matchesAgreementFilter(exhibit, filterAgreement, manageOnlySlugs);
       return matchesSearch && matchesCategory && matchesAgreement;
-    })
-    .sort((a, b) => {
-      // Sort by createdAt in descending order (newest first)
-      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return dateB - dateA; // Descending order (newest first)
-    }), [exhibits, searchTerm, filterCategory, filterAgreement, manageOnlySlugs]);
+    }), [sortedExhibits, searchTerm, filterCategory, filterAgreement, manageOnlySlugs]);
 
   const folderGroups = useMemo(() => buildFolderGroups(filteredExhibits), [filteredExhibits]);
+
+  const allFolderGroups = useMemo(() => buildFolderGroups(sortedExhibits), [sortedExhibits]);
+  // "Ungrouped" is a catch-all bucket, not a migration combination
+  const combinationCount = allFolderGroups.filter((folder) => !folder.isUngrouped).length;
 
   // Search narrows which combination folders are listed; it does not open them. The user
   // clicks a folder to see its exhibits, so results stay scannable when a term matches many.
@@ -1320,34 +1437,49 @@ const ExhibitManager: React.FC = () => {
   return (
     <div className="p-6">
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Exhibit Manager</h2>
           <p className="text-gray-600 mt-1">Manage migration exhibits</p>
+          {/* Hidden only on first load, so a reload never flashes the totals to 0 */}
+          {(!isLoading || exhibits.length > 0) && (
+            <ExhibitTotals combinations={combinationCount} exhibits={exhibits.length} />
+          )}
         </div>
-        {canManageExhibits ? (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowExhibitAdminsModal(true)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <Shield className="w-5 h-5" />
-              Exhibit Admins
-            </button>
-            <button
-              onClick={() => {
-                resetForm();
-                setShowUploadModal(true);
-              }}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="w-5 h-5" />
-              Upload Exhibit
-            </button>
-          </div>
-        ) : (
-          <p className="text-sm text-gray-500">You can view exhibits only. Only exhibit admins can add, edit, or delete.</p>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {!canManageExhibits && (
+            <p className="text-sm text-gray-500">
+              You can view exhibits only. Only exhibit admins can add, edit, or delete.
+            </p>
+          )}
+          <DownloadAllButton
+            exhibitCount={exhibits.length}
+            progress={bulkProgress}
+            disabled={isLoading || exhibits.length === 0 || bulkProgress !== null}
+            onClick={handleDownloadAll}
+          />
+          {canManageExhibits && (
+            <>
+              <button
+                onClick={() => setShowExhibitAdminsModal(true)}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <Shield className="w-5 h-5" />
+                Exhibit Admins
+              </button>
+              <button
+                onClick={() => {
+                  resetForm();
+                  setShowUploadModal(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="w-5 h-5" />
+                Upload Exhibit
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Success/Error Messages */}
@@ -1356,6 +1488,9 @@ const ExhibitManager: React.FC = () => {
           <CheckCircle className="w-5 h-5 text-green-600" />
           <span className="text-green-800">{uploadSuccess}</span>
         </div>
+      )}
+      {bulkMessage && (
+        <BulkDownloadBanner message={bulkMessage} onDismiss={() => setBulkMessage(null)} />
       )}
 
       {/* Search and Filter */}
@@ -1406,7 +1541,7 @@ const ExhibitManager: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-3">
-          {folderGroups.map((folder) => {
+          {folderGroups.map((folder, folderIndex) => {
             const isExpanded = isFolderExpanded(folder.id);
             const fileCount = folder.exhibits.length;
             // Folder names carry spaces, so slugify before using the id as a DOM IDREF
@@ -1422,6 +1557,9 @@ const ExhibitManager: React.FC = () => {
                     isExpanded ? 'rounded-t-lg' : 'rounded-lg'
                   }`}
                 >
+                  <span className="w-7 flex-shrink-0 text-right text-sm font-medium text-gray-400 tabular-nums">
+                    {folderIndex + 1}
+                  </span>
                   {isExpanded ? (
                     <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
                   ) : (

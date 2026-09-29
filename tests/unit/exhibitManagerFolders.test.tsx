@@ -127,6 +127,23 @@ describe('ExhibitManager folder grouping', () => {
     expect(screen.queryByText('Box to OneDrive - Standard Include')).toBeNull();
   });
 
+  it('numbers the folder rows 1, 2, 3… and renumbers the rows a search leaves', async () => {
+    const user = userEvent.setup();
+    await renderManager();
+    const rowNumbers = () => screen
+      .getAllByRole('button', { name: /\(\d+ files?\)/ })
+      .map((row) => row.textContent?.match(/^\d+/)?.[0]);
+
+    expect(rowNumbers()).toEqual(['1', '2']);
+    expect(folderHeader(/Box to OneDrive/).textContent).toMatch(/^1Box to OneDrive/);
+    expect(folderHeader(/Slack to Teams/).textContent).toMatch(/^2Slack to Teams/);
+
+    await user.type(screen.getByPlaceholderText('Search exhibits...'), 'Slack');
+
+    expect(rowNumbers()).toEqual(['1']);
+    expect(folderHeader(/Slack to Teams/).textContent).toMatch(/^1Slack to Teams/);
+  });
+
   it('uses the singular "file" for a folder holding one exhibit', async () => {
     await renderManager();
 
