@@ -863,7 +863,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     )}
                     {/* Rate × quantity per line, so each type's own basis is visible. */}
                     {resolveSprawlLines(calc).map((line) => (
-                      <div key={line.type} className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                      <div key={line.key ?? line.type} className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
                         <span className="text-gray-700 font-medium">
                           {line.quantity > 0
                             ? `${line.label} (${formatUnitRate(line.rate)}/${line.basis === 'gb' ? 'GB' : 'user'} × ${line.quantity})`
@@ -1000,12 +1000,12 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
               })()}
               <div className="text-sm text-gray-600 font-medium">
                 {resolveSprawlLines(filteredCalculations[0]).length > 1
-                  ? `Standalone sprawl cost (${resolveSprawlLines(filteredCalculations[0]).map(l => l.type).join(' + ')})`
+                  ? `Standalone sprawl cost (${resolveSprawlLines(filteredCalculations[0]).map(l => l.label).join(' + ')})`
                   : 'Standalone sprawl cost'}
               </div>
             </div>
             {resolveSprawlLines(filteredCalculations[0]).map((line) => (
-              <div key={line.type} className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3 mb-3">
+              <div key={line.key ?? line.type} className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3 mb-3">
                 <span className="text-gray-700 font-medium">
                   {line.quantity > 0
                     ? `${line.label} (${formatUnitRate(line.rate)}/${line.basis === 'gb' ? 'GB' : 'user'} × ${line.quantity})`

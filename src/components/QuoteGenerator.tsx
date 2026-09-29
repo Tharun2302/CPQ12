@@ -4861,6 +4861,14 @@ Total Price: {{total price}}`;
           servicePlan: finalConfiguration.servicePlan,
           manageUsers: finalConfiguration.manageUsers,
           manageDataGB: finalConfiguration.manageDataGB,
+          // Data Sprawl groups and their per-type mirrors: this object is the agreement fallback.
+          manageSprawlConfigs: finalConfiguration.manageSprawlConfigs,
+          manageSprawlTypes: finalConfiguration.manageSprawlTypes,
+          manageSprawlType: finalConfiguration.manageSprawlType,
+          manageUsersByType: finalConfiguration.manageUsersByType,
+          manageMessageCount: finalConfiguration.manageMessageCount,
+          manageEmailCount: finalConfiguration.manageEmailCount,
+          manageAgreementLabel: finalConfiguration.manageAgreementLabel,
           combination: finalConfiguration.combination,
           // IMPORTANT: preserve nested configs for Multi combination
           messagingConfig: finalConfiguration.messagingConfig,

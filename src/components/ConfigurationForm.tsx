@@ -6,11 +6,15 @@ import {
 } from '../utils/exhibitCombination';
 import { numberInputValue } from '../utils/numberInput';
 import { ConfigurationData, PricingTier } from '../types/pricing';
-import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X, Mail, ChevronDown, Plus, Layers } from 'lucide-react';
+import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X, Mail, ChevronDown, Plus } from 'lucide-react';
 import { trackConfiguration } from '../analytics/clarity';
 import ExhibitSelector from './ExhibitSelector';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
-import { PRICING_TIERS, calculateCombinationPricing, formatCurrency, calculateManageSaasPricing, normalizeSprawlTypes, withSprawlTypes, SPRAWL_TYPE_ORDER, sprawlRowLabel } from '../utils/pricing';
+import { PRICING_TIERS, calculateCombinationPricing, formatCurrency, calculateManageSaasPricing, normalizeSprawlTypes, withSprawlTypes, sprawlRowLabel, normalizeSprawlConfigs, hasSprawlConfigs, withSprawlConfigs, manageAgreementCard } from '../utils/pricing';
+import { sprawlConfigIssue } from '../utils/sprawlGroups';
+import { persistConfig } from '../utils/sessionConfig';
+import { useSprawlGroups } from '../hooks/useSprawlGroups';
+import SprawlGroupCard from './SprawlGroupCard';
 import { getContentTimelineByServerType, formatServerTypeLabel, type SourceEnvironment, type ContentMigrationType } from '../utils/timelineProjection';
 import { BACKEND_URL } from '../config/api';
 import { SUPPRESS_PII } from '../analytics/privacy';
@@ -132,6 +136,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   const [contentTiers, setContentTiers] = useState<Record<string, PricingTier>>({});
   const [messagingTiers, setMessagingTiers] = useState<Record<string, PricingTier>>({});
   const [emailTiers, setEmailTiers] = useState<Record<string, PricingTier>>({});
+
+  const { clearSprawlMemory, updateSprawlConfig } = useSprawlGroups(config, setConfig, selectedExhibits);
 
   // Shared instance type state - common for all project configurations
   const [sharedInstanceType, setSharedInstanceType] = useState<string>('Small');
@@ -849,7 +855,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         // quote shows blank user fields and validation blocks submit. Only for sprawl
         // configs — running a plain Manage config through this would clear its GB/users.
         const restoredTypes = normalizeSprawlTypes(merged);
-        const upgraded = restoredTypes.length > 0 ? withSprawlTypes(merged, restoredTypes) : merged;
+        // Groups carry their own counts; the per-type upgrade would overwrite their mirrors.
+        const upgraded = !hasSprawlConfigs(merged) && restoredTypes.length > 0 ? withSprawlTypes(merged, restoredTypes) : merged;
         
         // Initialize shared instance type from first available config
         if (parsed.messagingConfigs && parsed.messagingConfigs.length > 0 && parsed.messagingConfigs[0].instanceType) {
@@ -1257,13 +1264,15 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   // + cpq_discount), which is why Manage totals already discounted before this field existed.
   // Manage plan inputs live in their own full-width section below the top cards, matching
   // the Migrate flow — nested inside the narrow "Choose one" card the labels wrapped.
-  // Full-width section below the top cards, one group per selected type. Each type owns
-  // its user count; the single Manage licence prices on their sum.
+  // Full-width section below the top cards. A sprawl agreement shows one card per selected
+  // exhibit folder; the single Manage licence prices on the sum of their users.
   const renderManagePlanInputs = () => {
     const options = apiCombinations.filter(c => c.migrationType === 'Manage');
     const selectedOption = options.find(o => o.value === config.migrationType);
     const showUsersField = selectedOption ? selectedOption.requiresUsers !== false : true;
     const sprawlTypes = normalizeSprawlTypes(config);
+    const sprawlGroups = normalizeSprawlConfigs(config);
+    const isSprawlAgreement = manageAgreementCard(config) !== 'both';
 
     const QUANTITY = {
       Content: { key: 'manageDataGB' as const, label: 'Content data size in GB', grad: 'from-emerald-500 to-emerald-600', ph: 'Enter data size in GB' },
@@ -1314,8 +1323,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       <Users className="w-4 h-4 text-white" />, 'Enter number of users'
     );
 
-    // Each type owns its user count. manageUsers is kept in sync as the SUM because the
-    // single Manage licence prices on it, and legacy read paths still use it.
+    // manageUsers stays the SUM because the single Manage licence prices on it.
     const setUsersForType = (type: 'Content' | 'Message' | 'Email', value: number) => {
       const per = { ...(config.manageUsersByType || {}) };
       per[type] = value;
@@ -1323,18 +1331,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       const newConfig = { ...config, manageUsersByType: per, manageUsers: total };
       setConfig(newConfig);
       onConfigurationChange(newConfig);
-      try {
-        sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-        // Only update an EXISTING navState: creating one here would omit `timestamp`,
-        // and Dashboard's freshness check would then silently refuse every restore.
-        const existing = sessionStorage.getItem('cpq_navigation_state');
-        if (existing) {
-          const navState = JSON.parse(existing);
-          if (!navState.sessionState) navState.sessionState = {};
-          navState.sessionState.configuration = newConfig;
-          sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
-        }
-      } catch (err) { console.warn('Could not save to sessionStorage:', err); }
+      persistConfig(newConfig);
     };
 
     const usersFieldFor = (type: 'Content' | 'Message' | 'Email') => (
@@ -1378,50 +1375,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
     return (
       <>
-        <fieldset className="group mb-8">
-          <legend className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-            <div className="w-8 h-8 bg-gradient-to-br from-violet-500 to-violet-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-              <Layers className="w-4 h-4 text-white" />
-            </div>
-            Data Sprawl Types
-          </legend>
-          <p className="text-sm text-gray-600 mb-3">
-            Select one or more. Each type is priced on its own user count.
-          </p>
-          <div className="flex flex-wrap gap-6 px-5 py-4 border-2 border-gray-200 rounded-xl bg-white/80 backdrop-blur-sm">
-            {SPRAWL_TYPE_ORDER.map((type) => (
-              <label key={type} className="flex items-center gap-2 text-lg font-medium text-gray-800 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={sprawlTypes.includes(type)}
-                  onChange={(e) => {
-                    const next = e.target.checked
-                      ? [...sprawlTypes, type]
-                      : sprawlTypes.filter((t) => t !== type);
-                    const newConfig = withSprawlTypes(config, next);
-                    setConfig(newConfig);
-                    onConfigurationChange(newConfig);
-                    try {
-                      sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                      const existing = sessionStorage.getItem('cpq_navigation_state');
-                      if (existing) {
-                        const navState = JSON.parse(existing);
-                        if (!navState.sessionState) navState.sessionState = {};
-                        navState.sessionState.configuration = newConfig;
-                        sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
-                      }
-                    } catch (err) { console.warn('Could not save to sessionStorage:', err); }
-                  }}
-                  className="w-5 h-5 rounded border-2 border-gray-300 text-blue-600 focus:ring-4 focus:ring-blue-500/20 cursor-pointer"
-                />
-                {type}
-              </label>
-            ))}
-          </div>
-        </fieldset>
+        {sprawlGroups.map((group, i) => (
+          <SprawlGroupCard key={group.exhibitId} group={group} index={i} onChange={updateSprawlConfig} />
+        ))}
 
-        {/* One group per selected type, each asking for users plus that type's quantity. */}
-        {sprawlTypes.map((type) => (
+        {/* A legacy per-type session not yet re-grouped still shows what it is priced on. */}
+        {sprawlGroups.length === 0 && sprawlTypes.map((type) => (
           <div key={type} className="rounded-xl border-2 border-gray-200 bg-white/60 px-6 py-6 mb-6">
             <h4 className="text-base font-bold text-gray-900 mb-5">{sprawlRowLabel(type)}</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -1431,8 +1390,13 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           </div>
         ))}
 
-        {/* No sprawl type selected — legacy Manage keeps the agreement's own field rules. */}
-        {sprawlTypes.length === 0 && (
+        {sprawlGroups.length === 0 && sprawlTypes.length === 0 && isSprawlAgreement && (
+          <div role="status" data-testid="sprawl-empty-state" className="rounded-xl border-2 border-dashed border-gray-300 bg-white/60 px-4 sm:px-6 py-6 mb-6 text-sm text-gray-600">
+            Select one or more Data Sprawl exhibits below to configure each one.
+          </div>
+        )}
+
+        {sprawlGroups.length === 0 && sprawlTypes.length === 0 && !isSprawlAgreement && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {showUsersField && usersField()}
             {numberField('manageDataGB', 'Content data size in GB', 'from-emerald-500 to-emerald-600',
@@ -1646,9 +1610,13 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       const options = apiCombinations.filter(c => c.migrationType === 'Manage');
       const selectedOption = options.find(o => o.value === config.migrationType);
       const showUsersField = selectedOption ? selectedOption.requiresUsers !== false : true;
-      // Data Sprawl mode (E101) changes the required basis: Message/Email are priced
-      // per user (E99), Content is priced per GB (E100). Fall back to the agreement's
-      // requiresUsers rule when no sprawl type is selected.
+      // One rule with App's recalculation gate, so a blocked submit never shows a price.
+      const sprawlIssue = sprawlConfigIssue(config);
+      if (sprawlIssue) {
+        alert(sprawlIssue);
+        return;
+      }
+      // Legacy per-type sessions; group mode already passed above and its mirrors satisfy these.
       const sprawlTypes = normalizeSprawlTypes(config);
       if (sprawlTypes.length > 0) {
         // Every sprawl type carries its own user count (E99); Content adds a per-GB basis (E100).
@@ -2201,15 +2169,17 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   setMigrationOrTimeline('migration');
                   setTimelineProjectionCategory('');
                   // Clear migrationType/combination when switching plans to avoid state conflicts
-                  const newConfig: ConfigurationData = {
+                  // Sprawl groups belong to the exhibits cleared below, so they go with them.
+                  const newConfig: ConfigurationData = withSprawlConfigs({
                     ...config,
                     servicePlan: plan,
                     timelineProjection: '',
                     migrationType: '' as any,
                     combination: '',
                     ...NO_EXHIBIT_ROWS
-                  };
+                  }, []);
                   setConfig(newConfig);
+                  clearSprawlMemory();
                   setCombination('');
                   onExhibitsChange([]);
                   onConfigurationChange(newConfig);
@@ -2272,14 +2242,15 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     const selectedCombo = apiCombinations.find(c => c.value === newCombination);
                     const newMigrationType = selectedCombo?.migrationType || '';
 
-                    const newConfig = {
+                    const newConfig = withSprawlConfigs({
                       ...config,
                       combination: newCombination,
                       migrationType: newMigrationType as any,
                       timelineProjection: '',
                       ...NO_EXHIBIT_ROWS
-                    };
+                    }, []);
                     setConfig(newConfig);
+                    clearSprawlMemory();
                     setCombination(newCombination);
                     onExhibitsChange([]);
                     onConfigurationChange(newConfig);
@@ -2322,7 +2293,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         const newMigrationType = e.target.value;
                         const selected = options.find(o => o.value === newMigrationType);
                         const newRequiresUsers = selected ? selected.requiresUsers !== false : true;
-                        const newConfig = {
+                        // A new agreement starts with no exhibits, so its sprawl groups are cleared too.
+                        const newConfig = withSprawlConfigs({
                           ...config,
                           migrationType: newMigrationType as any,
                           manageAgreementLabel: selected?.label || '',
@@ -2334,8 +2306,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           // so the pricing calculation doesn't use a stale value
                           manageUsers: newRequiresUsers ? config.manageUsers : 0,
                           ...NO_EXHIBIT_ROWS,
-                        };
+                        }, []);
                         setConfig(newConfig);
+                        clearSprawlMemory();
                         onExhibitsChange([]);
                         onConfigurationChange(newConfig);
                         try {
@@ -2851,6 +2824,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               <ExhibitSelector
                 combination={exhibitCombinationKey(config)}
                 restrictToCombination={restrictExhibitsToCombination(config)}
+                sprawlGrouping={config.servicePlan === 'Manage' && manageAgreementCard(config) !== 'both'}
                 selectedExhibits={selectedExhibits}
                 onExhibitsChange={onExhibitsChange}
                 // Multi-combination can include multiple migrations with different tiers.

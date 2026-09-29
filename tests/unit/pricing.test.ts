@@ -31,8 +31,13 @@ import {
   resolveSprawlUsers,
   manageLicenceUsers,
   calcSprawlLinesFromConfig,
+  normalizeSprawlConfigs,
+  hasSprawlConfigs,
+  withSprawlConfigs,
+  sprawlGroupLabel,
 } from '../../src/utils/pricing';
-import type { ConfigurationData, PricingCalculation } from '../../src/types/pricing';
+import { buildSprawlGroups, reconcileSprawlConfigs } from '../../src/utils/sprawlGroups';
+import type { ConfigurationData, ManageSprawlConfig, PricingCalculation } from '../../src/types/pricing';
 // Backend pricing engine (CommonJS) — must stay in lock-step with src/utils/pricing.ts.
 import pricingLogic from '../../pricing-logic.js';
 
@@ -1771,5 +1776,231 @@ describe('Data Sprawl (Standalone) — Content bills in whole dollars', () => {
       customerLocation: '1',
     }), MANAGE);
     expect(calc.sprawlStandalone?.totalCost).toBeCloseTo(2248.4, 6);
+  });
+});
+
+describe('Data Sprawl — per-exhibit groups', () => {
+  const MANAGE = PRICING_TIERS[0];
+
+  function cfg(overrides: Partial<ConfigurationData> = {}): ConfigurationData {
+    return makeConfig({
+      servicePlan: 'Manage',
+      migrationType: 'mange+sprawl' as never,
+      manageAgreementLabel: 'MANAGE + Sprawl',
+      manageDataGB: 0,
+      customerLocation: '1',
+      ...overrides,
+    });
+  }
+
+  const group = (overrides: Partial<ManageSprawlConfig>): ManageSprawlConfig => ({
+    exhibitId: 'dbx',
+    exhibitIds: ['dbx'],
+    exhibitName: 'Content Sprawl DropBox',
+    type: 'Content',
+    users: 0,
+    quantity: 0,
+    ...overrides,
+  });
+
+  const twoContent = () => withSprawlConfigs(cfg(), [
+    group({ users: 10, quantity: 345 }),
+    group({ exhibitId: 'egn', exhibitIds: ['egn'], exhibitName: 'Content Sprawl Egnyte', users: 20, quantity: 1200 }),
+  ]);
+
+  it('two Content groups give two lines, each with its own tier rate and whole-dollar rounding', () => {
+    const lines = calcSprawlLinesFromConfig(twoContent());
+    expect(lines.map(l => l.label)).toEqual(['Data Sprawl – DropBox', 'Data Sprawl – Egnyte']);
+    expect(lines.map(l => l.rate)).toEqual([0.16, 0.13]);
+    // 345 × 0.16 = 55.20 → $55 ; 1,200 × 0.13 = 156 → $156
+    expect(lines.map(l => l.cost)).toEqual([55, 156]);
+    expect(lines.map(l => l.key)).toEqual(['dbx', 'egn']);
+    expect(lines.map(l => l.quantity)).toEqual([345, 1200]);
+  });
+
+  it('two Message groups use separate tier rates', () => {
+    const config = withSprawlConfigs(cfg(), [
+      group({ exhibitId: 'slack', exhibitName: 'Message Sprawl Slack', type: 'Message', users: 30, quantity: 5000 }),
+      group({ exhibitId: 'teams', exhibitName: 'Message Sprawl Teams', type: 'Message', users: 600 }),
+    ]);
+    const lines = calcSprawlLinesFromConfig(config);
+    // 30 → $4.00 band ; 600 → $2.50 band
+    expect(lines.map(l => l.rate)).toEqual([4, 2.5]);
+    lines.forEach((l, i) => expect(l.cost).toBeCloseTo([120, 1500][i], 6));
+    expect(lines.map(l => l.capturedQuantity)).toEqual([5000, 0]);
+    const calc = calculatePricing(config, MANAGE);
+    // Licence on the SUM of group users: 630 × $20
+    expect(calc.userCost).toBe(12600);
+    expect(calc.totalCost).toBeCloseTo(12600 + 1620, 6);
+    expectInvariant(calc);
+  });
+
+  it('prices the licence on the sum of group users (combined) and drops it on the standalone card', () => {
+    const config = twoContent();
+    const calc = calculatePricing(config, MANAGE);
+    expect(manageLicenceUsers(config)).toBe(30);
+    expect(calc.userCost).toBe(manageUserCost(30));
+    expect(calc.dataCost).toBe(211);
+    expect(calc.totalCost).toBe(calc.userCost + calc.dataCost);
+    expect(calc.sprawlStandalone).toEqual({ dataCost: 211, totalCost: 211 });
+    expectInvariant(calc);
+    expect(manageUserLineCost(config, calc)).toBe(2499);
+    expect(manageUserLineCost(config, { sprawlType: 'Content', userCost: 0 })).toBe(0);
+    expect(manageDataLineCost(config)).toBe(211);
+  });
+
+  it('rounds each group on its own, unlike one pooled line', () => {
+    const config = withSprawlConfigs(cfg(), [
+      group({ users: 1, quantity: 3 }),
+      group({ exhibitId: 'egn', exhibitName: 'Content Sprawl Egnyte', users: 1, quantity: 3 }),
+    ]);
+    expect(calcSprawlLinesFromConfig(config).map(l => l.cost)).toEqual([0, 0]);
+    const pooled = cfg({ manageSprawlTypes: ['Content'], manageUsers: 2, manageDataGB: 6 });
+    expect(calcSprawlLinesFromConfig(pooled).map(l => l.cost)).toEqual([1]);
+  });
+
+  it('derives the types from the groups even when the mirror is stale', () => {
+    const config = {
+      ...withSprawlConfigs(cfg(), [group({ exhibitId: 'slack', exhibitName: 'Message Sprawl Slack', type: 'Message', users: 5 })]),
+      manageSprawlTypes: ['Content' as const],
+      manageSprawlType: 'Content' as const,
+    };
+    expect(normalizeSprawlTypes(config)).toEqual(['Message']);
+    expect(calculatePricing(config, MANAGE).sprawlType).toBe('Message');
+  });
+
+  it('withSprawlConfigs writes every per-type mirror as a sum', () => {
+    const config = withSprawlConfigs(cfg(), [
+      group({ users: 10, quantity: 345 }),
+      group({ exhibitId: 'egn', exhibitName: 'Content Sprawl Egnyte', users: 20, quantity: 1200 }),
+      group({ exhibitId: 'gmail', exhibitName: 'Email Sprawl Gmail', type: 'Email', users: 7, quantity: 90 }),
+    ]);
+    expect(config).toMatchObject({
+      manageSprawlTypes: ['Content', 'Email'],
+      manageSprawlType: 'Content',
+      manageUsersByType: { Content: 30, Email: 7 },
+      manageUsers: 37,
+      manageDataGB: 1545,
+      manageMessageCount: 0,
+      manageEmailCount: 90,
+    });
+    expect(resolveSprawlUsers(config)).toEqual({ Content: 30, Message: 0, Email: 7 });
+  });
+
+  it('withSprawlConfigs([]) clears the groups and mirrors but keeps manageUsers', () => {
+    const cleared = withSprawlConfigs({ ...twoContent(), manageUsers: 30 }, []);
+    expect(cleared).toMatchObject({
+      manageSprawlConfigs: [],
+      manageSprawlTypes: [],
+      manageUsersByType: {},
+      manageDataGB: 0,
+      manageMessageCount: 0,
+      manageEmailCount: 0,
+      manageUsers: 30,
+    });
+    expect(cleared.manageSprawlType).toBeUndefined();
+    expect(hasSprawlConfigs(cleared)).toBe(false);
+  });
+
+  it('drops invalid stored entries and coerces bad counts to 0', () => {
+    const stored = cfg({
+      manageSprawlConfigs: [
+        { exhibitId: 'x', exhibitIds: ['x'], exhibitName: 'Bogus', type: 'Bogus' as never, users: 5, quantity: 5 },
+        { exhibitId: '', exhibitIds: [], exhibitName: 'No id', type: 'Content', users: 5, quantity: 5 },
+        group({ users: -5, quantity: Number.NaN }),
+        null as never,
+      ],
+    });
+    const groups = normalizeSprawlConfigs(stored);
+    expect(groups).toEqual([group({ users: 0, quantity: 0 })]);
+    expect(calcSprawlLinesFromConfig(stored).map(l => l.cost)).toEqual([0]);
+    expect(hasSprawlConfigs(cfg({ manageSprawlConfigs: 'nope' as never }))).toBe(false);
+  });
+
+  it('dedupes by exhibitId, floors and caps counts, and bounds the name', () => {
+    const long = 'Content Sprawl ' + 'x'.repeat(200);
+    const groups = normalizeSprawlConfigs(cfg({
+      manageSprawlConfigs: [
+        group({ users: 12.9, quantity: 345.7 }),
+        group({ users: 999, quantity: 999 }),
+        group({ exhibitId: 'big', exhibitName: '  Content Sprawl Box  ', users: 5e12, quantity: 1e9 }),
+        group({ exhibitId: 'blank', exhibitName: '   ' }),
+        group({ exhibitId: 'long', exhibitName: long }),
+      ],
+    }));
+    expect(groups.map(g => g.exhibitId)).toEqual(['dbx', 'big', 'long']);
+    expect(groups[0]).toMatchObject({ users: 12, quantity: 345 });
+    expect(groups[1]).toMatchObject({ exhibitName: 'Content Sprawl Box', users: 10_000_000, quantity: 10_000_000 });
+    expect(groups[2].exhibitName).toHaveLength(120);
+  });
+
+  it('sprawlGroupLabel reads the type word on either side of the source', () => {
+    expect(sprawlGroupLabel('Content', 'Egnyte Content Sprawl')).toBe('Data Sprawl – Egnyte');
+    expect(sprawlGroupLabel('Content', 'Not Included Egnyte Content Sprawl')).toBe('Data Sprawl – Egnyte');
+    expect(sprawlGroupLabel('Message', 'Slack Message Sprawl')).toBe('Message Sprawl – Slack');
+  });
+
+  it('sprawlGroupLabel strips the type prefix and handles an empty suffix', () => {
+    expect(sprawlGroupLabel('Content', 'Content Sprawl DropBox')).toBe('Data Sprawl – DropBox');
+    expect(sprawlGroupLabel('Content', 'Data Sprawl - Box')).toBe('Data Sprawl – Box');
+    expect(sprawlGroupLabel('Message', 'Message Sprawl Slack')).toBe('Message Sprawl – Slack');
+    expect(sprawlGroupLabel('Email', 'Email Sprawl')).toBe('Email Sprawl');
+    expect(sprawlGroupLabel('Content', 'Generic Terms')).toBe('Data Sprawl – Generic Terms');
+  });
+
+  describe('back-compat: legacy configs price exactly as before', () => {
+    const LEGACY: Array<[string, ConfigurationData]> = [
+      ['shared users, Content + Message', cfg({ manageSprawlTypes: ['Content', 'Message'], manageUsers: 1022, manageDataGB: 345 })],
+      ['per-type map', cfg({ manageSprawlTypes: ['Message', 'Email'], manageUsersByType: { Message: 424, Email: 100 }, manageUsers: 524 })],
+      ['single legacy field', cfg({ manageSprawlType: 'Content', manageUsers: 62, manageDataGB: 1200 })],
+      ['no sprawl ($0.13/GB)', cfg({ migrationType: 'manage-basic' as never, manageAgreementLabel: 'Manage', manageUsers: 40, manageDataGB: 500 })],
+      ['custom licence band', cfg({ manageSprawlTypes: ['Content'], manageUsers: 6000, manageDataGB: 345 })],
+    ];
+
+    it('pins the reference legacy figures', () => {
+      const calc = calculatePricing(LEGACY[0][1], MANAGE);
+      expect(calc.userCost).toBe(20440);
+      expect(calc.sprawlLines!.map(l => l.cost)).toEqual([55, 1022 * 2.2]);
+      expect(calc.totalCost).toBeCloseTo(20440 + 55 + 2248.4, 6);
+      expect(calculatePricing(LEGACY[3][1], MANAGE).totalCost).toBeCloseTo(2499 + 65, 6);
+    });
+
+    it.each(LEGACY)('%s: absent, empty and invalid-only groups all price identically', (_name, legacy) => {
+      const baseline = calculatePricing(legacy, MANAGE);
+      const variants = [
+        { ...legacy, manageSprawlConfigs: [] },
+        { ...legacy, manageSprawlConfigs: [group({ type: 'Bogus' as never, users: 99, quantity: 99 })] },
+      ];
+      for (const v of variants) {
+        expect(calculatePricing(v, MANAGE)).toEqual(baseline);
+        expect(calcSprawlLinesFromConfig(v)).toEqual(calcSprawlLinesFromConfig(legacy));
+        expect(manageDataLineCost(v)).toBe(manageDataLineCost(legacy));
+        expect(manageUserLineCost(v, baseline)).toBe(manageUserLineCost(legacy, baseline));
+      }
+      expect(baseline.sprawlLines?.some(l => l.exhibitId)).toBeFalsy();
+    });
+
+    it('a legacy session seeded into one group per type keeps its total', () => {
+      const legacy = cfg({
+        manageSprawlTypes: ['Content', 'Message'],
+        manageUsersByType: { Content: 12, Message: 424 },
+        manageUsers: 436,
+        manageDataGB: 345,
+      });
+      const exhibits = [
+        { _id: 'dbx', name: 'Content Sprawl DropBox', category: 'content' },
+        { _id: 'slack', name: 'Message Sprawl Slack', category: 'content' },
+      ];
+      const seeded = withSprawlConfigs(
+        legacy,
+        reconcileSprawlConfigs(undefined, buildSprawlGroups(exhibits, ['dbx', 'slack']), legacy)
+      );
+      const before = calculatePricing(legacy, MANAGE);
+      const after = calculatePricing(seeded, MANAGE);
+      expect(after.totalCost).toBe(before.totalCost);
+      expect(after.userCost).toBe(before.userCost);
+      expect(after.sprawlCost).toBe(before.sprawlCost);
+      expect(after.sprawlLines!.map(l => l.cost)).toEqual(before.sprawlLines!.map(l => l.cost));
+    });
   });
 });

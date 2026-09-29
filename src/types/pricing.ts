@@ -9,6 +9,23 @@ export interface SprawlLine {
   quantity: number;
   rate: number;
   cost: number;
+  // Present only on per-exhibit lines; two lines can then share a type.
+  key?: string;
+  exhibitId?: string;
+  exhibitName?: string;
+  // Message/Email count for the row note; Content already carries its GB in quantity.
+  capturedQuantity?: number;
+}
+
+// One Data Sprawl group per selected exhibit folder (Manage), priced on its own.
+export interface ManageSprawlConfig {
+  exhibitId: string;
+  exhibitIds: string[];
+  exhibitName: string;
+  type: SprawlType;
+  users: number;
+  // Content: GB (priced). Message/Email: captured count, not a pricing basis.
+  quantity: number;
 }
 
 export interface UserLimits {
@@ -132,6 +149,8 @@ export interface ConfigurationData {
   // Legacy single-value mirror, always manageSprawlTypes[0]. Never removed — persisted
   // MongoDB quotes and sessionStorage snapshots predate the array.
   manageSprawlType?: SprawlType;
+  // Canonical when non-empty; the per-type fields above are then derived mirrors.
+  manageSprawlConfigs?: ManageSprawlConfig[];
 }
 
 export interface PricingCalculation {

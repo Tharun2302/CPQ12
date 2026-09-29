@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildSprawlAgreementData, buildOverageLine, sprawlPerDataCost, sprawlQuantityNote, withDiscountRow } from '../../src/utils/sprawlAgreement';
-import { calculatePricing, PRICING_TIERS, calcSprawlLines, manageAgreementCard, withSprawlTypes } from '../../src/utils/pricing';
-import type { ConfigurationData } from '../../src/types/pricing';
+import { calculatePricing, PRICING_TIERS, calcSprawlLines, manageAgreementCard, withSprawlTypes, withSprawlConfigs } from '../../src/utils/pricing';
+import type { ConfigurationData, ManageSprawlConfig } from '../../src/types/pricing';
 
 const MANAGE = PRICING_TIERS[0];
 
@@ -381,5 +381,84 @@ describe('agreement rates keep the tiers distinct', () => {
     expect(buildOverageLine(calcSprawlLines(['Content'], 0, 20000)))
       .toBe('Overage Charge: $0.0833 per GB');
     expect(sprawlPerDataCost(config)).toBe('$0.0833');
+  });
+});
+
+describe('per-exhibit Data Sprawl rows', () => {
+  const group = (overrides: Partial<ManageSprawlConfig>): ManageSprawlConfig => ({
+    exhibitId: 'dbx',
+    exhibitIds: ['dbx'],
+    exhibitName: 'Content Sprawl DropBox',
+    type: 'Content',
+    users: 10,
+    quantity: 345,
+    ...overrides,
+  });
+  const grouped = () => withSprawlConfigs(cfg({ manageUsers: 0 }), [
+    group({}),
+    group({ exhibitId: 'egn', exhibitIds: ['egn'], exhibitName: 'Content Sprawl Egnyte', users: 20, quantity: 1200 }),
+  ]);
+
+  it('prints one row per exhibit group with its own GB', () => {
+    const data = buildSprawlAgreementData(grouped());
+    expect(data.rows.map(r => r.sprawlLabel)).toEqual([
+      'Data Sprawl – DropBox (345 GB)',
+      'Data Sprawl – Egnyte (1,200 GB)',
+    ]);
+    expect(data.rows.map(r => r.sprawlPrice)).toEqual(['$55.00', '$156.00']);
+    expect(data.rows.map(r => r.sprawlRate)).toEqual(['$0.16', '$0.13']);
+    expect(data.rows.map(r => r.isLast)).toEqual([false, true]);
+  });
+
+  it('a Message group note uses its own captured count', () => {
+    const config = withSprawlConfigs(cfg({ manageUsers: 0 }), [
+      group({ exhibitId: 'slack', exhibitName: 'Message Sprawl Slack', type: 'Message', users: 30, quantity: 5000 }),
+      group({ exhibitId: 'teams', exhibitName: 'Message Sprawl Teams', type: 'Message', users: 600, quantity: 0 }),
+    ]);
+    expect(buildSprawlAgreementData(config).rows.map(r => r.sprawlLabel))
+      .toEqual(['Message Sprawl – Slack (5,000 messages)', 'Message Sprawl – Teams']);
+  });
+
+  it('single-row tokens join the labels and sum the rounded rows', () => {
+    const config = grouped();
+    const data = buildSprawlAgreementData(config, calculatePricing(config, MANAGE));
+    expect(data.tokens['{{manag_data_label}}'])
+      .toBe('Data Sprawl – DropBox (345 GB) + Data Sprawl – Egnyte (1,200 GB)');
+    expect(data.tokens['{{manag_data_cost}}']).toBe('$211.00');
+    expect(data.tokens['{{manag_data_size}}']).toBe('1545');
+    expect(data.tokens['{{sprawl_row_count}}']).toBe('2');
+    // Licence on the summed users (30 → $2,499) plus the two rows.
+    expect(data.totalCost).toBe(2499 + 211);
+  });
+
+  it('the overage line names each group; the legacy line is unchanged', () => {
+    expect(buildSprawlAgreementData(grouped()).tokens['{{sprawl_overage_line}}'])
+      .toBe('Overage Charge: Data Sprawl – DropBox: $0.16 per GB | Data Sprawl – Egnyte: $0.13 per GB');
+    const legacy = cfg({ manageSprawlTypes: ['Content', 'Message'], manageDataGB: 345 });
+    expect(buildSprawlAgreementData(legacy).tokens['{{sprawl_overage_line}}'])
+      .toBe('Overage Charge: $0.16 per GB | $2.20 per user');
+    expect(buildSprawlAgreementData({ ...legacy, manageSprawlConfigs: [] }))
+      .toEqual(buildSprawlAgreementData(legacy));
+  });
+
+  it('a single group keeps the bare overage wording', () => {
+    const config = withSprawlConfigs(cfg({ manageUsers: 0 }), [group({})]);
+    expect(buildSprawlAgreementData(config).tokens['{{sprawl_overage_line}}']).toBe('Overage Charge: $0.16 per GB');
+  });
+
+  it('the Discount row goes after the group rows', () => {
+    const rows = withDiscountRow(buildSprawlAgreementData(grouped()).rows, 10, 21.1);
+    expect(rows.map(r => r.sprawlJobRequirement))
+      .toEqual(['CloudFuze Data Sprawl', 'CloudFuze Data Sprawl', 'Discount']);
+    expect(rows.map(r => r.isLast)).toEqual([false, false, true]);
+  });
+
+  it('a group whose name is only the prefix prints the bare type label', () => {
+    const config = withSprawlConfigs(cfg({ manageUsers: 0 }), [group({ exhibitName: 'Content Sprawl', quantity: 0 })]);
+    expect(buildSprawlAgreementData(config).rows[0].sprawlLabel).toBe('Data Sprawl');
+  });
+
+  it('{{per_data_cost}} shows the first Content group rate', () => {
+    expect(sprawlPerDataCost(grouped())).toBe('$0.16');
   });
 });

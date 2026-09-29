@@ -3,7 +3,7 @@ import fs from 'fs';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { buildSprawlAgreementData } from '../../src/utils/sprawlAgreement';
-import { formatCurrency, SPRAWL_TYPE_ORDER } from '../../src/utils/pricing';
+import { formatCurrency, SPRAWL_TYPE_ORDER, withSprawlConfigs } from '../../src/utils/pricing';
 import type { ConfigurationData, SprawlType } from '../../src/types/pricing';
 
 const TEMPLATE = 'backend-templates/manage-datasprawl.docx';
@@ -155,5 +155,30 @@ describe('template diagnostic accepts the sprawlRows loop', () => {
       expect(result.missingTokens).not.toContain(token);
       expect(result.mismatchedTokens).not.toContain(token);
     }
+  });
+});
+
+describe('Data Sprawl agreement — docx loop renders one row per exhibit group', () => {
+  it('renders two Content group rows with their own labels, prices and a matching total', () => {
+    const config = withSprawlConfigs({ ...cfg([]), manageUsers: 0 }, [
+      { exhibitId: 'dbx', exhibitIds: ['dbx'], exhibitName: 'Content Sprawl DropBox', type: 'Content', users: 10, quantity: 345 },
+      { exhibitId: 'egn', exhibitIds: ['egn', 'egn-out'], exhibitName: 'Content Sprawl Egnyte', type: 'Content', users: 20, quantity: 1200 },
+    ]);
+    const data = buildSprawlAgreementData(config, null);
+    const xml = render({
+      sprawlRows: data.rows,
+      sprawl_overage_line: data.tokens['{{sprawl_overage_line}}'],
+      total_price: formatCurrency(data.totalCost),
+    });
+    const text = xml.replace(/<[^>]+>/g, '');
+
+    expect((xml.match(/CloudFuze Data Sprawl/g) || []).length).toBe(2);
+    expect(text).toContain('Data Sprawl – DropBox (345 GB)');
+    expect(text).toContain('Data Sprawl – Egnyte (1,200 GB)');
+    expect(text).toContain('$55.00');
+    expect(text).toContain('$156.00');
+    expect(text).toContain(data.tokens['{{sprawl_overage_line}}']);
+    expect(text).toContain(formatCurrency(data.totalCost));
+    expect(xml).not.toContain('{{');
   });
 });

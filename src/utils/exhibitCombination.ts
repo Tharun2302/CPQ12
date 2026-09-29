@@ -182,6 +182,18 @@ export function exhibitNameBase(name: string): string {
     .trim();
 }
 
+/** Folder label ExhibitSelector shows for a name-grouped exhibit, e.g. "Content Sprawl Egnyte". */
+export function exhibitFolderLabel(name: string): string {
+  return exhibitNameBase(name)
+    .replace(/\s+(std|adv|basic|standard|advanced|premium|enterprise)\s+(inscope|outscope|in scope|out scope|include|not include|included|not included)\s*$/i, '')
+    .trim();
+}
+
+// Same normalisation as ExhibitSelector's canonicalFolder, so case/spacing variants share a folder.
+export function exhibitFolderKey(name: string): string {
+  return exhibitFolderLabel(name).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
 /**
  * The migration pair an exhibit belongs to, recovered from its name, for exhibits wrongly
  * tagged with the Multi-Combination agreement slug. Returns '' when the name does not

@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from './types/pricing';
-import { calculateAllTiers, PRICING_TIERS, normalizeSprawlTypes } from './utils/pricing';
+import { calculateAllTiers, PRICING_TIERS } from './utils/pricing';
+import { manageCoreConfigReady } from './utils/sprawlGroups';
 import { readStoredConfiguration } from './utils/sessionConfig';
 import { templateChoiceChanged, templateSelectionKey } from './utils/templateSelection';
 
@@ -1246,16 +1247,9 @@ function App() {
       // Bundle reuses the Migrate flow (migrationType is required), so the standard
       // numberOfUsers / overage / multi-combination check applies.
       const isManage = configuration.servicePlan === 'Manage';
-      const manageSprawlTypes = normalizeSprawlTypes(configuration);
+      // Sprawl agreements and legacy Manage share one readiness rule with the form.
       const hasCoreConfig = isManage
-        ? (manageSprawlTypes.length > 0
-            // Data Sprawl: every type needs users (the license); Content also needs GB.
-            ? ((configuration.manageUsers ?? 0) > 0
-                && (!manageSprawlTypes.includes('Content') || (configuration.manageDataGB ?? 0) > 0))
-            // Legacy Manage: no-users agreements need GB; user-based need users.
-            : (configuration.manageRequiresUsers === false
-                ? (configuration.manageDataGB ?? 0) > 0
-                : (configuration.manageUsers ?? 0) > 0))
+        ? manageCoreConfigReady(configuration)
         : configuration.migrationType && (
             configuration.numberOfUsers > 0 ||
             configuration.combination === 'overage-agreement' ||

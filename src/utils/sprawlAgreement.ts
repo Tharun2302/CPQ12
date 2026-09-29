@@ -34,17 +34,25 @@ const round2 = (n: number): number => Math.round(n * 100) / 100;
 // Quantity printed next to the row label. Content shows its priced GB; Message/Email show
 // the captured counts, which are recorded for the customer but are NOT a pricing basis.
 export function sprawlQuantityNote(type: SprawlLine['type'], config: ConfigurationData): string {
-  const amount =
+  return formatQuantityNote(
+    type,
     type === 'Content' ? Number(config?.manageDataGB ?? 0)
     : type === 'Message' ? Number(config?.manageMessageCount ?? 0)
-    : Number(config?.manageEmailCount ?? 0);
+    : Number(config?.manageEmailCount ?? 0)
+  );
+}
+
+function formatQuantityNote(type: SprawlLine['type'], amount: number): string {
   if (!Number.isFinite(amount) || amount <= 0) return '';
   const unit = type === 'Content' ? 'GB' : type === 'Message' ? 'messages' : 'emails';
   return `${amount.toLocaleString('en-US')} ${unit}`;
 }
 
+// A per-exhibit line carries its own quantity; the config holds only the per-type sums.
 function decorateLabel(line: SprawlLine, config: ConfigurationData): string {
-  const note = sprawlQuantityNote(line.type, config);
+  const note = line.exhibitId
+    ? formatQuantityNote(line.type, line.type === 'Content' ? line.quantity : Number(line.capturedQuantity ?? 0))
+    : sprawlQuantityNote(line.type, config);
   return note ? `${line.label} (${note})` : line.label;
 }
 
@@ -118,9 +126,12 @@ export function withDiscountRow(rows: SprawlRow[], percent: number, amount: numb
 // wording hardcoded "per GB", which mislabelled the per-user Message/Email rates.
 export function buildOverageLine(lines: SprawlLine[]): string {
   if (lines.length === 0) return '';
-  const parts = lines.map(
-    l => `${formatUnitRate(l.rate)} ${l.basis === 'gb' ? 'per GB' : 'per user'}`
-  );
+  // Two bare "per GB" rates would be ambiguous, so per-exhibit lines name their group.
+  const labelled = lines.length > 1 && lines.some(l => l.exhibitId);
+  const parts = lines.map(l => {
+    const rate = `${formatUnitRate(l.rate)} ${l.basis === 'gb' ? 'per GB' : 'per user'}`;
+    return labelled ? `${l.label}: ${rate}` : rate;
+  });
   return `Overage Charge: ${parts.join(' | ')}`;
 }
 

@@ -22,3 +22,20 @@ export function readStoredConfiguration(storage?: StorageLike): ConfigurationDat
     return undefined;
   }
 }
+
+// Only an EXISTING navState is updated: creating one would omit `timestamp`, and Dashboard's
+// freshness check would then silently refuse every restore.
+export function persistConfig(newConfig: ConfigurationData): void {
+  try {
+    sessionStorage.setItem(CONFIG_SESSION_KEY, JSON.stringify(newConfig));
+    const existing = sessionStorage.getItem('cpq_navigation_state');
+    if (existing) {
+      const navState = JSON.parse(existing);
+      if (!navState.sessionState) navState.sessionState = {};
+      navState.sessionState.configuration = newConfig;
+      sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+    }
+  } catch (err) {
+    if (import.meta.env?.DEV) console.warn('Could not save to sessionStorage:', err);
+  }
+}

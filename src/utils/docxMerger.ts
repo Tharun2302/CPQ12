@@ -776,6 +776,7 @@ export async function mergeDocxFiles(
         // Add "Exhibit 2" header FIRST - before any not included tables
         console.log('📌 Adding "Exhibit 2 - NOT INCLUDED IN MIGRATION FEATURES" header...');
         const titleP = createExhibitTitleParagraph(mainDoc, 'Exhibit 2 - NOT INCLUDED IN MIGRATION FEATURES');
+        mainBody.insertBefore(createTitleSpacerParagraph(mainDoc), mainBody.lastChild);
         mainBody.insertBefore(titleP, mainBody.lastChild);
         console.log('✅ "Exhibit 2" header added successfully');
         

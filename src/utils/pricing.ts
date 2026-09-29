@@ -1,4 +1,5 @@
-import { PricingTier, ConfigurationData, PricingCalculation, SprawlType, SprawlLine } from '../types/pricing';
+import { PricingTier, ConfigurationData, PricingCalculation, SprawlType, SprawlLine, ManageSprawlConfig } from '../types/pricing';
+import { parseSprawlName } from './sprawlName';
 
 /** Ensures total = userCost + dataCost + migrationCost + instanceCost (used when $2500 minimum is applied). */
 function assertPricingInvariant(
@@ -190,9 +191,95 @@ export function normalizeSprawlType(value: unknown): SprawlType | undefined {
 
 export const SPRAWL_TYPE_ORDER: readonly SprawlType[] = ['Content', 'Message', 'Email'];
 
+export const nonNegative = (value: unknown): number => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
+
+const MAX_SPRAWL_COUNT = 10_000_000;
+const MAX_SPRAWL_NAME = 120;
+
+const sprawlCount = (value: unknown): number => Math.min(Math.floor(nonNegative(value)), MAX_SPRAWL_COUNT);
+
+export const groupsOfType = (groups: ManageSprawlConfig[], type: SprawlType): ManageSprawlConfig[] =>
+  groups.filter(g => g.type === type);
+
+export const sumGroupField = (groups: ManageSprawlConfig[], field: 'users' | 'quantity'): number =>
+  groups.reduce((sum, g) => sum + g[field], 0);
+
+// Stored configs are untrusted on reload, so an unknown type or a bad count never reaches a rate table.
+export function normalizeSprawlConfigs(config: ConfigurationData | undefined | null): ManageSprawlConfig[] {
+  const raw = (config as { manageSprawlConfigs?: unknown } | undefined | null)?.manageSprawlConfigs;
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  return raw.flatMap((entry): ManageSprawlConfig[] => {
+    if (!entry || typeof entry !== 'object') return [];
+    const type = normalizeSprawlType(entry.type);
+    const exhibitId = String(entry.exhibitId ?? '');
+    const exhibitName = String(entry.exhibitName ?? '').trim().slice(0, MAX_SPRAWL_NAME);
+    if (!type || !exhibitId || !exhibitName || seen.has(exhibitId)) return [];
+    seen.add(exhibitId);
+    const ids = Array.isArray(entry.exhibitIds) ? entry.exhibitIds.map(String).filter(Boolean) : [];
+    return [{
+      exhibitId,
+      exhibitIds: ids.length > 0 ? ids : [exhibitId],
+      exhibitName,
+      type,
+      users: sprawlCount(entry.users),
+      quantity: sprawlCount(entry.quantity)
+    }];
+  });
+}
+
+export function hasSprawlConfigs(config: ConfigurationData | undefined | null): boolean {
+  return normalizeSprawlConfigs(config).length > 0;
+}
+
+// The only writer in per-exhibit mode; the per-type fields become mirrors for legacy readers.
+export function withSprawlConfigs(config: ConfigurationData, configs: ManageSprawlConfig[]): ConfigurationData {
+  const groups = normalizeSprawlConfigs({ manageSprawlConfigs: configs } as ConfigurationData);
+  if (groups.length === 0) {
+    return {
+      ...config,
+      manageSprawlConfigs: [],
+      manageSprawlTypes: [],
+      manageSprawlType: undefined,
+      manageUsersByType: {},
+      manageDataGB: 0,
+      manageMessageCount: 0,
+      manageEmailCount: 0
+    };
+  }
+  const types = SPRAWL_TYPE_ORDER.filter(t => groupsOfType(groups, t).length > 0);
+  const usersByType = types.reduce((acc, t) => {
+    acc[t] = sumGroupField(groupsOfType(groups, t), 'users');
+    return acc;
+  }, {} as Partial<Record<SprawlType, number>>);
+  return {
+    ...config,
+    manageSprawlConfigs: groups,
+    manageSprawlTypes: types,
+    manageSprawlType: types[0],
+    manageUsersByType: usersByType,
+    manageUsers: sumGroupField(groups, 'users'),
+    manageDataGB: sumGroupField(groupsOfType(groups, 'Content'), 'quantity'),
+    manageMessageCount: sumGroupField(groupsOfType(groups, 'Message'), 'quantity'),
+    manageEmailCount: sumGroupField(groupsOfType(groups, 'Email'), 'quantity')
+  };
+}
+
+// The row names its type and its source, whichever side of the source the type word sits.
+export function sprawlGroupLabel(type: SprawlType, exhibitName: string): string {
+  const { source } = parseSprawlName(exhibitName);
+  return source ? `${sprawlRowLabel(type)} – ${source}` : sprawlRowLabel(type);
+}
+
 // The selected sprawl types, canonical order. The legacy single field is the fallback so
 // MongoDB quotes and sessionStorage snapshots written before multi-select still price.
 export function normalizeSprawlTypes(config: ConfigurationData): SprawlType[] {
+  // The groups win over a stale per-type mirror.
+  const groups = normalizeSprawlConfigs(config);
+  if (groups.length > 0) return SPRAWL_TYPE_ORDER.filter(t => groups.some(g => g.type === t));
   const raw = (config as { manageSprawlTypes?: unknown })?.manageSprawlTypes;
   if (Array.isArray(raw)) {
     // An empty array is a real answer ("None"), so it must win over the legacy field.
@@ -235,6 +322,11 @@ export function withSprawlTypes(config: ConfigurationData, types: SprawlType[]):
 // User count per sprawl type. A config without the per-type map (written before per-type
 // counts existed) resolves every type to the single shared manageUsers value.
 export function resolveSprawlUsers(config: ConfigurationData): Record<SprawlType, number> {
+  const groups = normalizeSprawlConfigs(config);
+  if (groups.length > 0) {
+    const sum = (t: SprawlType) => sumGroupField(groupsOfType(groups, t), 'users');
+    return { Content: sum('Content'), Message: sum('Message'), Email: sum('Email') };
+  }
   const map = config?.manageUsersByType;
   const hasMap = !!map && typeof map === 'object';
   const shared = Number(config?.manageUsers ?? 0);
@@ -252,6 +344,8 @@ export function resolveSprawlUsers(config: ConfigurationData): Record<SprawlType
 // Users the single Manage licence is priced on: the SUM of the selected types' counts.
 // Without the per-type map it stays the one shared count, so legacy quotes are unchanged.
 export function manageLicenceUsers(config: ConfigurationData): number {
+  const groups = normalizeSprawlConfigs(config);
+  if (groups.length > 0) return sumGroupField(groups, 'users');
   const types = normalizeSprawlTypes(config);
   const shared = Number(config?.manageUsers ?? 0);
   const safeShared = Number.isFinite(shared) && shared > 0 ? shared : 0;
@@ -264,6 +358,21 @@ export function manageLicenceUsers(config: ConfigurationData): number {
 
 // Lines for a config, each type priced on its own user count.
 export function calcSprawlLinesFromConfig(config: ConfigurationData): SprawlLine[] {
+  const groups = normalizeSprawlConfigs(config);
+  if (groups.length > 0) {
+    // Each exhibit group looks up its own tier rate and is rounded on its own.
+    return groups.map(g => {
+      const isContent = g.type === 'Content';
+      return {
+        ...calcSprawlLines([g.type], g.users, isContent ? g.quantity : 0)[0],
+        key: g.exhibitId,
+        exhibitId: g.exhibitId,
+        exhibitName: g.exhibitName,
+        label: sprawlGroupLabel(g.type, g.exhibitName),
+        capturedQuantity: isContent ? undefined : g.quantity
+      };
+    });
+  }
   const types = normalizeSprawlTypes(config);
   const per = resolveSprawlUsers(config);
   const rawGB = Number(config?.manageDataGB ?? 0);

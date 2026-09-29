@@ -1,7 +1,8 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Check, ChevronRight, Search, ArrowRight, RefreshCw, X } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
-import { scopeExhibitsForCombination, DEFAULT_EXHIBIT_COMBINATION, withPairCombinations } from '../utils/exhibitCombination';
+import { sprawlExhibitFolder } from '../utils/sprawlGroups';
+import { scopeExhibitsForCombination, DEFAULT_EXHIBIT_COMBINATION, withPairCombinations, exhibitFolderLabel } from '../utils/exhibitCombination';
 
 interface Exhibit {
   _id: string;
@@ -29,6 +30,8 @@ interface ExhibitSelectorProps {
    * offer 176 migration-pair documents that have nothing to do with it.
    */
   restrictToCombination?: boolean;
+  // Data Sprawl agreements fold every naming variant of one source into one folder, matching the priced cards.
+  sprawlGrouping?: boolean;
 }
 
 const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
@@ -36,7 +39,8 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   selectedExhibits,
   onExhibitsChange,
   selectedTier,
-  restrictToCombination = false
+  restrictToCombination = false,
+  sprawlGrouping = false
 }) => {
   const [allExhibits, setAllExhibits] = useState<Exhibit[]>([]);
   // Slugs of Manage-only agreements (data-sprawl, mange+sprawl). Their exhibits are hidden
@@ -416,6 +420,8 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     if (!combination || combination === 'all' || exhibits.length === 0) return;
     // Multi combination is hand-picked; auto-selecting would tick exhibits mis-tagged "multi-combination".
     if (combination === DEFAULT_EXHIBIT_COMBINATION) return;
+    // Every sprawl exhibit shares the agreement slug, and each one ticked becomes a priced card.
+    if (sprawlGrouping) return;
 
     const matchingIds = exhibits
       .filter(ex => ex.combinations?.some(c => c.toLowerCase() === combination.toLowerCase()))
@@ -431,7 +437,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       console.log('✅ Auto-selecting exhibits for combination:', combination, { count: matchingIds.length });
       onExhibitsChange(newSelection);
     }
-  }, [combination, exhibits.length, onExhibitsChange]);
+  }, [combination, exhibits.length, onExhibitsChange, sprawlGrouping]);
 
   // Helper function to extract base combination from combination string
   const extractBaseCombination = (combination: string): string => {
@@ -715,6 +721,14 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       if (addedExhibitIds.has(exhibit._id)) {
         return;
       }
+
+      if (sprawlGrouping) {
+        const sprawlFolder = canonicalFolder(sprawlExhibitFolder(exhibit).label);
+        if (!groups.has(sprawlFolder)) groups.set(sprawlFolder, []);
+        groups.get(sprawlFolder)!.push(exhibit);
+        addedExhibitIds.add(exhibit._id);
+        return;
+      }
       
       // Get the most specific combination for folder grouping.
       const combos = exhibit.combinations && exhibit.combinations.length > 0 ? exhibit.combinations : ['all'];
@@ -764,12 +778,8 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         // whose own name contains " - " (e.g. "MyDrive/ShareDrive - OneDrive/SharePointOnline")
         // intact instead of truncating them at the first dash — otherwise the Include and
         // Not-Include files of the SAME combination land in different folders.
-        const nameBase = exhibitNameRaw
-          .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*-\s*(Basic|Standard|Advanced|Premium|Enterprise)?\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
-          .replace(/\s+-\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
-          .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*$/i, '')
-          .replace(/\s+(std|adv|basic|standard|advanced|premium|enterprise)\s+(inscope|outscope|in scope|out scope|include|not include|included|not included)\s*$/i, '')
-          .trim();
+        // Shared with the Manage sprawl groups so a folder and its priced group never drift.
+        const nameBase = exhibitFolderLabel(exhibitNameRaw);
         if (nameBase) {
           // Convert the combination's display label to a comparable shape; if the
           // exhibit-name-derived label is MORE SPECIFIC (longer / additional segments
@@ -1028,7 +1038,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       if (ra !== rb) return ra - rb;
       return (a.name || '').localeCompare(b.name || '');
     });
-  }, [searchFilteredExhibits, searchQuery]);
+  }, [searchFilteredExhibits, searchQuery, sprawlGrouping]);
 
   // Deselect any exhibits that belong to a hidden combination (keeps the agreement in
   // sync with what the user can actually see/select).
@@ -1067,7 +1077,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       combinations: visibleResult.length,
       exhibits: visibleResult.reduce((sum, group) => sum + group.exhibits.length, 0),
     };
-  }, [filteredExhibits]);
+  }, [filteredExhibits, sprawlGrouping]);
 
   // Names of migration types that have at least one exhibit selected (for display below search).
   // Built from the SAME grouping function as the rendered list (run over ALL exhibits, not just
@@ -1109,7 +1119,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     });
 
     return names;
-  }, [selectedExhibits, exhibits, combination, restrictToCombination]);
+  }, [selectedExhibits, exhibits, combination, restrictToCombination, sprawlGrouping]);
 
   const handleRemoveMigrationType = (migrationName: string) => {
     const item = Array.isArray(processedExhibits)
