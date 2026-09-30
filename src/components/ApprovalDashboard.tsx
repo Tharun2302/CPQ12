@@ -24,6 +24,8 @@ import { useAuth } from '../hooks/useAuth';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
+import { authAwareError, getAuthHeaders } from '../utils/authUtils';
+import { redlineSaveMessage } from '../utils/redlineSaveMessage';
 import PdfCanvasViewer from './PdfCanvasViewer';
 import EditDatesModal from './EditDatesModal';
 import OnlyOfficeEditor from './OnlyOfficeEditor';
@@ -139,6 +141,21 @@ const labelFromRole = (role: string) => {
   }
 };
 
+const redlineBadgeTitle = (workflow: any): string => {
+  const edits = Array.isArray(workflow?.redlineEdits) ? workflow.redlineEdits : [];
+  const latest = edits[edits.length - 1];
+  if (latest) {
+    const approved = (latest.approvedStepsBefore || []).map(labelFromRole);
+    return approved.length
+      ? `Edited during approval, after ${approved.join(', ')} approved. Later approvers review the edited version.`
+      : 'Edited during approval, before any step was approved.';
+  }
+  if (workflow?.redlineForked) {
+    return 'A redline copy was saved from this agreement. The document under approval is unchanged.';
+  }
+  return 'This agreement was edited using Edit for RedLine';
+};
+
 const stepStatusLabel = (status?: string) => {
   if (!status) return 'pending';
   return status === 'denied' ? 'rejected' : status.replace('_', ' ');
@@ -172,7 +189,7 @@ const ApprovalDashboard: React.FC = () => {
   /** Only the requester (workflow creator) may proceed to e-sign, reset, or send reminders. */
   const isWorkflowCreator = (workflow: any): boolean => {
     const me = (user?.email || '').trim().toLowerCase();
-    const creator = String(workflow?.creatorEmail || '').trim().toLowerCase();
+    const creator = String(workflow?.creatorEmail || workflow?.createdBy || '').trim().toLowerCase();
     return !!me && !!creator && me === creator;
   };
 
@@ -358,10 +375,10 @@ const ApprovalDashboard: React.FC = () => {
     try {
       const resp = await fetch(
         `${BACKEND_URL}/api/onlyoffice/start-session-from-document/${encodeURIComponent(documentId)}`,
-        { method: 'POST' },
+        { method: 'POST', headers: getAuthHeaders() },
       );
       const data = await resp.json();
-      if (!resp.ok || !data?.success) throw new Error(data?.error || 'Failed to open the editor');
+      if (!resp.ok || !data?.success) throw new Error(authAwareError(resp.status, data?.error, 'Failed to open the editor'));
       setRedlineDocId(documentId);
       setRedlineSessionId(data.sessionId);
       setRedlineEditorUrl(data.editorUrl);
@@ -410,13 +427,13 @@ const ApprovalDashboard: React.FC = () => {
       if (data?.status === 'ready') {
         const persist = await fetch(
           `${BACKEND_URL}/api/onlyoffice/persist-to-document/${redlineSessionId}`,
-          { method: 'POST' },
+          { method: 'POST', headers: getAuthHeaders() },
         );
         const pdata = await persist.json();
-        if (!persist.ok || !pdata?.success) throw new Error(pdata?.error || 'Failed to save the edited document');
-        flashToast(pdata.forked
-          ? 'Redline saved as a separate copy — the agreement under approval is unchanged'
-          : 'Redline saved — document updated');
+        if (!persist.ok || !pdata?.success) {
+          throw new Error(authAwareError(persist.status, pdata?.error, 'Failed to save the edited document'));
+        }
+        flashToast(redlineSaveMessage(pdata));
         closeRedline();
         // The backend just set hasRedlineEdit on the linked workflows; refetch so the
         // "Redline Agreement" badge appears without a page reload.
@@ -983,9 +1000,7 @@ const ApprovalDashboard: React.FC = () => {
                             {workflow.hasRedlineEdit && (
                               <span
                                 className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-700 whitespace-nowrap"
-                                title={workflow.redlineForked
-                                  ? 'A redline copy was saved from this agreement. The document under approval is unchanged.'
-                                  : 'This agreement was edited using Edit for RedLine'}
+                                title={redlineBadgeTitle(workflow)}
                                 aria-label="Redline agreement"
                               >
                                 <PenLine className="w-3 h-3 shrink-0" />

@@ -33,6 +33,22 @@ export function getCurrentUser(): User | null {
   }
 }
 
+// Bearer header for backend routes that verify the caller; empty when signed out
+export function getAuthHeaders(): Record<string, string> {
+  try {
+    const token = localStorage.getItem('cpq_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
+// A 401 from a verified route means the saved login is missing or expired
+export function authAwareError(status: number, serverMessage: string | undefined, fallback: string): string {
+  if (status === 401) return 'Your login has expired. Please sign out, sign in again, and retry.';
+  return serverMessage || fallback;
+}
+
 // Clear all authentication data
 export function clearAuthData(): void {
   try {

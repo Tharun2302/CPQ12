@@ -130,6 +130,15 @@ const {
 } = require('./esign-creator-utils.cjs');
 
 const {
+  ACTIVE_APPROVAL_STATUSES,
+  normalizeEmail,
+  actorIsWorkflowCreator,
+  redlineNeedsAuth,
+  redlineSaveDecision,
+  saveRedlineOverDocument,
+} = require('./onlyoffice-redline.cjs');
+
+const {
   summarizeEsignRecipientProgress,
   esignRecipientDisplayLabel,
   formatEsignProgressLine,
@@ -478,6 +487,7 @@ async function initializeDatabase() {
     await documentsCollection.createIndex({ createdAt: -1 }); // For fast sorting in GET /api/documents
     await documentsCollection.createIndex({ status: 1 });
     console.log('✅ Documents collection ready with indexes');
+    await db.collection('document_versions').createIndex({ documentId: 1, createdAt: -1 });
 
     // E-Signature collections
     const esignDocumentsCollection = db.collection('esign_documents');
@@ -5470,6 +5480,8 @@ app.post('/api/onlyoffice/callback/:sessionId', express.json({ limit: '50mb' }),
   const sessionId = req.params.sessionId;
   const s = onlyofficeSessions.get(sessionId);
   if (!s) return res.status(404).json({ error: 1 });
+  // A close-time callback after Done must not make a saved session saveable again
+  if (s.status === 'persisting' || s.status === 'persisted') return res.json({ error: 0 });
   try {
     // Reject forged callbacks when JWT is enabled. A verified token's payload carries the
     // authoritative status/url, so prefer it over the raw (unsigned) body fields.
@@ -5604,13 +5616,20 @@ app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => 
     const document = await db.collection('documents').findOne({ id });
     if (!document) return res.status(404).json({ success: false, error: 'Document not found' });
 
-    // Redlining is allowed even when an active approval workflow exists; the caller is told
-    // about it so the UI can offer a choice (update the live document vs. fork a new one)
-    // when persisting the edit later.
-    const activeWorkflow = await db.collection('approval_workflows').findOne({
-      documentId: id,
-      status: { $in: ['pending', 'in_progress'] }
-    });
+    // Redlining a document under active approval edits what the approvers review, so only the
+    // requester may do it. /persist-to-document re-checks this when the edit is saved.
+    const activeWorkflows = await db.collection('approval_workflows')
+      .find({ documentId: id, status: { $in: ACTIVE_APPROVAL_STATUSES } })
+      .toArray();
+    let editorEmail = null;
+    if (activeWorkflows.length) {
+      const actor = await getAuthenticatedUser(req, res);
+      if (!actor) return; // 401 already sent
+      if (!activeWorkflows.every(w => actorIsWorkflowCreator(w, actor))) {
+        return res.status(403).json({ success: false, error: 'Only the requester can edit this document while it is under approval' });
+      }
+      editorEmail = normalizeEmail(actor.email);
+    }
 
     const toBuf = (fd) => {
       if (!fd) return null;
@@ -5653,6 +5672,9 @@ app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => 
       status: 'editing',
       createdAt: Date.now(),
       documentId: id,
+      // Bound so the save can only come from this requester, into this same approval
+      workflowId: activeWorkflows.length ? activeWorkflows[0].id : null,
+      actorEmail: editorEmail,
     });
 
     const cutoff = Date.now() - 2 * 60 * 60 * 1000;
@@ -5680,7 +5702,7 @@ app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => 
     };
     if (ONLYOFFICE_JWT_SECRET) config.token = jwt.sign(config, ONLYOFFICE_JWT_SECRET, { expiresIn: '5h' });
 
-    res.json({ success: true, sessionId, editorUrl: ONLYOFFICE_PUBLIC_URL, config, hasActiveApprovalWorkflow: !!activeWorkflow });
+    res.json({ success: true, sessionId, editorUrl: ONLYOFFICE_PUBLIC_URL, config, hasActiveApprovalWorkflow: activeWorkflows.length > 0 });
   } catch (e) {
     console.error('❌ onlyoffice start-session-from-document error:', e);
     res.status(500).json({ success: false, error: e.message });
@@ -5689,37 +5711,34 @@ app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => 
 
 // Persist the edited (redlined) document from an OnlyOffice session back into the documents
 // collection, overwriting both the PDF (fileData) and the Word copy (docxFileData).
-/** Records that a redline edit was produced from a document, so the Approval dashboard can
- *  show a "Redline Agreement" badge (mirrors the isManualApproval → "Uploaded Agreement" badge).
- *  Flags every workflow linked to the source document regardless of status, because a redline is
- *  worth surfacing on finished approvals too. `forked` distinguishes the two persist outcomes:
- *  false = the approval's own document was overwritten; true = the document under approval was
- *  left untouched and the redline went to a separate copy (resultDocumentId). */
-async function markWorkflowsRedlined(sourceDocumentId, resultDocumentId, forked) {
-  if (!db || !sourceDocumentId) return;
+// Re-sends the current approver their approval email with the edited PDF, since the copy they
+// were emailed earlier is now stale. Best-effort: returns { role, email } once queued, or null.
+async function notifyCurrentApproverOfRedline(workflow, actor) {
   try {
-    await db.collection('approval_workflows').updateMany(
-      { documentId: sourceDocumentId },
-      {
-        $set: {
-          hasRedlineEdit: true,
-          redlineEditedAt: new Date().toISOString(),
-          redlineDocumentId: resultDocumentId || sourceDocumentId,
-          redlineForked: !!forked,
-          updatedAt: new Date().toISOString(),
-        },
-      }
-    );
+    const editor = escapeHtml(actor?.name || actor?.email || 'The requester');
+    const banner = `<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 18px;font-family:Arial,sans-serif;font-size:14px;color:#92400e;line-height:1.5">
+      ✏️ <strong>Document updated:</strong> ${editor} edited <strong>${escapeHtml(workflow.documentId)}</strong> during the approval. The attached PDF is the latest version — please review this one, not the copy you received earlier.
+    </div>`;
+    const built = await buildCurrentApproverEmail(workflow, banner);
+    if (!built.ok) {
+      console.warn('⚠️ Redline: could not email the current approver:', workflow.id, built.error);
+      return null;
+    }
+    const subject = sanitizeEmailSubject(`Document Updated: Approval Pending — ${workflow.documentId} (${workflow.clientName})`);
+    sendEmail(built.approverEmail, subject, built.html, built.attachments)
+      .then(r => console.log(`✅ Redline update sent to ${built.approverEmail} [${built.role}]: ${r.success}`))
+      .catch(e => console.error(`❌ Redline update email error [${built.role}]:`, e));
+    return { role: built.role, email: built.approverEmail };
   } catch (e) {
-    // Never fail the save because the badge metadata couldn't be written.
-    console.warn('⚠️ Could not flag workflows as redlined for', sourceDocumentId, e?.message || e);
+    console.error('❌ Redline: error preparing approver email:', e?.message || e);
+    return null;
   }
 }
 
 app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
+  const s = onlyofficeSessions.get(req.params.sessionId);
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const s = onlyofficeSessions.get(req.params.sessionId);
     if (!s) return res.status(404).json({ success: false, error: 'Session not found' });
     if (!s.documentId) return res.status(400).json({ success: false, error: 'Session is not bound to a document' });
 
@@ -5728,86 +5747,55 @@ app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
     }
 
     // Re-check live: an approval workflow may have started/ended since the edit session began.
-    const activeWorkflow = await db.collection('approval_workflows').findOne({
+    const activeWorkflows = await db.collection('approval_workflows')
+      .find({ documentId: s.documentId, status: { $in: ACTIVE_APPROVAL_STATUSES } })
+      .toArray();
+
+    // Identity comes from the verified JWT, never the body — a client-supplied email could name anyone.
+    let actor = null;
+    if (redlineNeedsAuth(s, activeWorkflows)) {
+      actor = await getAuthenticatedUser(req, res);
+      if (!actor) return; // 401 already sent
+    }
+    const decision = redlineSaveDecision({ session: s, activeWorkflows, actor });
+    if (!decision.ok) return res.status(decision.httpStatus).json({ success: false, error: decision.error });
+
+    // Claim the session before the first write so a double-clicked "Done" can't save twice.
+    if (s.status !== 'ready') {
+      return res.status(409).json({ success: false, error: 'This edit is already being saved', status: s.status });
+    }
+    s.status = 'persisting';
+
+    const saved = await saveRedlineOverDocument(db, {
       documentId: s.documentId,
-      status: { $in: ['pending', 'in_progress'] }
+      editedPdf: s.editedPdf,
+      editedDocx: s.editedDocx,
+      activeWorkflows,
+      actor,
+      backupVersionId: uuidv4(),
     });
+    if (!saved.ok) {
+      s.status = 'ready';
+      return res.status(saved.httpStatus).json({ success: false, error: saved.error });
+    }
+    s.status = 'persisted';
+    console.log(`✅ onlyoffice redline persisted to document ${s.documentId} (pdf ${s.editedPdf.length}b, docx ${s.editedDocx.length}b, backup ${saved.backupVersionId})`);
 
-    // No active workflow: always safe to overwrite in place. The client's forkAsNewDocument
-    // choice is irrelevant here since there's nothing to protect.
-    if (!activeWorkflow) {
-      const result = await db.collection('documents').updateOne(
-        { id: s.documentId },
-        { $set: { fileData: s.editedPdf, docxFileData: s.editedDocx, fileSize: s.editedPdf.length, updatedAt: new Date() } }
-      );
-      if (result.matchedCount === 0) return res.status(404).json({ success: false, error: 'Document not found' });
-      console.log(`✅ onlyoffice redline persisted to document ${s.documentId} (pdf ${s.editedPdf.length}b, docx ${s.editedDocx.length}b)`);
-      await markWorkflowsRedlined(s.documentId, s.documentId, false);
-      return res.json({ success: true, forked: false, documentId: s.documentId });
+    const notified = [];
+    for (const workflow of activeWorkflows) {
+      const sent = await notifyCurrentApproverOfRedline(workflow, actor);
+      if (sent) notified.push(sent.role);
     }
 
-    // Active workflow: in-place overwrite is no longer offered at all (Critical auth gap —
-    // a client-supplied boolean must never be trusted to authorize overwriting a document
-    // under active approval). Only forking to a new, unlinked document is permitted here.
-    // Fork: leave the document under approval untouched, save the redline as a new document.
-    const original = await db.collection('documents').findOne({ id: s.documentId });
-    if (!original) return res.status(404).json({ success: false, error: 'Document not found' });
-
-    const sanitizeForId = (str) => {
-      if (!str) return 'Unknown';
-      return str
-        .replace(/[^a-zA-Z0-9]/g, '') // Remove special characters
-        .substring(0, 20) // Limit length
-        .replace(/^[0-9]/, 'C$&'); // Ensure doesn't start with number
-    };
-    const sanitizedCompany = sanitizeForId(original.company);
-    const sanitizedClient = sanitizeForId(original.clientName);
-    // Full millisecond timestamp plus a random suffix avoids id collisions on rapid
-    // double-forks (e.g. a double-clicked "Done") that a truncated timestamp allowed.
-    const newId = `${sanitizedCompany}_${sanitizedClient}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}-redline`;
-
-    const dotIndex = (original.fileName || '').lastIndexOf('.');
-    const forkedFileName = dotIndex > -1
-      ? `${original.fileName.slice(0, dotIndex)} (Redline copy)${original.fileName.slice(dotIndex)}`
-      : `${original.fileName || 'document'} (Redline copy)`;
-
-    const newDoc = {
-      id: newId,
-      fileName: forkedFileName,
-      fileData: s.editedPdf,
-      docxFileData: s.editedDocx,
-      fileSize: s.editedPdf.length,
-      clientName: original.clientName,
-      clientEmail: original.clientEmail,
-      company: original.company,
-      templateName: original.templateName,
-      quoteId: original.quoteId,
-      metadata: original.metadata,
-      dates: original.dates,
-      templateData: original.templateData,
-      templateId: original.templateId,
-      customLineItems: original.customLineItems,
-      generatedDate: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      status: 'active',
-      dateHistory: [],
-      forkedFromDocumentId: s.documentId,
-    };
-    if (original.docxFileName) newDoc.docxFileName = original.docxFileName;
-
-    try {
-      await db.collection('documents').insertOne(newDoc);
-    } catch (insertErr) {
-      const isDuplicateKey = insertErr && (insertErr.code === 11000 || /E11000/.test(insertErr.message || ''));
-      if (!isDuplicateKey) throw insertErr;
-      console.error('❌ onlyoffice persist-to-document duplicate id on fork insert:', insertErr);
-      return res.status(409).json({ success: false, error: 'Could not save the forked document due to an id conflict — please try again.' });
-    }
-    console.log(`✅ onlyoffice redline forked from ${s.documentId} into new document ${newDoc.id} (pdf ${s.editedPdf.length}b, docx ${s.editedDocx.length}b)`);
-    await markWorkflowsRedlined(s.documentId, newDoc.id, true);
-    res.json({ success: true, forked: true, documentId: newDoc.id, originalDocumentId: s.documentId });
+    res.json({
+      success: true,
+      forked: false,
+      documentId: s.documentId,
+      updatedDuringApproval: activeWorkflows.length > 0,
+      notifiedApprover: notified.length ? { role: notified.join(', ') } : null,
+    });
   } catch (e) {
+    if (s && s.status === 'persisting') s.status = 'ready';
     console.error('❌ onlyoffice persist-to-document error:', e);
     res.status(500).json({ success: false, error: e.message });
   }
@@ -12070,6 +12058,96 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
 });
 
 // ── Approval Reminder ────────────────────────────────────────────────────────
+const APPROVER_ROLE_TOKEN_KEYS = {
+  'Team Approval':   'teamlead',
+  'Technical Team':  'technical',
+  'Legal Team':      'legal',
+};
+
+// Header values must stay on one line
+function sanitizeEmailSubject(subject) {
+  return String(subject || '').replace(/[\r\n]+/g, ' ').trim();
+}
+
+async function loadDocumentPdfAttachment(documentId) {
+  if (!documentId) return [];
+  try {
+    const doc = await db.collection('documents').findOne({ id: documentId });
+    if (!doc || !doc.fileData) return [];
+    let fileBuffer;
+    if (Buffer.isBuffer(doc.fileData))        fileBuffer = doc.fileData;
+    else if (doc.fileData.buffer)             fileBuffer = Buffer.from(doc.fileData.buffer);
+    else if (doc.fileData.data)               fileBuffer = Buffer.from(doc.fileData.data);
+    if (!fileBuffer) return [];
+    return [{ filename: doc.fileName || `${documentId}.pdf`, content: fileBuffer, contentType: 'application/pdf' }];
+  } catch (e) {
+    console.error('⚠️ Approver email: could not attach document:', e.message);
+    return [];
+  }
+}
+
+function generateGenericApproverEmailHTML(workflow, approvalLink) {
+  return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#333">
+    <div style="max-width:600px;margin:0 auto;padding:20px">
+      <div style="background:linear-gradient(135deg,#0ea5e9,#0369a1);color:white;padding:30px;text-align:center;border-radius:10px 10px 0 0">
+        <h1>⏰ Approval Reminder</h1>
+      </div>
+      <div style="background:white;padding:30px;border:1px solid #E5E7EB">
+        <p>Hello,</p>
+        <p>Your approval is still pending for the following document:</p>
+        <div style="background:#F3F4F6;padding:20px;border-radius:8px;margin:20px 0">
+          <p><strong>Document:</strong> ${escapeHtml(workflow.documentId)}</p>
+          <p><strong>Client:</strong> ${escapeHtml(workflow.clientName)}</p>
+          <p><strong>Amount:</strong> $${formatUsdAmount(workflow.amount)}</p>
+          <p><strong>Requested by:</strong> ${escapeHtml(workflow.creatorName || workflow.creatorEmail || '—')}</p>
+        </div>
+        <div style="text-align:center;margin:30px 0">
+          <a href="${escapeHtml(approvalLink)}" style="background:#0ea5e9;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold">Review &amp; Approve</a>
+        </div>
+        <p><strong>Note:</strong> This link is secure and will expire in 7 days.</p>
+      </div>
+    </div>
+  </body></html>`;
+}
+
+// Builds the role-specific email for the workflow's current pending step: fresh 7-day portal
+// token, latest PDF attached, `bannerHtml` at the top. Returns { ok, role, approverEmail, html,
+// attachments } or { ok: false, httpStatus, error }.
+async function buildCurrentApproverEmail(workflow, bannerHtml) {
+  const steps = (workflow.workflowSteps || []).slice().sort((a, b) => Number(a.step || 0) - Number(b.step || 0));
+  const pendingStep = steps.find(s => s.status === 'pending' || s.status === 'in_progress');
+  if (!pendingStep) return { ok: false, httpStatus: 400, error: 'No pending step found' };
+
+  const role = pendingStep.role;
+  const approverEmail = pendingStep.email;
+  if (!approverEmail) return { ok: false, httpStatus: 400, error: 'No email address for pending step' };
+
+  const tokenRole = APPROVER_ROLE_TOKEN_KEYS[role] || String(role || '').toLowerCase().replace(/\s+/g, '-');
+  const token = await createApprovalAccessToken(db, workflow.id, tokenRole);
+
+  const workflowData = {
+    ...workflow,
+    workflowId:     workflow.id,
+    teamGroup:      pendingStep.group || workflow.teamGroup,
+    requestedByName: workflow.creatorName || workflow.requestedByName,
+  };
+  const attachments = await loadDocumentPdfAttachment(workflow.documentId);
+
+  let baseHtml;
+  if      (role === 'Team Approval')  baseHtml = generateTeamEmailHTML(workflowData, token);
+  else if (role === 'Technical Team') baseHtml = generateTechnicalTeamEmailHTML(workflowData, token);
+  else if (role === 'Legal Team')     baseHtml = generateLegalTeamEmailHTML(workflowData, token);
+  else {
+    const baseUrl      = process.env.BASE_URL || 'http://localhost:5173';
+    const approvalLink = `${baseUrl}/approval/${workflow.id}?role=${encodeURIComponent(tokenRole)}&token=${encodeURIComponent(token)}`;
+    baseHtml = generateGenericApproverEmailHTML(workflow, approvalLink);
+  }
+
+  // Function replacer: a "$" in the banner must not be read as a replacement pattern
+  const html = baseHtml.replace(/<body([^>]*)>/, (_m, attrs) => `<body${attrs}>${bannerHtml}`);
+  return { ok: true, role, approverEmail, html, attachments };
+}
+
 // Sends a reminder email to the current pending approver for a workflow.
 // Regenerates a fresh 7-day token so the link in the reminder is always valid.
 app.post('/api/approval-workflows/:workflowId/remind', async (req, res) => {
@@ -12089,96 +12167,14 @@ app.post('/api/approval-workflows/:workflowId/remind', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Workflow is not awaiting approval' });
     }
 
-    // 3. Find the first step that is still pending
-    const steps = (workflow.workflowSteps || []).slice().sort((a, b) => Number(a.step || 0) - Number(b.step || 0));
-    const pendingStep = steps.find(s => s.status === 'pending' || s.status === 'in_progress');
-
-    if (!pendingStep) {
-      return res.status(400).json({ success: false, error: 'No pending step found' });
-    }
-
-    const role       = pendingStep.role;
-    const approverEmail = pendingStep.email;
-
-    if (!approverEmail) {
-      return res.status(400).json({ success: false, error: 'No email address for pending step' });
-    }
-
-    // 4. Map role → token role key
-    const roleKeyMap = {
-      'Team Approval':   'teamlead',
-      'Technical Team':  'technical',
-      'Legal Team':      'legal',
-    };
-    const tokenRole = roleKeyMap[role] || role.toLowerCase().replace(/\s+/g, '-');
-
-    // 5. Regenerate token (fresh 7-day expiry)
-    const token = await createApprovalAccessToken(db, workflowId, tokenRole);
-
-    // 6. Build workflowData shape expected by HTML generators
-    const workflowData = {
-      ...workflow,
-      workflowId:     workflow.id,
-      teamGroup:      pendingStep.group || workflow.teamGroup,
-      requestedByName: workflow.creatorName || workflow.requestedByName,
-    };
-
-    // 7. Fetch document PDF for attachment (best-effort)
-    const attachments = [];
-    if (workflow.documentId) {
-      try {
-        const doc = await db.collection('documents').findOne({ id: workflow.documentId });
-        if (doc && doc.fileData) {
-          let fileBuffer;
-          if (Buffer.isBuffer(doc.fileData))        fileBuffer = doc.fileData;
-          else if (doc.fileData.buffer)             fileBuffer = Buffer.from(doc.fileData.buffer);
-          else if (doc.fileData.data)               fileBuffer = Buffer.from(doc.fileData.data);
-          if (fileBuffer) {
-            attachments.push({ filename: doc.fileName || `${workflow.documentId}.pdf`, content: fileBuffer, contentType: 'application/pdf' });
-          }
-        }
-      } catch (e) {
-        console.error('⚠️ Reminder: could not attach document:', e.message);
-      }
-    }
-
-    // 8. Build HTML using existing role-specific generators
-    let baseHtml;
-    if      (role === 'Team Approval')  baseHtml = generateTeamEmailHTML(workflowData, token);
-    else if (role === 'Technical Team') baseHtml = generateTechnicalTeamEmailHTML(workflowData, token);
-    else if (role === 'Legal Team')     baseHtml = generateLegalTeamEmailHTML(workflowData, token);
-    else {
-      // Generic fallback for any other role
-      const baseUrl      = process.env.BASE_URL || 'http://localhost:5173';
-      const approvalLink = `${baseUrl}/approval/${workflowId}?role=${encodeURIComponent(tokenRole)}&token=${encodeURIComponent(token)}`;
-      baseHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#333">
-        <div style="max-width:600px;margin:0 auto;padding:20px">
-          <div style="background:linear-gradient(135deg,#0ea5e9,#0369a1);color:white;padding:30px;text-align:center;border-radius:10px 10px 0 0">
-            <h1>⏰ Approval Reminder</h1>
-          </div>
-          <div style="background:white;padding:30px;border:1px solid #E5E7EB">
-            <p>Hello,</p>
-            <p>Your approval is still pending for the following document:</p>
-            <div style="background:#F3F4F6;padding:20px;border-radius:8px;margin:20px 0">
-              <p><strong>Document:</strong> ${workflow.documentId}</p>
-              <p><strong>Client:</strong> ${workflow.clientName}</p>
-              <p><strong>Amount:</strong> $${formatUsdAmount(workflow.amount)}</p>
-              <p><strong>Requested by:</strong> ${workflow.creatorName || workflow.creatorEmail || '—'}</p>
-            </div>
-            <div style="text-align:center;margin:30px 0">
-              <a href="${approvalLink}" style="background:#0ea5e9;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold">Review &amp; Approve</a>
-            </div>
-            <p><strong>Note:</strong> This link is secure and will expire in 7 days.</p>
-          </div>
-        </div>
-      </body></html>`;
-    }
-
-    // 9. Inject a prominent reminder banner at the top of the email body
     const reminderBanner = `<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 18px;margin:0 0 0 0;font-family:Arial,sans-serif;font-size:14px;color:#92400e;line-height:1.5">
-      ⏰ <strong>Reminder:</strong> Your approval for <strong>${workflow.documentId}</strong> is still pending. Please review and take action at your earliest convenience.
+      ⏰ <strong>Reminder:</strong> Your approval for <strong>${escapeHtml(workflow.documentId)}</strong> is still pending. Please review and take action at your earliest convenience.
     </div>`;
-    const htmlWithBanner = baseHtml.replace(/<body([^>]*)>/, `<body$1>${reminderBanner}`);
+    const built = await buildCurrentApproverEmail(workflow, reminderBanner);
+    if (!built.ok) {
+      return res.status(built.httpStatus).json({ success: false, error: built.error });
+    }
+    const { role, approverEmail, html: htmlWithBanner, attachments } = built;
 
     // 10. Update lastReminderSentAt in the workflow document
     const reminderTimestamp = new Date().toISOString();
@@ -12188,7 +12184,7 @@ app.post('/api/approval-workflows/:workflowId/remind', async (req, res) => {
     );
 
     // 11. Send (fire-and-forget)
-    const subject = `Reminder: Approval Pending — ${workflow.documentId} (${workflow.clientName})`;
+    const subject = sanitizeEmailSubject(`Reminder: Approval Pending — ${workflow.documentId} (${workflow.clientName})`);
     sendEmail(approverEmail, subject, htmlWithBanner, attachments)
       .then(r  => console.log(`✅ Reminder sent to ${approverEmail} [${role}]: ${r.success}`))
       .catch(e => console.error(`❌ Reminder email error [${role}]:`, e));

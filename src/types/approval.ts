@@ -23,10 +23,12 @@ export interface ApprovalWorkflow {
   // ISO timestamp of the most recent redline save
   redlineEditedAt?: string;
   // Document holding the redline. Equals documentId when the agreement was overwritten in place;
-  // a different id when the approval was active and the redline was forked to a separate copy.
+  // a different id on older records whose redline was forked to a separate copy.
   redlineDocumentId?: string;
-  // True when the redline went to a forked copy and the agreement under approval is unchanged
+  // True on older records whose redline went to a forked copy (the agreement stayed unchanged)
   redlineForked?: boolean;
+  // Redlines saved while this approval was active, oldest first
+  redlineEdits?: RedlineEdit[];
   // E-sign document id when agreement was sent via "Add e-sign fields first" flow
   esignDocumentId?: string;
   // Auto-reminder: number of days between reminder emails (0 or undefined = disabled)
@@ -39,6 +41,15 @@ export interface ApprovalWorkflow {
   workflowSteps: ApprovalStep[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface RedlineEdit {
+  editedAt: string;
+  editedBy: string;
+  // document_versions id holding the version this edit replaced
+  backupVersionId: string;
+  // Roles that had already approved the previous version when it was replaced
+  approvedStepsBefore: string[];
 }
 
 export interface ApprovalStep {

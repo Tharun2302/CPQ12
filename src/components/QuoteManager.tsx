@@ -3,6 +3,8 @@ import { Quote } from '../types/pricing';
 import { BACKEND_URL } from '../config/api';
 import OnlyOfficeEditor from './OnlyOfficeEditor';
 import { formatCurrency } from '../utils/pricing';
+import { authAwareError, getAuthHeaders } from '../utils/authUtils';
+import { redlineSaveMessage } from '../utils/redlineSaveMessage';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
 import {
   FileText,
@@ -205,10 +207,12 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
     try {
       const resp = await fetch(
         `${BACKEND_URL}/api/onlyoffice/start-session-from-document/${encodeURIComponent(doc.id)}`,
-        { method: 'POST' }
+        { method: 'POST', headers: getAuthHeaders() }
       );
       const data = await resp.json();
-      if (!resp.ok || !data?.success) throw new Error(data?.message || data?.error || 'Failed to open the editor');
+      if (!resp.ok || !data?.success) {
+        throw new Error(authAwareError(resp.status, data?.message || data?.error, 'Failed to open the editor'));
+      }
       setRedlineDocId(doc.id);
       setRedlineSessionId(data.sessionId);
       setRedlineEditorUrl(data.editorUrl);
@@ -257,16 +261,14 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
       if (data?.status === 'ready') {
         const persist = await fetch(
           `${BACKEND_URL}/api/onlyoffice/persist-to-document/${redlineSessionId}`,
-          { method: 'POST' }
+          { method: 'POST', headers: getAuthHeaders() }
         );
         const pdata = await persist.json();
-        if (!persist.ok || !pdata?.success) throw new Error(pdata?.error || pdata?.message || 'Failed to save the edited document');
-
-        if (pdata.forked === true) {
-          alert('✅ This document has an active approval workflow, so your redline was saved as a new document — it now appears separately in Documents Manager. The original is still in its approval workflow, untouched.');
-        } else {
-          alert('✅ Redline saved — document updated with your changes');
+        if (!persist.ok || !pdata?.success) {
+          throw new Error(authAwareError(persist.status, pdata?.error || pdata?.message, 'Failed to save the edited document'));
         }
+
+        alert(`✅ ${redlineSaveMessage(pdata)}`);
         await loadSavedDocuments();
         closeRedline();
       } else if (data?.status === 'no-changes') {
