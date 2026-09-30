@@ -66,6 +66,12 @@ const resolveExhibitCategory = (exhibit: any): 'messaging' | 'content' | 'email'
 // Per-pair rows are merged into the agreement even when nothing is ticked, so a type switch must empty them
 const NO_EXHIBIT_ROWS = { messagingConfigs: [], contentConfigs: [], emailConfigs: [] };
 
+// Manage Standalone keeps migrationType '' (the SaaS pricing path), so the label records that it was chosen.
+const MANAGE_STANDALONE_OPTION = '__manage-standalone__';
+const MANAGE_STANDALONE_LABEL = 'Manage Standalone';
+const isManageCombinationChosen = (c: ConfigurationData) =>
+  !!c.migrationType || c.manageAgreementLabel === MANAGE_STANDALONE_LABEL;
+
 const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   onConfigurationChange, 
   onSubmit, 
@@ -2176,6 +2182,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     timelineProjection: '',
                     migrationType: '' as any,
                     combination: '',
+                    manageAgreementLabel: '',
                     ...NO_EXHIBIT_ROWS
                   }, []);
                   setConfig(newConfig);
@@ -2288,16 +2295,17 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 return (
                   <>
                     <select
-                      value={config.migrationType || ''}
+                      value={config.migrationType || (isManageCombinationChosen(config) ? MANAGE_STANDALONE_OPTION : '')}
                       onChange={(e) => {
-                        const newMigrationType = e.target.value;
+                        const isStandalone = e.target.value === MANAGE_STANDALONE_OPTION;
+                        const newMigrationType = isStandalone ? '' : e.target.value;
                         const selected = options.find(o => o.value === newMigrationType);
                         const newRequiresUsers = selected ? selected.requiresUsers !== false : true;
                         // A new agreement starts with no exhibits, so its sprawl groups are cleared too.
                         const newConfig = withSprawlConfigs({
                           ...config,
                           migrationType: newMigrationType as any,
-                          manageAgreementLabel: selected?.label || '',
+                          manageAgreementLabel: isStandalone ? MANAGE_STANDALONE_LABEL : (selected?.label || ''),
                           combination: 'manage-standalone',
                           timelineProjection: '',
                           servicePlan: 'Manage' as const,
@@ -2322,6 +2330,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       className="w-full px-6 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white hover:border-slate-300 text-base font-medium"
                     >
                       <option value="">Select Combination</option>
+                      <option value={MANAGE_STANDALONE_OPTION}>{MANAGE_STANDALONE_LABEL}</option>
                       {options.map(o => (
                         <option key={o.value} value={o.value}>{o.label}</option>
                       ))}
@@ -4045,7 +4054,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           )}
 
           {/* MANAGE PLAN: its own full-width section, same shell as Project Configuration below */}
-          {migrationOrTimeline === 'migration' && config.servicePlan === 'Manage' && (
+          {migrationOrTimeline === 'migration' && config.servicePlan === 'Manage' && isManageCombinationChosen(config) && (
             <div data-section="project-configuration" className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 rounded-2xl shadow-2xl border border-blue-100/50 p-8 backdrop-blur-sm mb-8">
               <div className="text-center mb-8">
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Project Configuration</h3>

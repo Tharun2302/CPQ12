@@ -25,7 +25,7 @@ function mockFetch() {
   return fetchMock;
 }
 
-async function openManageTab() {
+async function renderOnManageTab() {
   mockFetch();
   const user = userEvent.setup();
   const { container } = render(
@@ -37,6 +37,13 @@ async function openManageTab() {
     />,
   );
   await user.click(screen.getByRole('button', { name: 'Manage' }));
+  const select = await waitFor(() => manageTemplateSelect(container));
+  return { user, container, select };
+}
+
+async function openManageTab() {
+  const { user, container, select } = await renderOnManageTab();
+  await user.selectOptions(select, 'Manage Standalone');
   const card = await screen.findByTestId('manage-saas-pricing');
   const section = container.querySelector('[data-section="project-configuration"]') as HTMLElement;
   return { user, container, card, section };
@@ -110,9 +117,53 @@ describe('Manage SaaS pricing card (Manage tab, no template)', () => {
 
   it('hides the card once a Manage template is selected', async () => {
     const { user, container } = await openManageTab();
-    const select = await waitFor(() => manageTemplateSelect(container));
-    expect(select.options[0].textContent).toBe('Select Combination');
+    const select = manageTemplateSelect(container);
     await user.selectOptions(select, 'data-sprawl');
     await waitFor(() => expect(screen.queryByTestId('manage-saas-pricing')).toBeNull());
+  });
+});
+
+describe('Manage tab combination dropdown', () => {
+  it('starts on "Select Combination" with Manage Standalone listed first', async () => {
+    const { select } = await renderOnManageTab();
+    expect(select.value).toBe('');
+    expect(Array.from(select.options).map(o => o.textContent)).toEqual([
+      'Select Combination',
+      'Manage Standalone',
+      'mange+sprawl',
+      'data-sprawl',
+    ]);
+  });
+
+  it('shows no configuration until a combination is chosen', async () => {
+    const { container } = await renderOnManageTab();
+    expect(container.querySelector('[data-section="project-configuration"]')).toBeNull();
+    expect(screen.queryByTestId('manage-saas-pricing')).toBeNull();
+  });
+
+  it('loads the Manage configuration for a sprawl combination', async () => {
+    const { user, container, select } = await renderOnManageTab();
+    await user.selectOptions(select, 'data-sprawl');
+    await waitFor(() => expect(container.querySelector('[data-section="project-configuration"]')).not.toBeNull());
+    expect(screen.queryByTestId('manage-saas-pricing')).toBeNull();
+  });
+
+  it('hides the configuration again when "Select Combination" is re-chosen', async () => {
+    const { user, container, select } = await renderOnManageTab();
+    await user.selectOptions(select, 'Manage Standalone');
+    await screen.findByTestId('manage-saas-pricing');
+    await user.selectOptions(select, 'Select Combination');
+    await waitFor(() => expect(container.querySelector('[data-section="project-configuration"]')).toBeNull());
+  });
+
+  it('resets to "Select Combination" after switching tabs away and back', async () => {
+    const { user, container, select } = await renderOnManageTab();
+    await user.selectOptions(select, 'Manage Standalone');
+    await screen.findByTestId('manage-saas-pricing');
+    await user.click(screen.getByRole('button', { name: 'Migrate' }));
+    await user.click(screen.getByRole('button', { name: 'Manage' }));
+    const reopened = await waitFor(() => manageTemplateSelect(container));
+    expect(reopened.value).toBe('');
+    expect(screen.queryByTestId('manage-saas-pricing')).toBeNull();
   });
 });
