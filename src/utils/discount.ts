@@ -31,3 +31,19 @@ export function sanitizeDiscountInput(raw: string): string {
   if (n > MAX_DISCOUNT_PERCENT) return String(MAX_DISCOUNT_PERCENT);
   return raw;
 }
+
+export interface QuoteTotals extends DiscountResult {
+  subtotal: number;
+}
+
+interface QuoteLike {
+  calculation?: { totalCost?: number } | null;
+  totalCost?: number;
+  discount?: number;
+}
+
+// Saved quotes keep calculation.totalCost BEFORE discount; this is the price the customer pays
+export function getQuoteTotals(quote: QuoteLike | null | undefined): QuoteTotals {
+  const subtotal = Number(quote?.calculation?.totalCost ?? quote?.totalCost ?? 0) || 0;
+  return { subtotal, ...calculateDiscount(subtotal, quote?.discount) };
+}

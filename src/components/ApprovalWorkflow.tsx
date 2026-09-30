@@ -7,6 +7,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { getCurrentUser } from '../utils/authUtils';
 import { useAuth } from '../hooks/useAuth';
 import { SUPPRESS_PII } from '../analytics/privacy';
+import { getQuoteTotals } from '../utils/discount';
 
 interface ApprovalWorkflowProps {
   quotes?: any[];
@@ -439,7 +440,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         name: `Quote #${quote.id}`,
         type: 'PDF Quote',
         clientName: quote.clientName || 'Unknown Client',
-        amount: quote.calculation?.totalCost ?? quote.totalCost ?? 0,
+        amount: getQuoteTotals(quote).finalTotal,
         status: quote.status || 'Draft',
         createdAt: quote.createdAt || new Date().toISOString()
       })));
@@ -614,11 +615,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       const companyName = matchingQuote?.company || selectedDoc?.company || contactInfo.company || clientName;
       const clientEmail = matchingQuote?.clientEmail || selectedDoc?.clientEmail || contactInfo.clientEmail || undefined;
 
-      const amount =
-        matchingQuote?.calculation?.totalCost ??
-        matchingQuote?.totalCost ??
-        selectedDoc?.amount ??
-        0;
+      const amount = (matchingQuote && getQuoteTotals(matchingQuote).finalTotal) || selectedDoc?.amount || 0;
 
       const newWorkflow = await createWorkflow({
         documentId: effectiveDocumentId,

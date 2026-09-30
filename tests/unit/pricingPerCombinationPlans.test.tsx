@@ -212,4 +212,21 @@ describe('per-combination pricing plans', () => {
     expect(arg.tier.name).toBe('Basic');
     expect(arg.totalCost).toBeCloseTo(priceOf(BOX, 'Basic') + priceOf(EGNYTE, 'Basic'), 6);
   });
+
+  // QuoteGenerator takes the discount off totalCost itself, so a pre-discounted total showed
+  // up as the "Subtotal" in emails and could be discounted twice.
+  it('hands the full, undiscounted total to onSelectTier when a discount is set', async () => {
+    sessionStorage.setItem('cpq_discount_session', '20');
+    const user = userEvent.setup();
+    const onSelectTier = renderPanel();
+    const full = priceOf(BOX, 'Standard') + priceOf(EGNYTE, 'Standard');
+
+    expect(readTotal()).toBe(money(Math.round(full * 0.8 * 100) / 100));
+
+    await user.click(screen.getByRole('button', { name: /Proceed with Custom Plan Selection/ }));
+
+    const arg = onSelectTier.mock.calls[0][0] as PricingCalculation;
+    expect(arg.totalCost).toBeCloseTo(full, 6);
+    expect(documentTotal(arg)).toBeCloseTo(full, 6);
+  });
 });

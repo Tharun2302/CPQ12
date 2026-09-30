@@ -1663,7 +1663,7 @@ PRICING BREAKDOWN (${safeCalculation.tier.name} Plan):
 - Data Costs: ${formatCurrency(safeCalculation.dataCost)}
 - Migration Services: ${formatCurrency(safeCalculation.migrationCost)}
 - Instance Costs: ${formatCurrency(safeCalculation.instanceCost)}
-- Subtotal: ${formatCurrency(safeCalculation.totalCost)}
+- Subtotal: ${formatCurrency(totalCost)}
 ${shouldApplyDiscount ? `- Discount (${discountPercent}%): -${formatCurrency(discountAmount)}` : ''}
 - Final Total: ${formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost)}
 
@@ -2757,7 +2757,7 @@ Quote ID: ${quoteData.id}
       const dataCost = calculation?.dataCost ?? safeCalculation.dataCost;
       const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
       const instanceCost = calculation?.instanceCost ?? safeCalculation.instanceCost;
-      const subtotal = calculation?.totalCost ?? safeCalculation.totalCost;
+      const subtotal = totalCost;
       const finalTotal = shouldApplyDiscount ? finalTotalAfterDiscount : subtotal;
       const tierName = calculation?.tier?.name ?? safeCalculation.tier.name;
       
@@ -3055,7 +3055,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
         });
         return formatCurrency(perDataCost);
       })(),
-      '{{total price}}': formatCurrency(safeCalculation.totalCost),
+      '{{total price}}': formatCurrency(totalCost),
       // New tokens related to discount and final total - hide when discount is 0
       '{{discount_amount}}': (shouldApplyDiscount && discountAmount > 0) ? `-${formatCurrency(discountAmount)}` : '',
       '{{discount_text}}': (shouldApplyDiscount && discountPercent > 0) ? `Discount (${discountPercent}%)` : '',
@@ -3073,7 +3073,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       '{{migration_type}}': quote.configuration.migrationType,
       '{{prices}}': formatCurrency(safeCalculation.userCost + safeCalculation.dataCost + safeCalculation.instanceCost),
       '{{migration_price}}': formatCurrency(safeCalculation.migrationCost),
-      '{{total_price}}': formatCurrency(safeCalculation.totalCost),
+      '{{total_price}}': formatCurrency(totalCost),
       '{{duration_months}}': (getEffectiveDurationMonths(quote.configuration) || 1).toString(),
       '{{client_name}}': quote.clientName,
       '{{client_email}}': quote.clientEmail,
@@ -4653,7 +4653,7 @@ Total Price: {{total price}}`;
         clientInfo.clientName,
         clientInfo.company,
         undefined, // quoteId
-        calculation?.totalCost
+        shouldApplyDiscount ? finalTotalAfterDiscount : totalCost
       );
       
       console.log('✅ PDF generated, downloaded, and saved to database successfully');

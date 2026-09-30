@@ -36,6 +36,7 @@ import {
 } from '../services/documentServiceMongoDB';
 import { convertPdfToWord, downloadWordFile } from '../utils/pdfToWordConverter';
 import { SUPPRESS_PII } from '../analytics/privacy';
+import { getQuoteTotals } from '../utils/discount';
 
 
 interface QuoteManagerProps {
@@ -628,7 +629,7 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
             <p style="margin: 5px 0;"><strong>Plan:</strong> ${planName}</p>
             <p style="margin: 5px 0;"><strong>Duration:</strong> ${duration} months</p>
             <p style="margin: 5px 0;"><strong>Users:</strong> ${numberOfUsers}</p>
-            <p style="margin: 5px 0;"><strong>Total Cost:</strong> <span style="color: #1e40af; font-weight: bold;">${formatCurrency(quote.calculation.totalCost)}</span></p>
+            <p style="margin: 5px 0;"><strong>Total Cost:</strong> <span style="color: #1e40af; font-weight: bold;">${formatCurrency(getQuoteTotals(quote).finalTotal)}</span></p>
           </div>
         </div>
       </div>
@@ -671,7 +672,7 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
             return `${numberToWord(d)} Month${d > 1 ? 's' : ''}`;
           })()}</p>
           <p style="margin: 5px 0; font-size: 16px; font-weight: bold; color: #1e40af;">
-            Total Price: ${formatCurrency(quote.calculation.totalCost)}
+            Total Price: ${formatCurrency(getQuoteTotals(quote).finalTotal)}
           </p>
         </div>
       </div>
@@ -720,6 +721,7 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
 
   // Generate professional quote preview HTML matching the QuoteGenerator format
   const generateProfessionalQuotePreview = async (quote: Quote): Promise<string> => {
+    const quoteTotals = getQuoteTotals(quote);
     try {
       console.log('🎨 Generating professional quote preview for quote:', quote.id);
       
@@ -877,9 +879,13 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
                     <td class="py-4 text-gray-700 font-medium">Instance costs (${quote.configuration?.numberOfInstances || 0} instances)</td>
                     <td class="text-right py-4 font-bold text-gray-900">${formatCurrency(quote.calculation?.instanceCost || 0)}</td>
                   </tr>
+                  ${quoteTotals.amount > 0 ? `<tr class="border-b border-gray-200">
+                    <td class="py-4 text-gray-700 font-medium">Discount (${quoteTotals.percent}%)</td>
+                    <td class="text-right py-4 font-bold text-gray-900">-${formatCurrency(quoteTotals.amount)}</td>
+                  </tr>` : ''}
                   <tr class="border-t-2 border-blue-300 bg-gradient-to-r from-blue-50 to-indigo-50">
                     <td class="py-6 font-bold text-xl text-gray-900">Total Project Cost</td>
-                    <td class="text-right py-6 font-bold text-2xl text-blue-600">${formatCurrency(quote.calculation?.totalCost || 0)}</td>
+                    <td class="text-right py-6 font-bold text-2xl text-blue-600">${formatCurrency(quoteTotals.finalTotal)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -947,6 +953,7 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
       console.error('❌ Error generating template preview:', error);
       console.error('❌ Error details:', error instanceof Error ? error.message : 'Unknown error');
       
+      const quoteTotals = getQuoteTotals(quote);
       // Enhanced fallback preview with better styling
       const fallbackHTML = `
         <div class="template-preview bg-white border-2 border-gray-200 rounded-xl p-8 shadow-lg" style="min-height: 600px;">
@@ -1023,8 +1030,9 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
                 <p><strong>Data Cost:</strong> $${quote.calculation?.dataCost || 0}</p>
                 <p><strong>Migration Cost:</strong> $${quote.calculation?.migrationCost || 0}</p>
                 <p><strong>Instance Cost:</strong> $${quote.calculation?.instanceCost || 0}</p>
+                ${quoteTotals.amount > 0 ? `<p><strong>Discount (${quoteTotals.percent}%):</strong> -$${quoteTotals.amount}</p>` : ''}
                 <hr class="my-3 border-orange-200">
-                <p class="text-xl font-bold text-orange-700"><strong>Total Cost:</strong> $${quote.calculation?.totalCost || 0}</p>
+                <p class="text-xl font-bold text-orange-700"><strong>Total Cost:</strong> $${quoteTotals.finalTotal}</p>
               </div>
             </div>
           </div>
@@ -1067,7 +1075,7 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
 Thank you for your interest in our services. Please find attached your quote #${quoteNumber} for ${quote.company}.
 
 Quote Summary:
-- Total Cost: ${formatCurrency(quote.calculation.totalCost)}
+- Total Cost: ${formatCurrency(getQuoteTotals(quote).finalTotal)}
 - Plan: ${quote.selectedTier.name}
 - Duration: ${(getEffectiveDurationMonths(quote.configuration) || 1)} months
 
@@ -1948,7 +1956,7 @@ ZENOP Pro Solutions Team`;
                             </div>
                             <div>
                               <span className="font-medium text-blue-700">Total Cost:</span>
-                              <span className="ml-2 text-blue-600">{formatCurrency(quote.calculation.totalCost)}</span>
+                              <span className="ml-2 text-blue-600">{formatCurrency(getQuoteTotals(quote).finalTotal)}</span>
                             </div>
                           </div>
                         </div>

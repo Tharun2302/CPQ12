@@ -1225,7 +1225,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     dataCost: combinedDataCost,
                     migrationCost: combinedMigrationCost,
                     instanceCost: combinedInstanceCost,
-                    totalCost: calculateDiscount(customTotal, discount).finalTotal,
+                    totalCost: customTotal,
                     tier: pricingTier, // Headline plan — label and template only, not the total
                     // Include the original calculations for reference
                     messagingCalculation: calculations[0]?.messagingCalculation,
