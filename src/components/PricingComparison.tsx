@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { CheckCircle } from 'lucide-react';
 import { PricingCalculation, ConfigurationData, PricingTier } from '../types/pricing';
 import { formatCurrency, formatUnitRate, PRICING_TIERS, calculateCombinationPricing, getManageDataRatePerGB, resolveSprawlLines, sprawlDisplayTotal, manageAgreementCard, isManageSaasConfig, MANAGE_SAAS_PRICE_PER_USER_MONTHLY } from '../utils/pricing';
+import { calculateDiscount, normalizeDiscountPercent } from '../utils/discount';
 
 interface PricingComparisonProps {
   calculations: PricingCalculation[];
@@ -239,7 +240,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
       try {
         const savedDiscount = sessionStorage.getItem('cpq_discount_session');
         if (savedDiscount !== null && savedDiscount !== '' && !isNaN(Number(savedDiscount))) {
-          setDiscount(Number(savedDiscount));
+          setDiscount(normalizeDiscountPercent(savedDiscount));
         } else {
           setDiscount(0);
         }
@@ -340,11 +341,9 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
   // Helper function to apply discount calculations
   const calculateDiscountedPrice = (totalCost: number) => {
-    const isDiscountValid = discount > 0;
+    const { amount: discountAmount, finalTotal } = calculateDiscount(totalCost, discount);
 
-    if (isDiscountValid) {
-      const discountAmount = totalCost * (discount / 100);
-      const finalTotal = totalCost - discountAmount;
+    if (discount > 0) {
       return {
         originalPrice: totalCost,
         discountAmount,
@@ -1145,7 +1144,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
               <div className="mt-6 flex justify-between items-center text-lg bg-gradient-to-r from-purple-200 to-indigo-200 border-2 border-purple-400 rounded-lg p-4">
                 <span className="font-bold text-purple-900">Custom Combined Total:</span>
                 <span className="font-bold text-2xl text-purple-900">
-                  {formatCurrency(customTotal * (1 - discount / 100))}
+                  {formatCurrency(calculateDiscount(customTotal, discount).finalTotal)}
                 </span>
               </div>
               
@@ -1226,7 +1225,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     dataCost: combinedDataCost,
                     migrationCost: combinedMigrationCost,
                     instanceCost: combinedInstanceCost,
-                    totalCost: customTotal * (1 - discount / 100),
+                    totalCost: calculateDiscount(customTotal, discount).finalTotal,
                     tier: pricingTier, // Headline plan — label and template only, not the total
                     // Include the original calculations for reference
                     messagingCalculation: calculations[0]?.messagingCalculation,

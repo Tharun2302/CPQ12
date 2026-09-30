@@ -18,6 +18,7 @@ import SprawlGroupCard from './SprawlGroupCard';
 import { getContentTimelineByServerType, formatServerTypeLabel, type SourceEnvironment, type ContentMigrationType } from '../utils/timelineProjection';
 import { BACKEND_URL } from '../config/api';
 import { SUPPRESS_PII } from '../analytics/privacy';
+import { calculateDiscount, sanitizeDiscountInput } from '../utils/discount';
 
 interface ConfigurationFormProps {
   onConfigurationChange: (config: ConfigurationData) => void;
@@ -1136,7 +1137,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       if (sessionStorage.getItem('cpq_discount_session_started')) {
         const saved = sessionStorage.getItem('cpq_discount_session') || '';
         setDiscountValue(saved);
-        if (saved) localStorage.setItem('cpq_discount', saved);
+        localStorage.setItem('cpq_discount', saved);
         window.dispatchEvent(new CustomEvent('discountUpdated'));
         return;
       }
@@ -1419,8 +1420,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
   const renderManageSaasPricing = () => {
     const pricing = calculateManageSaasPricing(config.manageUsers);
-    const discountPct = Math.min(Math.max(parseFloat(discountValue) || 0, 0), 100);
-    const discountedTotal = Math.round(pricing.totalCost * (1 - discountPct / 100) * 100) / 100;
+    const { percent: discountPct, finalTotal: discountedTotal } = calculateDiscount(pricing.totalCost, discountValue);
     return (
       <div data-testid="manage-saas-pricing" className="mt-8 rounded-xl border-2 border-blue-100 bg-white/80 p-6">
         <h4 className="text-lg font-bold text-gray-900 mb-4">Pricing</h4>
@@ -1457,6 +1457,17 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     );
   };
 
+  // QuoteGenerator falls back between both stores, so they must always match
+  const handleDiscountInput = (raw: string) => {
+    const value = sanitizeDiscountInput(raw);
+    setDiscountValue(value);
+    try {
+      sessionStorage.setItem('cpq_discount_session', value);
+      localStorage.setItem('cpq_discount', value);
+      window.dispatchEvent(new CustomEvent('discountUpdated'));
+    } catch {}
+  };
+
   const renderDiscountField = () => (
     <>
     {/* Discount - now visible in UI */}
@@ -1471,43 +1482,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         type="number"
         min={0}
         step={0.01}
+        max={100}
         value={discountValue}
-        onChange={(e) => {
-          const raw = e.target.value;
-
-          // Allow empty value for clearing
-          if (raw === '') {
-            setDiscountValue('');
-            try {
-              localStorage.setItem('cpq_discount', '');
-              window.dispatchEvent(new CustomEvent('discountUpdated'));
-            } catch {}
-            return;
-          }
-
-          const numValue = Number(raw);
-
-          // Ensure value is not negative
-          if (numValue < 0) {
-            setDiscountValue('0');
-            try { 
-              sessionStorage.setItem('cpq_discount_session', '0');
-              window.dispatchEvent(new CustomEvent('discountUpdated'));
-            } catch {}
-            return;
-          }
-          
-          // Update the display value immediately
-          setDiscountValue(raw);
-          
-          // Save to sessionStorage + localStorage (source-of-truth used by QuoteGenerator),
-          // and notify other components
-          try { 
-            sessionStorage.setItem('cpq_discount_session', raw);
-            localStorage.setItem('cpq_discount', raw);
-            window.dispatchEvent(new CustomEvent('discountUpdated'));
-          } catch {}
-        }}
+        onChange={(e) => handleDiscountInput(e.target.value)}
        className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
        placeholder={`Enter discount percentage`}
       />
@@ -1521,7 +1498,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       {showDiscountRules && (
         <p className="text-xs text-gray-600 mt-2 ml-4 border-l-2 border-blue-300 pl-3">
           • Discount available at any amount (no minimum)
-          <br />• No maximum limit
+          <br />• Up to 100%
           <br />• Discounts above 15% require additional approval (Team Lead, Technical, Legal)
         </p>
       )}
@@ -3966,40 +3943,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       type="number"
                       min={0}
                       step={0.01}
+                      max={100}
                       value={discountValue}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-
-                        if (raw === '') {
-                          setDiscountValue('');
-                          try {
-                            sessionStorage.setItem('cpq_discount_session', '');
-                            localStorage.setItem('cpq_discount', '');
-                            window.dispatchEvent(new CustomEvent('discountUpdated'));
-                          } catch {}
-                          return;
-                        }
-
-                        const numValue = Number(raw);
-
-                        if (numValue < 0) {
-                          setDiscountValue('0');
-                          try {
-                            sessionStorage.setItem('cpq_discount_session', '0');
-                            localStorage.setItem('cpq_discount', '0');
-                            window.dispatchEvent(new CustomEvent('discountUpdated'));
-                          } catch {}
-                          return;
-                        }
-
-                        setDiscountValue(raw);
-
-                        try {
-                          sessionStorage.setItem('cpq_discount_session', raw);
-                          localStorage.setItem('cpq_discount', raw);
-                          window.dispatchEvent(new CustomEvent('discountUpdated'));
-                        } catch {}
-                      }}
+                      onChange={(e) => handleDiscountInput(e.target.value)}
                       className="no-spinner flex-1 min-w-0 px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
                       placeholder={`Enter discount percentage`}
                     />
@@ -4014,7 +3960,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   {showDiscountRules && (
                     <p className="text-xs text-gray-600 mt-2 ml-4 border-l-2 border-blue-300 pl-3">
                       • Discount available at any amount (no minimum)
-                      <br />• No maximum limit
+                      <br />• Up to 100%
                       <br />• Discounts above 15% require additional approval (Team Lead, Technical, Legal)
                       <br />• Applied to combined total (all pricing sources)
                     </p>

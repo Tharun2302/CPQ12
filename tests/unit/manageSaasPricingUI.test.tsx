@@ -167,3 +167,41 @@ describe('Manage tab combination dropdown', () => {
     expect(screen.queryByTestId('manage-saas-pricing')).toBeNull();
   });
 });
+
+describe('Discount (%) input keeps both stores in sync', () => {
+  it('clearing the discount removes it from both stores', async () => {
+    const { user, section } = await openManageTab();
+    const input = discountInput(section);
+
+    await user.type(input, '20');
+    expect(sessionStorage.getItem('cpq_discount_session')).toBe('20');
+    expect(localStorage.getItem('cpq_discount')).toBe('20');
+
+    await user.clear(input);
+    expect(input.value).toBe('');
+    expect(sessionStorage.getItem('cpq_discount_session')).toBe('');
+    expect(localStorage.getItem('cpq_discount')).toBe('');
+  });
+
+  it('a negative value resets both stores to 0', async () => {
+    const { user, section } = await openManageTab();
+    const input = discountInput(section);
+
+    await user.type(input, '20');
+    await user.clear(input);
+    await user.type(input, '-5');
+    expect(input.value).toBe('0');
+    expect(sessionStorage.getItem('cpq_discount_session')).toBe('0');
+    expect(localStorage.getItem('cpq_discount')).toBe('0');
+  });
+
+  it('caps a value above 100 at 100', async () => {
+    const { user, section } = await openManageTab();
+    const input = discountInput(section);
+
+    await user.type(input, '150');
+    expect(input.value).toBe('100');
+    expect(sessionStorage.getItem('cpq_discount_session')).toBe('100');
+    expect(localStorage.getItem('cpq_discount')).toBe('100');
+  });
+});
