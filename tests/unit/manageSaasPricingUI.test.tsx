@@ -111,7 +111,7 @@ describe('Manage SaaS pricing card (Manage tab, no template)', () => {
   it('hides the card once a Manage template is selected', async () => {
     const { user, container } = await openManageTab();
     const select = await waitFor(() => manageTemplateSelect(container));
-    expect(select.options[0].textContent).toBe('Manage');
+    expect(select.options[0].textContent).toBe('Select Combination');
     await user.selectOptions(select, 'data-sprawl');
     await waitFor(() => expect(screen.queryByTestId('manage-saas-pricing')).toBeNull());
   });

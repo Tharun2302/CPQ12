@@ -184,6 +184,20 @@ export function isDiscountOnlyBlock(strippedText: string): boolean {
   return /^discount(?![a-z])/.test(text) && text.length <= 60;
 }
 
+// Depth, not the nearest <w:tbl>, so a closed nested table earlier in the cell doesn't count as "outside"
+export function tableDepthAt(xml: string, pos: number): number {
+  const head = xml.slice(0, pos);
+  return (head.match(/<w:tbl[\s>]/g) || []).length - (head.match(/<\/w:tbl>/g) || []).length;
+}
+
+// Position of the first contiguous "Total Price" when none sits in a table; -1 keeps the row paths.
+export function findStandaloneTotalPricePos(xml: string): number {
+  const hits: number[] = [];
+  for (let i = xml.indexOf('Total Price'); i !== -1; i = xml.indexOf('Total Price', i + 1)) hits.push(i);
+  if (hits.length === 0 || hits.some(i => tableDepthAt(xml, i) > 0)) return -1;
+  return hits[0];
+}
+
 export class DocxTemplateProcessor {
   private static instance: DocxTemplateProcessor;
   
@@ -1813,8 +1827,10 @@ export class DocxTemplateProcessor {
               // Step 2: Locate the "Total Price" row so we know which table to append to.
               const totalPricePos = xmlNoValidity.lastIndexOf('Total Price');
               let insertAt = -1;
+              // Row paths would splice a standalone (Data Sprawl) Total Price's line above the last row
+              const standaloneTotalPricePos = findStandaloneTotalPricePos(xmlNoValidity);
 
-              if (totalPricePos !== -1) {
+              if (totalPricePos !== -1 && standaloneTotalPricePos === -1) {
                 // Check if the table containing "Total Price" is right-aligned.
                 // Right-aligned tables (e.g. Slack/message migration discount+total tables)
                 // must NOT have the validity row inserted inside them — the text would
@@ -1989,22 +2005,23 @@ export class DocxTemplateProcessor {
                 }
               }
 
-              // Run-split / standalone fallback: some templates (e.g. Data Sprawl) render
-              // "Total Price {{total_price}}" as a standalone paragraph AFTER the pricing
-              // table, with the words split across multiple <w:r> runs. The contiguous
-              // lastIndexOf('Total Price') above misses it (so insertAt stays -1) and the
-              // generic last-table fallback below would dump the validity line on the very
-              // last page. Find the Total Price paragraph by its visible text (run-split
-              // tolerant) and insert the validity line as a standalone paragraph directly
-              // ABOVE it. This only runs when the table-row path above placed nothing, so
-              // templates that already work are untouched.
+              // Standalone / run-split fallback: some templates (e.g. Data Sprawl) render
+              // "Total Price {{total_price}}" as a paragraph AFTER the pricing table, either
+              // contiguous (skipped by the row paths above) or split across <w:r> runs (missed
+              // by lastIndexOf). The generic last-table fallback below would dump the validity
+              // line on the very last page, so insert it as a standalone paragraph directly
+              // ABOVE the Total Price paragraph. This only runs when the table-row path above
+              // placed nothing, so templates that already work are untouched.
               if (insertAt === -1) {
                 const pRe = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
                 let pm;
                 let tpParaStart = -1;
                 while ((pm = pRe.exec(xmlNoValidity)) !== null) {
                   const paraText = pm[0].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-                  if (/total\s*price/i.test(paraText)) tpParaStart = pm.index; // keep last match
+                  if (!/total\s*price/i.test(paraText)) continue;
+                  tpParaStart = pm.index; // keep last match
+                  // A later prose mention of "Total Price" must not win over the real total
+                  if (standaloneTotalPricePos !== -1 && standaloneTotalPricePos < pm.index + pm[0].length) break;
                 }
                 if (tpParaStart !== -1) {
                   const validityPara =

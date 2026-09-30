@@ -2321,7 +2321,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       }}
                       className="w-full px-6 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white hover:border-slate-300 text-base font-medium"
                     >
-                      <option value="">Manage</option>
+                      <option value="">Select Combination</option>
                       {options.map(o => (
                         <option key={o.value} value={o.value}>{o.label}</option>
                       ))}
