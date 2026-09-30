@@ -4,6 +4,7 @@ import { Rnd } from 'react-rnd';
 import { v4 as uuidv4 } from 'uuid';
 import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, FileText, BookOpen, CheckCircle2, UserPlus, Trash2, ArrowUp, ArrowDown, ArrowLeft, Circle } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from '../utils/authUtils';
 import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
 import {
   formatSendForSignatureSuccessMessage,
@@ -885,7 +886,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
       };
       const createRes = await fetch(`${BACKEND_URL}/api/approval-workflows`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify(workflowPayload),
       });
       const createData = await createRes.json();

@@ -9,38 +9,73 @@ function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();
 }
 
-function actorIsWorkflowCreator(workflow, actor) {
-  const actorEmail = normalizeEmail(actor && actor.email);
-  const creatorEmail = normalizeEmail(workflow && (workflow.creatorEmail || workflow.createdBy));
-  return !!actorEmail && actorEmail === creatorEmail;
+function workflowCreatorEmail(workflow) {
+  return normalizeEmail(workflow && (workflow.creatorEmail || workflow.createdBy));
 }
 
-// Auth is needed when the document is under approval now, or was when the editor was opened.
-function redlineNeedsAuth(session, activeWorkflows) {
-  return activeWorkflows.length > 0 || !!(session && session.workflowId);
+function actorIsWorkflowCreator(workflow, actor) {
+  const actorEmail = normalizeEmail(actor && actor.email);
+  return !!actorEmail && actorEmail === workflowCreatorEmail(workflow);
+}
+
+function isActiveApproval(workflow) {
+  return ACTIVE_APPROVAL_STATUSES.includes(workflow && workflow.status);
+}
+
+// Rows created without a verified login are marked creatorVerified:false, so a forged
+// POST can neither take over a document nor lock its real requester out. Older rows
+// (no flag) keep being trusted as before.
+function isTrustedWorkflow(workflow) {
+  return !!workflow && workflow.creatorVerified !== false && !!workflowCreatorEmail(workflow);
+}
+
+function latestWorkflow(workflows) {
+  return workflows.reduce((latest, w) => (
+    !latest || String(w.createdAt || '') > String(latest.createdAt || '') ? w : latest
+  ), null);
+}
+
+/** Approvals whose requester decides who may change the document: every active one plus the
+ *  most recent one, trusted rows only. Empty when no trusted approval names a requester. */
+function requesterWorkflows(linkedWorkflows) {
+  const trusted = linkedWorkflows.filter(isTrustedWorkflow);
+  const gates = trusted.filter(isActiveApproval);
+  const latest = latestWorkflow(trusted);
+  if (latest && !gates.includes(latest)) gates.push(latest);
+  return gates;
+}
+
+// Any approval, finished or not, puts the document behind a login: checking only active ones
+// let a status flipped to "approved" for a moment switch the check off.
+function redlineNeedsAuth(session, linkedWorkflows) {
+  return linkedWorkflows.length > 0 || !!(session && session.workflowId);
 }
 
 /**
- * Decides whether `actor` may save this session's edit over the document.
- * `activeWorkflows` are the document's pending/in-progress approvals, read at save time.
+ * Decides whether `actor` may open or save a redline over the document.
+ * `linkedWorkflows` are all approvals on the document (any status), read live.
  * Returns { ok: true } or { ok: false, httpStatus, error }.
  */
-function redlineSaveDecision({ session, activeWorkflows, actor }) {
+function redlineSaveDecision({ session, linkedWorkflows, actor }) {
   // An edit begun under an approval must not land on it once it has finished or been cancelled.
-  if (session.workflowId && !activeWorkflows.some(w => w.id === session.workflowId)) {
+  const startedUnder = session.workflowId && linkedWorkflows.find(w => w.id === session.workflowId);
+  if (session.workflowId && !isActiveApproval(startedUnder)) {
     return {
       ok: false,
       httpStatus: 409,
       error: 'The approval finished or changed while you were editing, so your edit was not saved.',
     };
   }
-  if (!redlineNeedsAuth(session, activeWorkflows)) return { ok: true };
+  if (!redlineNeedsAuth(session, linkedWorkflows)) return { ok: true };
+  if (!normalizeEmail(actor && actor.email)) {
+    return { ok: false, httpStatus: 401, error: 'Authentication required' };
+  }
 
-  const onlyRequester = 'Only the requester can edit this document while it is under approval';
-  if (!activeWorkflows.every(w => actorIsWorkflowCreator(w, actor))) {
+  const onlyRequester = 'Only the requester can edit this document because it has an approval';
+  if (!requesterWorkflows(linkedWorkflows).every(w => actorIsWorkflowCreator(w, actor))) {
     return { ok: false, httpStatus: 403, error: onlyRequester };
   }
-  if (session.actorEmail && session.actorEmail !== normalizeEmail(actor && actor.email)) {
+  if (session.actorEmail && session.actorEmail !== normalizeEmail(actor.email)) {
     return { ok: false, httpStatus: 403, error: onlyRequester };
   }
   return { ok: true };
@@ -131,6 +166,9 @@ module.exports = {
   ACTIVE_APPROVAL_STATUSES,
   normalizeEmail,
   actorIsWorkflowCreator,
+  isActiveApproval,
+  isTrustedWorkflow,
+  requesterWorkflows,
   redlineNeedsAuth,
   redlineSaveDecision,
   markWorkflowsRedlined,

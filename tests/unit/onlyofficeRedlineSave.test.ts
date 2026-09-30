@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // @ts-expect-error - CommonJS helper shared with server.cjs, no type declarations
 import redline from '../../onlyoffice-redline.cjs';
-import { authAwareError, getAuthHeaders } from '../../src/utils/authUtils';
+import { authAwareError, getAuthHeaders, hasUsableAuthToken } from '../../src/utils/authUtils';
 import { redlineSaveMessage } from '../../src/utils/redlineSaveMessage';
 
 // "Edit for RedLine" during an active approval overwrites the agreement the remaining approvers
@@ -10,7 +10,7 @@ import { redlineSaveMessage } from '../../src/utils/redlineSaveMessage';
 
 const { actorIsWorkflowCreator, redlineNeedsAuth, redlineSaveDecision, saveRedlineOverDocument } = redline as {
   actorIsWorkflowCreator: (workflow: unknown, actor: unknown) => boolean;
-  redlineNeedsAuth: (session: unknown, activeWorkflows: unknown[]) => boolean;
+  redlineNeedsAuth: (session: unknown, linkedWorkflows: unknown[]) => boolean;
   redlineSaveDecision: (args: Record<string, unknown>) => { ok: boolean; httpStatus?: number; error?: string };
   saveRedlineOverDocument: (db: unknown, args: Record<string, unknown>) => Promise<any>;
 };
@@ -88,42 +88,80 @@ describe('redlineSaveDecision', () => {
   const openSession = { workflowId: 'wf-1', actorEmail: REQUESTER };
 
   it('allows the requester who opened the editor under this approval', () => {
-    const out = redlineSaveDecision({ session: openSession, activeWorkflows: [ACTIVE_WORKFLOW], actor: { email: REQUESTER } });
+    const out = redlineSaveDecision({ session: openSession, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: REQUESTER } });
     expect(out.ok).toBe(true);
   });
 
   it('rejects anyone who is not the requester (403)', () => {
-    const out = redlineSaveDecision({ session: openSession, activeWorkflows: [ACTIVE_WORKFLOW], actor: { email: OTHER } });
+    const out = redlineSaveDecision({ session: openSession, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: OTHER } });
     expect(out).toMatchObject({ ok: false, httpStatus: 403 });
   });
 
   it('rejects a save by a different user than the one who opened the editor', () => {
     const session = { workflowId: 'wf-1', actorEmail: 'someone.else@cloudfuze.com' };
-    const out = redlineSaveDecision({ session, activeWorkflows: [ACTIVE_WORKFLOW], actor: { email: REQUESTER } });
+    const out = redlineSaveDecision({ session, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: REQUESTER } });
     expect(out).toMatchObject({ ok: false, httpStatus: 403 });
   });
 
   it('refuses (409) when the approval finished while the requester was editing', () => {
-    const out = redlineSaveDecision({ session: openSession, activeWorkflows: [], actor: { email: REQUESTER } });
+    const out = redlineSaveDecision({ session: openSession, linkedWorkflows: [], actor: { email: REQUESTER } });
     expect(out).toMatchObject({ ok: false, httpStatus: 409 });
+    const finished = { ...ACTIVE_WORKFLOW, status: 'approved' };
+    const out2 = redlineSaveDecision({ session: openSession, linkedWorkflows: [finished], actor: { email: REQUESTER } });
+    expect(out2).toMatchObject({ ok: false, httpStatus: 409 });
   });
 
   it('requires the requester when an approval started after the editor was opened', () => {
     const session = { workflowId: null, actorEmail: null };
-    expect(redlineSaveDecision({ session, activeWorkflows: [ACTIVE_WORKFLOW], actor: { email: OTHER } }).ok).toBe(false);
-    expect(redlineSaveDecision({ session, activeWorkflows: [ACTIVE_WORKFLOW], actor: { email: REQUESTER } }).ok).toBe(true);
+    expect(redlineSaveDecision({ session, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: OTHER } }).ok).toBe(false);
+    expect(redlineSaveDecision({ session, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: REQUESTER } }).ok).toBe(true);
+  });
+
+  it('stays requester-only after the approval finished (status flip cannot switch the check off)', () => {
+    const session = { workflowId: null, actorEmail: null };
+    const approved = { ...ACTIVE_WORKFLOW, status: 'approved' };
+    expect(redlineNeedsAuth(session, [approved])).toBe(true);
+    expect(redlineSaveDecision({ session, linkedWorkflows: [approved], actor: null }).ok).toBe(false);
+    expect(redlineSaveDecision({ session, linkedWorkflows: [approved], actor: { email: OTHER } })).toMatchObject({ ok: false, httpStatus: 403 });
+    expect(redlineSaveDecision({ session, linkedWorkflows: [approved], actor: { email: REQUESTER } }).ok).toBe(true);
+  });
+
+  it('lets whoever re-sent the document after an earlier approval ended edit it', () => {
+    const session = { workflowId: null, actorEmail: null };
+    const olderDenied = { ...ACTIVE_WORKFLOW, id: 'wf-old', status: 'denied', creatorEmail: OTHER, createdAt: '2026-09-01T00:00:00Z' };
+    const newer = { ...ACTIVE_WORKFLOW, id: 'wf-new', status: 'approved', createdAt: '2026-09-20T00:00:00Z' };
+    const linked = [olderDenied, newer];
+    expect(redlineSaveDecision({ session, linkedWorkflows: linked, actor: { email: REQUESTER } }).ok).toBe(true);
+    expect(redlineSaveDecision({ session, linkedWorkflows: linked, actor: { email: OTHER } }).ok).toBe(false);
+  });
+
+  it('ignores approvals created without a verified login (forged rows cannot take over or lock out)', () => {
+    const session = { workflowId: null, actorEmail: null };
+    const real = { ...ACTIVE_WORKFLOW, status: 'approved', createdAt: '2026-09-01T00:00:00Z' };
+    const forged = { ...ACTIVE_WORKFLOW, id: 'wf-forged', creatorEmail: OTHER, creatorVerified: false, createdAt: '2026-09-30T00:00:00Z' };
+    const linked = [real, forged];
+    expect(redlineSaveDecision({ session, linkedWorkflows: linked, actor: { email: OTHER } })).toMatchObject({ ok: false, httpStatus: 403 });
+    expect(redlineSaveDecision({ session, linkedWorkflows: linked, actor: { email: REQUESTER } }).ok).toBe(true);
+  });
+
+  it('does not lock everyone out of documents whose old approvals name no requester', () => {
+    const session = { workflowId: null, actorEmail: null };
+    const legacy = { id: 'wf-legacy', documentId: 'doc-1', status: 'approved' };
+    expect(redlineSaveDecision({ session, linkedWorkflows: [legacy], actor: { email: OTHER } }).ok).toBe(true);
+    // ...but still needs a login
+    expect(redlineSaveDecision({ session, linkedWorkflows: [legacy], actor: null })).toMatchObject({ ok: false, httpStatus: 401 });
   });
 
   it('requires the caller to be the requester of every active approval on the document', () => {
     const second = { ...ACTIVE_WORKFLOW, id: 'wf-2', creatorEmail: OTHER };
-    const out = redlineSaveDecision({ session: openSession, activeWorkflows: [ACTIVE_WORKFLOW, second], actor: { email: REQUESTER } });
+    const out = redlineSaveDecision({ session: openSession, linkedWorkflows: [ACTIVE_WORKFLOW, second], actor: { email: REQUESTER } });
     expect(out).toMatchObject({ ok: false, httpStatus: 403 });
   });
 
   it('keeps the unauthenticated path for documents with no approval, as before', () => {
     const session = { workflowId: null, actorEmail: null };
     expect(redlineNeedsAuth(session, [])).toBe(false);
-    expect(redlineSaveDecision({ session, activeWorkflows: [], actor: null }).ok).toBe(true);
+    expect(redlineSaveDecision({ session, linkedWorkflows: [], actor: null }).ok).toBe(true);
   });
 
   it('needs auth whenever an approval is involved, now or when the editor opened', () => {
@@ -271,6 +309,20 @@ describe('auth helpers', () => {
   it('sends nothing when signed out', () => {
     vi.stubGlobal('localStorage', { getItem: () => null });
     expect(getAuthHeaders()).toEqual({});
+  });
+
+  it('treats only an unexpired JWT as a usable login', () => {
+    const jwtWith = (payload: object) => `h.${btoa(JSON.stringify(payload))}.s`;
+    const now = 1_800_000_000_000;
+    const stub = (token: string | null) => vi.stubGlobal('localStorage', { getItem: () => token });
+    stub(jwtWith({ exp: now / 1000 + 3600 }));
+    expect(hasUsableAuthToken(now)).toBe(true);
+    stub(jwtWith({ exp: now / 1000 - 1 }));
+    expect(hasUsableAuthToken(now)).toBe(false);
+    stub('mock_token_123');
+    expect(hasUsableAuthToken(now)).toBe(false);
+    stub(null);
+    expect(hasUsableAuthToken(now)).toBe(false);
   });
 
   it('turns a 401 into a sign-in-again message and passes other errors through', () => {

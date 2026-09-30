@@ -43,6 +43,19 @@ export function getAuthHeaders(): Record<string, string> {
   }
 }
 
+// True when the stored token is a JWT that hasn't expired (the server re-verifies it)
+export function hasUsableAuthToken(nowMs: number = Date.now()): boolean {
+  try {
+    const token = localStorage.getItem('cpq_token');
+    const parts = token ? token.split('.') : [];
+    if (parts.length !== 3) return false;
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload.exp !== 'number' || payload.exp * 1000 > nowMs;
+  } catch {
+    return false;
+  }
+}
+
 // A 401 from a verified route means the saved login is missing or expired
 export function authAwareError(status: number, serverMessage: string | undefined, fallback: string): string {
   if (status === 401) return 'Your login has expired. Please sign out, sign in again, and retry.';

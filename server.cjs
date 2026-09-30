@@ -16,7 +16,8 @@ const {
   parseStepNumber,
   sanitizeStepUpdates,
   areAllApprovalStepsComplete,
-  applyStepUpdate
+  applyStepUpdate,
+  stripLockedWorkflowFields
 } = require('./approval-step-guard.cjs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -130,9 +131,10 @@ const {
 } = require('./esign-creator-utils.cjs');
 
 const {
-  ACTIVE_APPROVAL_STATUSES,
   normalizeEmail,
-  actorIsWorkflowCreator,
+  isActiveApproval,
+  isTrustedWorkflow,
+  requesterWorkflows,
   redlineNeedsAuth,
   redlineSaveDecision,
   saveRedlineOverDocument,
@@ -181,11 +183,10 @@ async function actorCanEditSourceDocumentDates(doc, actorEmail) {
   const actor = String(actorEmail).trim().toLowerCase();
   if (!actor) return false;
   try {
-    const wf = await db.collection('approval_workflows').findOne({ documentId: doc.id });
-    if (wf) {
-      const wfCreator = String(wf.creatorEmail || wf.createdBy || '').trim().toLowerCase();
-      if (wfCreator && wfCreator === actor) return true;
-    }
+    // Same requester rule as Edit for RedLine, so a forged approval row can't grant this.
+    const linked = await db.collection('approval_workflows').find({ documentId: doc.id }).toArray();
+    const gates = requesterWorkflows(linked);
+    if (gates.length && gates.every(w => normalizeEmail(w.creatorEmail || w.createdBy) === actor)) return true;
   } catch (e) { /* fall through */ }
   try {
     const esign = await db.collection('esign_documents').findOne({ source_document_id: doc.id });
@@ -3244,6 +3245,19 @@ async function hasApprovalAdminAccess(user) {
   return dbEmails.some((e) => String(e).trim().toLowerCase() === normalized);
 }
 
+// Same identity check as getAuthenticatedUser, but never responds: null when there is no
+// valid token, for routes that must keep working for callers whose login has expired.
+async function getOptionalAuthenticatedUser(req) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token || token.split('.').length !== 3) return null;
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return await db.collection('users').findOne({ id: decoded.userId });
+  } catch (e) {
+    return null;
+  }
+}
+
 // Resolves the caller from their Bearer token with no role requirement. Use this when an
 // endpoint authorizes on identity (e.g. "creator only") rather than on a role — the caller's
 // email must come from the verified token, never from the request body, which is spoofable.
@@ -5618,16 +5632,14 @@ app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => 
 
     // Redlining a document under active approval edits what the approvers review, so only the
     // requester may do it. /persist-to-document re-checks this when the edit is saved.
-    const activeWorkflows = await db.collection('approval_workflows')
-      .find({ documentId: id, status: { $in: ACTIVE_APPROVAL_STATUSES } })
-      .toArray();
+    const linkedWorkflows = await db.collection('approval_workflows').find({ documentId: id }).toArray();
+    const activeWorkflows = linkedWorkflows.filter(isActiveApproval);
     let editorEmail = null;
-    if (activeWorkflows.length) {
+    if (linkedWorkflows.length) {
       const actor = await getAuthenticatedUser(req, res);
       if (!actor) return; // 401 already sent
-      if (!activeWorkflows.every(w => actorIsWorkflowCreator(w, actor))) {
-        return res.status(403).json({ success: false, error: 'Only the requester can edit this document while it is under approval' });
-      }
+      const decision = redlineSaveDecision({ session: { workflowId: null }, linkedWorkflows, actor });
+      if (!decision.ok) return res.status(decision.httpStatus).json({ success: false, error: decision.error });
       editorEmail = normalizeEmail(actor.email);
     }
 
@@ -5747,17 +5759,16 @@ app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
     }
 
     // Re-check live: an approval workflow may have started/ended since the edit session began.
-    const activeWorkflows = await db.collection('approval_workflows')
-      .find({ documentId: s.documentId, status: { $in: ACTIVE_APPROVAL_STATUSES } })
-      .toArray();
+    const linkedWorkflows = await db.collection('approval_workflows').find({ documentId: s.documentId }).toArray();
+    const activeWorkflows = linkedWorkflows.filter(isActiveApproval);
 
     // Identity comes from the verified JWT, never the body — a client-supplied email could name anyone.
     let actor = null;
-    if (redlineNeedsAuth(s, activeWorkflows)) {
+    if (redlineNeedsAuth(s, linkedWorkflows)) {
       actor = await getAuthenticatedUser(req, res);
       if (!actor) return; // 401 already sent
     }
-    const decision = redlineSaveDecision({ session: s, activeWorkflows, actor });
+    const decision = redlineSaveDecision({ session: s, linkedWorkflows, actor });
     if (!decision.ok) return res.status(decision.httpStatus).json({ success: false, error: decision.error });
 
     // Claim the session before the first write so a double-clicked "Done" can't save twice.
@@ -9306,7 +9317,6 @@ app.patch('/api/documents/:id/dates', async (req, res) => {
     const {
       dates: newDates,
       reason,
-      actorEmail,
       pdfFileData,
       pdfFileName,
       docxFileData,
@@ -9316,6 +9326,12 @@ app.patch('/api/documents/:id/dates', async (req, res) => {
     if (!newDates || typeof newDates !== 'object') {
       return res.status(400).json({ success: false, error: 'dates object is required' });
     }
+
+    // This route can replace the agreement file, so the caller comes from the verified JWT —
+    // an actorEmail in the body could name the requester and hand anyone that right.
+    const actor = await getAuthenticatedUser(req, res);
+    if (!actor) return; // 401 already sent
+    const actorEmail = String(actor.email || '').trim().toLowerCase();
 
     // Authorization: only the document creator OR an approval admin can edit dates.
     if (!(await actorCanEditSourceDocumentDates(doc, actorEmail))) {
@@ -9538,7 +9554,6 @@ app.patch('/api/esign/documents/:id/dates', async (req, res) => {
     const {
       dates: newDates,
       reason,
-      actorEmail,
       pdfFileData,
       pdfFileName,
       docxFileData,
@@ -9548,6 +9563,11 @@ app.patch('/api/esign/documents/:id/dates', async (req, res) => {
     if (!newDates || typeof newDates !== 'object') {
       return res.status(400).json({ success: false, error: 'dates object is required' });
     }
+
+    // This route can replace the agreement file, so the caller comes from the verified JWT.
+    const actor = await getAuthenticatedUser(req, res);
+    if (!actor) return; // 401 already sent
+    const actorEmail = String(actor.email || '').trim().toLowerCase();
 
     // Authorization: only the document creator OR an approval admin can edit dates.
     if (!(await actorCanEditEsignDates(doc, actorEmail))) {
@@ -11660,15 +11680,23 @@ app.post('/api/approval-workflows', async (req, res) => {
       });
     }
 
-    const workflowData = req.body;
+    // Server-owned fields (id, status, redline history) are never taken from the body
+    const { updates: workflowData } = stripLockedWorkflowFields(req.body, { allow: ['documentId'] });
+    // A verified login decides the requester; the body is only trusted when there is none
+    const actor = await getOptionalAuthenticatedUser(req);
+    const bodyCreator = typeof req.body?.creatorEmail === 'string' ? normalizeEmail(req.body.creatorEmail) : '';
+    const creatorEmail = actor?.email ? normalizeEmail(actor.email) : bodyCreator;
     console.log('📋 Creating approval workflow:', workflowData);
 
     // Generate unique ID
     const workflowId = `WF-${Date.now()}`;
 
     const workflow = {
-      id: workflowId,
       ...workflowData,
+      id: workflowId,
+      ...(creatorEmail ? { creatorEmail } : {}),
+      // Only a login-verified requester may gate Edit for RedLine / Edit Dates on this document
+      creatorVerified: !!actor?.email,
       status: 'pending',
       currentStep: 1,
       createdAt: new Date().toISOString(),
@@ -11936,7 +11964,10 @@ app.put('/api/approval-workflows/:id', async (req, res) => {
     }
 
     const { id } = req.params;
-    const updates = req.body;
+    const { updates, stripped } = stripLockedWorkflowFields(req.body);
+    if (stripped.length) {
+      console.warn('⛔ Ignored locked fields on workflow update:', JSON.stringify(id), stripped);
+    }
     
     console.log('📝 Updating approval workflow:', id, updates);
     

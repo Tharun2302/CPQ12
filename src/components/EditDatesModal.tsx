@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Calendar, Loader2, AlertTriangle, History, X, Check } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { authAwareError, getAuthHeaders, hasUsableAuthToken } from '../utils/authUtils';
 import { SUPPRESS_PII } from '../analytics/privacy';
 
 interface DateHistoryEntry {
@@ -246,6 +247,11 @@ const EditDatesModal: React.FC<EditDatesModalProps> = ({ documentId, actorEmail,
       alert('Please set at least one date before saving.');
       return;
     }
+    // Checked before the slow re-render so an expired login doesn't waste it
+    if (!hasUsableAuthToken()) {
+      setError(authAwareError(401, undefined, ''));
+      return;
+    }
     if (isSigned) {
       const ok = window.confirm(
         'This document has already been signed. Updating dates will overwrite the stored file but will NOT reset existing signatures. Continue?'
@@ -336,12 +342,12 @@ const EditDatesModal: React.FC<EditDatesModalProps> = ({ documentId, actorEmail,
 
       const patchResp = await fetch(`${endpointBase}/dates`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify(patchBody),
       });
       const patchData = await patchResp.json();
       if (!patchResp.ok || !patchData.success) {
-        throw new Error(patchData.error || `Save failed (${patchResp.status})`);
+        throw new Error(authAwareError(patchResp.status, patchData.error, `Save failed (${patchResp.status})`));
       }
 
       setProgress('Done');

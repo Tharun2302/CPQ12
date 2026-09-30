@@ -1,6 +1,7 @@
 // MongoDB service for approval workflows
 import { ApprovalWorkflow, ApprovalStep } from '../types/approval';
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from '../utils/authUtils';
 
 /** Safely read the error message and code from a non-ok response without crashing on empty bodies. */
 async function readErrorBody(response: Response, fallback: string): Promise<{ message: string; code?: string }> {
@@ -39,10 +40,12 @@ class ApprovalWorkflowServiceMongoDB {
     try {
       console.log('💾 Saving workflow to MongoDB:', workflow);
 
+      // The server takes the requester from this login, not from workflow.creatorEmail
       const response = await fetch(`${this.baseUrl}/approval-workflows`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...getAuthHeaders(),
         },
         body: JSON.stringify(workflow)
       });

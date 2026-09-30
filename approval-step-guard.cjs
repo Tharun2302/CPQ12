@@ -176,8 +176,34 @@ async function applyStepUpdate(collection, workflow, stepNum, updates, now = new
   return { ...blocked(409, 'CONFLICT', conflict, null), lostRace: true };
 }
 
+// Ownership and history fields the generic workflow update must never change: rewriting
+// creatorEmail would hand someone else the requester-only actions (Edit for RedLine, delete).
+const LOCKED_WORKFLOW_FIELDS = [
+  '_id', 'id', 'documentId', 'creatorEmail', 'createdBy', 'createdAt', 'creatorVerified',
+  'hasRedlineEdit', 'redlineEditedAt', 'redlineDocumentId', 'redlineForked', 'redlineEdits',
+];
+
+// Drops locked fields, including dotted paths into them and Mongo operator keys.
+// `allow` lets creation keep fields that are only locked once the workflow exists (documentId).
+function stripLockedWorkflowFields(body, { allow = [] } = {}) {
+  const updates = {};
+  const stripped = [];
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { updates, stripped };
+  for (const [key, value] of Object.entries(body)) {
+    const root = key.split('.')[0];
+    if (key.startsWith('$') || (LOCKED_WORKFLOW_FIELDS.includes(root) && !allow.includes(root))) {
+      stripped.push(key);
+      continue;
+    }
+    updates[key] = value;
+  }
+  return { updates, stripped };
+}
+
 module.exports = {
   APPROVAL_ROLES,
+  LOCKED_WORKFLOW_FIELDS,
+  stripLockedWorkflowFields,
   MAX_COMMENT_LENGTH,
   approverLabel,
   parseStepNumber,
