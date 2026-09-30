@@ -198,6 +198,28 @@ export function findStandaloneTotalPricePos(xml: string): number {
   return hits[0];
 }
 
+// Boundaries keep the placeholder patterns from matching the prefix/suffix of a real rate:
+// without them "$0.94" became "$1.80.94" and "$2.51 per GB" became "$2.5$1.50 per GB".
+export function patchOveragePerGB(xml: string, perDataCost: string): string {
+  let patched = xml.replace(
+    /(?<![\d.,])\$?\s*(?:0|1)(?:\.00)?\s*per\s*GB\.?/gi,
+    `${perDataCost} per GB`
+  );
+
+  // Token rendered to "$0.00" with " per GB" in a separate run: replace the first one near the Overage line.
+  const overageIdx = patched.toLowerCase().indexOf('overage');
+  if (overageIdx !== -1 && perDataCost !== '$0.00') {
+    const start = Math.max(0, overageIdx - 500);
+    const end = Math.min(patched.length, overageIdx + 4000);
+    const window = patched.slice(start, end);
+    const patchedWindow = window.replace(/\$0(?:\.00)?(?![.,]?\d)/i, perDataCost);
+    if (patchedWindow !== window) {
+      patched = patched.slice(0, start) + patchedWindow + patched.slice(end);
+    }
+  }
+  return patched;
+}
+
 export class DocxTemplateProcessor {
   private static instance: DocxTemplateProcessor;
   
@@ -1299,24 +1321,7 @@ export class DocxTemplateProcessor {
 
         if (effectivePerDataCost) {
           const beforeOveragePatch = finalDocumentXml;
-          // 1) Patch common hardcoded variants (case-insensitive).
-          finalDocumentXml = finalDocumentXml.replace(
-            /\$?\s*(?:0|1)(?:\.00)?\s*per\s*GB\.?/gi,
-            `${effectivePerDataCost} per GB`
-          );
-
-          // 2) Patch cases where the token rendered to "$0.00" and " per GB" is in a separate run.
-          // We look for the Overage line and replace the first "$0.00" nearby.
-          const overageIdx = finalDocumentXml.toLowerCase().indexOf('overage');
-          if (overageIdx !== -1 && effectivePerDataCost !== '$0.00') {
-            const start = Math.max(0, overageIdx - 500);
-            const end = Math.min(finalDocumentXml.length, overageIdx + 4000);
-            const window = finalDocumentXml.slice(start, end);
-            const patchedWindow = window.replace(/\$0(?:\.00)?/i, effectivePerDataCost);
-            if (patchedWindow !== window) {
-              finalDocumentXml = finalDocumentXml.slice(0, start) + patchedWindow + finalDocumentXml.slice(end);
-            }
-          }
+          finalDocumentXml = patchOveragePerGB(finalDocumentXml, effectivePerDataCost);
 
           if (finalDocumentXml !== beforeOveragePatch) {
             console.log('✅ Overage per-GB patched in DOCX with:', effectivePerDataCost);
