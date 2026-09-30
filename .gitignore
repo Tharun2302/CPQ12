@@ -55,6 +55,9 @@ backup-pre-rename-*/
 backend-exhibits/.backup-content-rename-*/
 backend-templates/.backup-*/
 
+# Local copy of live-DB exhibits (set EXHIBITS_SYNC_DIR=exhibits-local in .env)
+exhibits-local/
+
 # User-uploaded documents (customer data — never commit)
 uploads/documents/*.pdf
 uploads/documents/*.docx

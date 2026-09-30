@@ -71,6 +71,16 @@ JWT_SECRET=your-super-secret-jwt-key-change-in-production
 NODE_ENV=development
 
 # ===========================================
+# EXHIBIT FOLDER SYNC (local development only)
+# ===========================================
+# On startup the server copies every exhibit in MongoDB into a folder.
+# Blank means backend-exhibits/, which is tracked by git, so exhibits uploaded
+# on production can block `git pull`. For local dev, set it to exhibits-local
+# (git-ignored). Must be a folder inside the project. LEAVE BLANK on servers.
+# EXHIBITS_SYNC_DIR=exhibits-local
+EXHIBITS_SYNC_DIR=
+
+# ===========================================
 # MICROSOFT CLARITY ANALYTICS
 # ===========================================
 # Get your Clarity Project ID from: https://clarity.microsoft.com/

@@ -11,6 +11,7 @@ const { MongoClient } = require('mongodb');
 const { pickEsignCarriedFields } = require('./esign-field-carry.cjs');
 const { zohoSignEnabled, zohoSignConfigured, getZohoSignConfig } = require('./zoho-sign-config.cjs');
 const { DOCUMENTS_LIST_PROJECTION } = require('./documents-list-projection.cjs');
+const { DEFAULT_EXHIBITS_SYNC_DIR, resolveExhibitSyncDir } = require('./exhibit-sync-dir.cjs');
 const {
   parseStepNumber,
   sanitizeStepUpdates,
@@ -575,15 +576,19 @@ async function initializeDatabase() {
     // This restores UI-added exhibits to folder after Docker restart
     async function syncExhibitsToFolder(db) {
       try {
-        const exhibitsDir = path.join(__dirname, 'backend-exhibits');
-        
+        const { dir: exhibitsDir, rejectedReason } = resolveExhibitSyncDir(__dirname, process.env.EXHIBITS_SYNC_DIR);
+        if (rejectedReason) {
+          console.warn(`⚠️ Ignoring EXHIBITS_SYNC_DIR (${rejectedReason}); syncing to ${DEFAULT_EXHIBITS_SYNC_DIR} instead`);
+        }
+        const exhibitsDirLabel = path.relative(__dirname, exhibitsDir);
+
         // Create directory if it doesn't exist
         if (!fs.existsSync(exhibitsDir)) {
           try {
             fs.mkdirSync(exhibitsDir, { recursive: true, mode: 0o755 });
-            console.log(`📁 Created backend-exhibits directory: ${exhibitsDir}`);
+            console.log(`📁 Created ${exhibitsDirLabel} directory: ${exhibitsDir}`);
           } catch (mkdirError) {
-            console.warn(`⚠️ Cannot create backend-exhibits directory: ${mkdirError.message}`);
+            console.warn(`⚠️ Cannot create ${exhibitsDirLabel} directory: ${mkdirError.message}`);
             return; // Skip sync if can't create directory
           }
         }
@@ -592,11 +597,11 @@ async function initializeDatabase() {
         try {
           fs.accessSync(exhibitsDir, fs.constants.W_OK);
         } catch (accessError) {
-          console.warn(`⚠️ No write permission for backend-exhibits directory: ${accessError.message}`);
+          console.warn(`⚠️ No write permission for ${exhibitsDirLabel} directory: ${accessError.message}`);
           return; // Skip sync if no write permission
         }
 
-        console.log('🔄 Syncing exhibits from MongoDB to backend-exhibits folder...');
+        console.log(`🔄 Syncing exhibits from MongoDB to ${exhibitsDirLabel} folder...`);
         
         // Get all exhibits from MongoDB
         const exhibits = await db.collection('exhibits').find({}).toArray();

@@ -47,5 +47,8 @@ temp-files
 logs
 *.log
 
+# Local copy of live-DB exhibits (EXHIBITS_SYNC_DIR); never bake customer files into an image
+exhibits-local
+
 # Coverage
 coverage
