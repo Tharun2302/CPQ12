@@ -615,7 +615,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       const companyName = matchingQuote?.company || selectedDoc?.company || contactInfo.company || clientName;
       const clientEmail = matchingQuote?.clientEmail || selectedDoc?.clientEmail || contactInfo.clientEmail || undefined;
 
-      const amount = (matchingQuote && getQuoteTotals(matchingQuote).finalTotal) || selectedDoc?.amount || 0;
+      const amount = matchingQuote ? getQuoteTotals(matchingQuote).finalTotal : (selectedDoc?.amount ?? 0);
 
       const newWorkflow = await createWorkflow({
         documentId: effectiveDocumentId,

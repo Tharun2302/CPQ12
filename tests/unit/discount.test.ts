@@ -74,6 +74,10 @@ describe('getQuoteTotals', () => {
     expect(getQuoteTotals({ calculation: { totalCost: 5000 } }).finalTotal).toBe(5000);
   });
 
+  it('returns 0 (not a missing value) for a 100% discount', () => {
+    expect(getQuoteTotals({ calculation: { totalCost: 10000 }, discount: 100 }).finalTotal).toBe(0);
+  });
+
   it('falls back to a top-level totalCost and handles missing quotes', () => {
     expect(getQuoteTotals({ totalCost: 400, discount: 50 }).finalTotal).toBe(200);
     expect(getQuoteTotals(undefined)).toEqual({ subtotal: 0, percent: 0, amount: 0, finalTotal: 0 });
