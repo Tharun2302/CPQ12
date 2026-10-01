@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+- **Approval page: each card now shows how long every approval stage took.** Under Team, Tech and Legal (and MM/AM when present) the card shows the time that stage took (e.g. "2h 15m"), "waiting X" under the step still open (updates once a minute), and "rejected after X" in red for a rejected step. The right of the "Current" line shows "Total" when finished or "Total so far" while open. A stage starts when the previous stage was decided (the first starts when the approval was created); times come from the server stamp saved on each approve or reject. Old or out-of-order records, steps with missing or duplicate numbers, and approvals cancelled by the requester show "—" instead of a wrong number. Hovering a step now also shows its real decision time. Frontend only, no API or database change (`src/utils/approvalTiming.ts`, `src/hooks/useMinuteClock.ts`, `src/components/approval/ApprovalStepTime.tsx`, `src/components/ApprovalDashboard.tsx`; design in `docs/design/approval-step-timing.md`).
+  - Step times can still be set by the generic create/update approval routes, so treat them as display only until those routes lock `workflowSteps`.
+
 ### Changed
 - **Exhibit Manager: the Agreement template list now starts on "Multi-Combination"** on the upload and edit forms, replacing "Not attached to an agreement template". Multi-Combination is the choice for every Migrate exhibit (Overage has none): the pair folder stays required and the exhibit is saved under its pair, never under the literal `multi-combination` tag, so existing exhibits and agreements are unaffected. Manage exhibits still pick Data-Sprawl or mange+sprawl.
 
