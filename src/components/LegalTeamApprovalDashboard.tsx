@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Clock, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Crown, Eye, FileText, Loader2 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { isStepAlreadyHandledError } from '../services/approvalWorkflowServiceMongoDB';
-import { getApprovalLinkNotice, ApprovalLinkNotice } from '../utils/approvalLinkNotice';
+import { getApprovalLinkNotice, ApprovalLinkNotice, APPROVAL_DELETED_NOTICE } from '../utils/approvalLinkNotice';
 import ApprovalLinkNoticeBox from './ApprovalLinkNoticeBox';
 import type { ApprovalWorkflow } from '../types/approval';
 import { BACKEND_URL } from '../config/api';
@@ -108,6 +108,8 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
           console.error('❌ Workflow not found in API response:', workflowId);
           linkHandledForRef.current = null;
         }
+      } else if (response.status === 404) {
+        setLinkNotice({ workflowId, ...APPROVAL_DELETED_NOTICE });
       } else {
         console.error('❌ Failed to fetch workflow from API:', response.status);
         // Let the full list load retry the link, as it did before the once-only guard

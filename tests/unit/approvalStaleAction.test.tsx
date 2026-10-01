@@ -74,7 +74,7 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 // Every request is answered here, so nothing can reach a real backend (the local .env points at production)
-function stubBackend({ lists, stepReply = ok, links = [] }: { lists: ApprovalWorkflow[][]; stepReply?: StepReply; links?: ApprovalWorkflow[] }) {
+function stubBackend({ lists, stepReply = ok, links = [], linkMissing = false }: { lists: ApprovalWorkflow[][]; stepReply?: StepReply; links?: ApprovalWorkflow[]; linkMissing?: boolean }) {
   let listCalls = 0;
   let linkCalls = 0;
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -86,6 +86,9 @@ function stubBackend({ lists, stepReply = ok, links = [] }: { lists: ApprovalWor
     if (method === 'GET' && path === LIST) {
       const list = lists[Math.min(listCalls++, lists.length - 1)];
       return jsonResponse(200, { success: true, workflows: list });
+    }
+    if (method === 'GET' && path === LINK && linkMissing) {
+      return jsonResponse(404, { success: false, error: 'Workflow not found' });
     }
     if (method === 'GET' && path === LINK && links.length > 0) {
       return jsonResponse(200, { success: true, workflow: links[Math.min(linkCalls++, links.length - 1)] });
@@ -282,6 +285,13 @@ function approvedBy(step: number): ApprovalWorkflow {
   return wf;
 }
 
+// The requester's Cancel Approval marks only the workflow denied, never a step
+function cancelledByRequester(step: number): ApprovalWorkflow {
+  const wf = makeWorkflow(step);
+  wf.status = 'denied';
+  return wf;
+}
+
 function deniedBy(step: number): ApprovalWorkflow {
   const wf = deniedAt(step);
   wf.workflowSteps[step - 1].timestamp = ACTED_AT;
@@ -330,6 +340,35 @@ describe.each(CASES)('$team dashboard — opening the approval email link', ({ t
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Deny' })).toBeNull();
     expect(count('GET', PREVIEW)).toBe(1);
+    expect(alertSpy).not.toHaveBeenCalled();
+  });
+
+  it('shows "cancelled by the requester" when the requester cancelled it', async () => {
+    stubBackend({ lists: [[cancelledByRequester(step)]], links: [cancelledByRequester(step)] });
+    renderFromEmailLink(Component);
+
+    await waitFor(() => expect(screen.getAllByText('This approval was cancelled by the requester.')).toHaveLength(2));
+    await settle();
+
+    expect(screen.getByRole('heading', { name: 'Document Preview' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Deny' })).toBeNull();
+    expect(screen.queryByText(/denied/)).toBeNull();
+    expect(alertSpy).not.toHaveBeenCalled();
+  });
+
+  it('shows "deleted by the requester" when the approval was deleted, and does not keep retrying', async () => {
+    stubBackend({ lists: [[]], linkMissing: true });
+    renderFromEmailLink(Component);
+
+    const notice = await within(await screen.findByRole('status')).findByText('This approval request was deleted by the requester.');
+    await waitFor(() => expect(count('GET', LIST)).toBe(1));
+    await settle();
+
+    expect(notice.closest('div')).toHaveClass('bg-red-50');
+    expect(screen.queryByRole('heading', { name: 'Document Preview' })).toBeNull();
+    expect(count('GET', LINK)).toBe(1);
+    expect(count('GET', PREVIEW)).toBe(0);
     expect(alertSpy).not.toHaveBeenCalled();
   });
 

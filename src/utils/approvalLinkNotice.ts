@@ -11,6 +11,15 @@ const ROLE_LABELS: Record<string, string> = { 'Team Approval': 'Team Lead' };
 
 const labelFor = (role: string) => ROLE_LABELS[role] ?? role;
 
+// Approvers only deny through their own step, so a denied workflow with no denied step was cancelled by the requester
+export const APPROVAL_CANCELLED_MESSAGE = 'This approval was cancelled by the requester.';
+
+// The portal link already passed its token check, so a missing workflow was deleted after the email went out
+export const APPROVAL_DELETED_NOTICE: ApprovalLinkNotice = {
+  tone: 'denied',
+  message: 'This approval request was deleted by the requester.',
+};
+
 function onDate(timestamp?: string): string {
   const date = timestamp ? new Date(timestamp) : null;
   if (!date || Number.isNaN(date.getTime())) return '';
@@ -37,7 +46,7 @@ export function getApprovalLinkNotice(
     const deniedStep = steps.find(step => step.status === 'denied');
     const message = deniedStep
       ? `This document was denied by the ${labelFor(deniedStep.role)}${onDate(deniedStep.timestamp)}.`
-      : 'This document was denied.';
+      : APPROVAL_CANCELLED_MESSAGE;
     return { tone: 'denied', message };
   }
   if (workflow.status === 'approved') {

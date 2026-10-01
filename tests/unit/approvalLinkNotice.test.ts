@@ -69,10 +69,16 @@ describe('getApprovalLinkNotice', () => {
     expect(plain(notice?.message)).toBe('This document was denied by the Team Lead on Sep 28, 2026, 9:05 AM.');
   });
 
-  it('c. falls back to a plain denial message when no step is marked denied', () => {
+  it('c. requester cancelled it (denied with no step marked denied)', () => {
     const notice = getApprovalLinkNotice(workflow('denied', quoteSteps('approved', 'pending', 'pending', ACTED_AT)), 'Technical Team');
 
-    expect(notice).toEqual({ tone: 'denied', message: 'This document was denied.' });
+    expect(notice).toEqual({ tone: 'denied', message: 'This approval was cancelled by the requester.' });
+  });
+
+  it('c. requester cancelled it before anyone acted', () => {
+    const notice = getApprovalLinkNotice(workflow('denied', quoteSteps('pending', 'pending', 'pending')), 'Team Approval');
+
+    expect(notice?.message).toBe('This approval was cancelled by the requester.');
   });
 
   it('d. workflow approved while this step never recorded a decision', () => {

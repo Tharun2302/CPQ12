@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { isStepAlreadyHandledError } from '../services/approvalWorkflowServiceMongoDB';
-import { getApprovalLinkNotice, ApprovalLinkNotice } from '../utils/approvalLinkNotice';
+import { getApprovalLinkNotice, ApprovalLinkNotice, APPROVAL_DELETED_NOTICE } from '../utils/approvalLinkNotice';
 import ApprovalLinkNoticeBox from './ApprovalLinkNoticeBox';
 import type { ApprovalWorkflow } from '../types/approval';
 import { BACKEND_URL } from '../config/api';
@@ -492,6 +492,8 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
             console.error('❌ Workflow not found in API:', workflowId);
             linkHandledForRef.current = null;
           }
+        } else if (resp.status === 404) {
+          setLinkNotice({ workflowId, ...APPROVAL_DELETED_NOTICE });
         } else {
           // Let the full list load retry the link, as it did before the once-only guard
           linkHandledForRef.current = null;

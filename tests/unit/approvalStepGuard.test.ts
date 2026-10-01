@@ -348,11 +348,11 @@ describe('checkStepUpdateAllowed — workflow already closed', () => {
     });
   });
 
-  it('uses a generic denied message when no step records the denial', () => {
+  it('says the requester cancelled it when no step records the denial', () => {
     const wf = quoteWorkflow(['pending', 'pending', 'pending', 'pending'], { status: 'denied' });
     expect(checkStepUpdateAllowed(wf, 1)).toMatchObject({
       code: 'WORKFLOW_CLOSED',
-      error: 'This document was already denied.',
+      error: 'This approval was cancelled by the requester.',
       stepRole: null,
       stepStatus: null,
       actedAt: null,

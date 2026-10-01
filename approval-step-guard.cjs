@@ -90,7 +90,8 @@ function alreadyHandledMessage(step) {
 
 function deniedWorkflowResult(workflow) {
   const deniedStep = (workflow.workflowSteps || []).find((s) => s && s.status === 'denied');
-  if (!deniedStep) return blocked(409, 'WORKFLOW_CLOSED', 'This document was already denied.', null);
+  // Approvers deny through their own step, so no denied step means the requester cancelled it
+  if (!deniedStep) return blocked(409, 'WORKFLOW_CLOSED', 'This approval was cancelled by the requester.', null);
   const message = `This document was already denied by the ${approverLabel(deniedStep.role)}.`;
   return blocked(409, 'WORKFLOW_CLOSED', message, deniedStep);
 }
