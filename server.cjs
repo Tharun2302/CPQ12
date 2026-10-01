@@ -139,6 +139,16 @@ const {
   redlineSaveDecision,
   saveRedlineOverDocument,
 } = require('./onlyoffice-redline.cjs');
+const {
+  CLOSED_SESSION_STATUSES,
+  findExhibitEditLock,
+  isDocxBuffer,
+  exhibitFileBuffer,
+  exhibitCallbackStep,
+  applyExhibitDownload,
+  statusAfterForceSave,
+  saveRedlineOverExhibit,
+} = require('./exhibit-redline.cjs');
 
 const {
   summarizeEsignRecipientProgress,
@@ -5490,12 +5500,41 @@ app.get('/api/onlyoffice/file/:sessionId', (req, res) => {
 //   4 = document closed with no changes
 //   6 = document is being edited, but the current document state is saved (forcesave)
 //   7 = error has occurred while force-saving the document
+// Exhibit edits overwrite the shared catalog, so with JWT on only the signed payload for this exact session is trusted
+async function handleExhibitCallback(req, res, sessionId, s) {
+  try {
+    const body = ONLYOFFICE_JWT_SECRET ? verifyOnlyOfficeCallback(req) : (req.body || {});
+    const step = exhibitCallbackStep(sessionId, body);
+    console.log(`📥 onlyoffice exhibit callback [${sessionId}]: status=${body && body.status}, step=${step}`);
+    if (step === 'reject') return res.json({ error: 1 });
+    if (step === 'download') {
+      const editedResp = await axios.get(body.url, {
+        responseType: 'arraybuffer',
+        timeout: 60000,
+        maxRedirects: 0,
+        maxContentLength: 50 * 1024 * 1024,
+      });
+      const outcome = applyExhibitDownload(s, Buffer.from(editedResp.data));
+      console.log(`📥 onlyoffice exhibit [${sessionId}] download ${outcome}`);
+    } else if (step === 'no-changes' && !s.editedDocx) {
+      s.status = 'no-changes';
+    } else if (step === 'error' && !CLOSED_SESSION_STATUSES.includes(s.status)) {
+      s.status = 'editor-error';
+    }
+    res.json({ error: 0 });
+  } catch (e) {
+    console.error(`❌ onlyoffice exhibit callback [${sessionId}] error:`, e.message);
+    res.json({ error: 1 });
+  }
+}
+
 app.post('/api/onlyoffice/callback/:sessionId', express.json({ limit: '50mb' }), async (req, res) => {
   const sessionId = req.params.sessionId;
   const s = onlyofficeSessions.get(sessionId);
   if (!s) return res.status(404).json({ error: 1 });
   // A close-time callback after Done must not make a saved session saveable again
   if (s.status === 'persisting' || s.status === 'persisted') return res.json({ error: 0 });
+  if (s.exhibitId) return handleExhibitCallback(req, res, sessionId, s);
   try {
     // Reject forged callbacks when JWT is enabled. A verified token's payload carries the
     // authoritative status/url, so prefer it over the raw (unsigned) body fields.
@@ -5578,8 +5617,16 @@ app.post('/api/onlyoffice/callback/:sessionId', express.json({ limit: '50mb' }),
 // callback fires synchronously.
 app.post('/api/onlyoffice/force-save/:sessionId', async (req, res) => {
   const sessionId = req.params.sessionId;
-  if (!onlyofficeSessions.has(sessionId)) {
+  const s = onlyofficeSessions.get(sessionId);
+  if (!s) {
     return res.status(404).json({ success: false, error: 'Session not found' });
+  }
+  // Exhibit sessions wait for this forcesave's callback, so Done never persists an older manual save
+  if (s.exhibitId) {
+    if (CLOSED_SESSION_STATUSES.includes(s.status)) {
+      return res.status(409).json({ success: false, error: 'This edit is already being saved' });
+    }
+    s.status = 'saving';
   }
   try {
     const commandUrl = `${ONLYOFFICE_INTERNAL_URL}/coauthoring/CommandService.ashx`;
@@ -5598,8 +5645,10 @@ app.post('/api/onlyoffice/force-save/:sessionId', async (req, res) => {
       { timeout: 15000, headers },
     );
     console.log(`📤 forcesave [${sessionId}] →`, resp.data);
+    if (s.exhibitId && s.status === 'saving') s.status = statusAfterForceSave(s, resp.data && resp.data.error);
     res.json({ success: true, response: resp.data });
   } catch (e) {
+    if (s.exhibitId && s.status === 'saving') s.status = 'editor-error';
     console.error(`❌ forcesave [${sessionId}] error:`, e.message);
     res.status(500).json({ success: false, error: e.message });
   }
@@ -5609,7 +5658,8 @@ app.post('/api/onlyoffice/force-save/:sessionId', async (req, res) => {
 app.get('/api/onlyoffice/result/:sessionId', (req, res) => {
   const s = onlyofficeSessions.get(req.params.sessionId);
   if (!s) return res.status(404).json({ success: false, error: 'Session not found' });
-  if (s.status !== 'ready') {
+  // Exhibit edits are saved server-side by /persist-to-exhibit, so their bytes never leave through this open route
+  if (s.status !== 'ready' || s.exhibitId) {
     return res.json({ success: true, status: s.status });
   }
   res.json({
@@ -5809,6 +5859,186 @@ app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
     if (s && s.status === 'persisting') s.status = 'ready';
     console.error('❌ onlyoffice persist-to-document error:', e);
     res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// "Edit for RedLine" on the Exhibits page: open an exhibit's DOCX in OnlyOffice. Exhibit admins only,
+// and the session is bound to the admin who opened it so nobody else can save it.
+app.post('/api/onlyoffice/start-session-from-exhibit/:id', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+
+    const { ObjectId } = require('mongodb');
+    const { id } = req.params;
+    if (!ObjectId.isValid(id)) return res.status(400).json({ success: false, error: 'Invalid exhibit id' });
+
+    const exhibit = await db.collection('exhibits').findOne(
+      { _id: new ObjectId(id) },
+      { projection: { fileName: 1, fileData: 1, version: 1 } }
+    );
+    if (!exhibit) return res.status(404).json({ success: false, error: 'Exhibit not found' });
+
+    const docx = exhibitFileBuffer(exhibit);
+    if (!isDocxBuffer(docx)) {
+      return res.status(400).json({ success: false, error: 'This exhibit has no Word (DOCX) file to edit' });
+    }
+
+    const actorEmail = normalizeEmail(authUser.email);
+    const holder = findExhibitEditLock(onlyofficeSessions.values(), id, Date.now());
+    if (holder && holder.actorEmail !== actorEmail) {
+      return res.status(409).json({ success: false, error: `${holder.actorName} is editing this exhibit. Try again later.` });
+    }
+    // The same admin reopening replaces their older editor, which can then no longer save
+    if (holder && holder.status !== 'persisting') holder.status = 'closed';
+
+    const sessionId = uuidv4();
+    onlyofficeSessions.set(sessionId, {
+      origDocx: docx,
+      editedDocx: null,
+      editedPdf: null,
+      status: 'editing',
+      createdAt: Date.now(),
+      exhibitId: id,
+      baseVersion: exhibit.version || 0,
+      actorEmail,
+      actorName: authUser.name || authUser.email || 'Another admin',
+      lastSeenAt: Date.now(),
+    });
+
+    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+    for (const [sid, sess] of onlyofficeSessions.entries()) {
+      if (sess.createdAt < cutoff) onlyofficeSessions.delete(sid);
+    }
+
+    const config = {
+      documentType: 'word',
+      document: {
+        fileType: 'docx',
+        key: sessionId,
+        title: exhibit.fileName || 'exhibit.docx',
+        url: `${BACKEND_CALLBACK_URL}/api/onlyoffice/file/${sessionId}`,
+      },
+      editorConfig: {
+        callbackUrl: `${BACKEND_CALLBACK_URL}/api/onlyoffice/callback/${sessionId}`,
+        lang: 'en',
+        mode: 'edit',
+        user: { id: String(authUser.id || 'user-1'), name: authUser.name || authUser.email || 'User' },
+        customization: { autosave: true, forcesave: true, compactToolbar: false },
+      },
+    };
+    if (ONLYOFFICE_JWT_SECRET) config.token = jwt.sign(config, ONLYOFFICE_JWT_SECRET, { expiresIn: '5h' });
+
+    res.json({ success: true, sessionId, editorUrl: ONLYOFFICE_PUBLIC_URL, config });
+  } catch (e) {
+    console.error('❌ onlyoffice start-session-from-exhibit error:', e);
+    res.status(500).json({ success: false, error: 'Failed to open the exhibit editor' });
+  }
+});
+
+// Save the edited exhibit: back up the old file, overwrite it in MongoDB, then refresh the backend-exhibits copy.
+app.post('/api/onlyoffice/persist-to-exhibit/:sessionId', async (req, res) => {
+  let s = null;
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+
+    s = onlyofficeSessions.get(req.params.sessionId);
+    if (!s) return res.status(404).json({ success: false, error: 'Session not found' });
+    if (!s.exhibitId) return res.status(400).json({ success: false, error: 'Session is not bound to an exhibit' });
+    if (normalizeEmail(authUser.email) !== s.actorEmail) {
+      return res.status(403).json({ success: false, error: 'Only the admin who opened this editor can save it' });
+    }
+
+    if (s.status === 'closed') {
+      return res.status(409).json({ success: false, error: 'This editor was closed or opened again somewhere else, so your edit was not saved.' });
+    }
+    if (s.status !== 'ready' || !s.editedDocx) {
+      return res.status(409).json({ success: false, error: 'Edited exhibit not ready yet', status: s.status });
+    }
+    // Claim the session before the first write so a double-clicked "Done" can't save twice
+    s.status = 'persisting';
+    // Read once: a late callback must not make MongoDB and the folder copy differ
+    const editedDocx = s.editedDocx;
+
+    const { ObjectId } = require('mongodb');
+    const saved = await saveRedlineOverExhibit(db, {
+      filter: { _id: new ObjectId(s.exhibitId) },
+      exhibitId: s.exhibitId,
+      editedDocx,
+      editorEmail: s.actorEmail,
+      backupVersionId: uuidv4(),
+      expectedVersion: s.baseVersion,
+    });
+    if (!saved.ok) {
+      s.status = 'ready';
+      return res.status(saved.httpStatus).json({ success: false, error: saved.error });
+    }
+    s.status = 'persisted';
+    _cacheClear('exhibits');
+
+    let folderUpdated = false;
+    if (saved.fileName) {
+      try {
+        const exhibitsDir = path.join(__dirname, 'backend-exhibits');
+        if (!fs.existsSync(exhibitsDir)) fs.mkdirSync(exhibitsDir, { recursive: true, mode: 0o755 });
+        // basename keeps a stored fileName from writing outside the folder
+        fs.writeFileSync(path.join(exhibitsDir, path.basename(saved.fileName)), editedDocx, { mode: 0o644 });
+        folderUpdated = true;
+      } catch (folderError) {
+        console.warn(`⚠️ Exhibit ${s.exhibitId} redline saved to MongoDB but NOT to backend-exhibits:`, folderError.message);
+      }
+    }
+
+    console.log(`✅ onlyoffice redline persisted to exhibit ${s.exhibitId} (docx ${editedDocx.length}b, v${saved.version}, backup ${saved.backupVersionId})`);
+    res.json({ success: true, exhibitId: s.exhibitId, version: saved.version, folderUpdated });
+  } catch (e) {
+    if (s && s.status === 'persisting') s.status = 'ready';
+    console.error('❌ onlyoffice persist-to-exhibit error:', e);
+    res.status(500).json({ success: false, error: 'Failed to save the edited exhibit' });
+  }
+});
+
+// Only the admin who opened an exhibit editor may keep its lock alive or release it
+async function getOwnExhibitSession(req, res) {
+  const authUser = await getExhibitAdminUser(req, res);
+  if (!authUser) return null;
+  const s = onlyofficeSessions.get(req.params.sessionId);
+  if (!s || !s.exhibitId || normalizeEmail(authUser.email) !== s.actorEmail) {
+    res.status(404).json({ success: false, error: 'Session not found' });
+    return null;
+  }
+  return s;
+}
+
+// The open editor pings this so its lock outlives the stale window
+app.post('/api/onlyoffice/exhibit-session/:sessionId/heartbeat', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const s = await getOwnExhibitSession(req, res);
+    if (!s) return;
+    if (s.status === 'closed') return res.status(409).json({ success: false, error: 'This editor was closed' });
+    s.lastSeenAt = Date.now();
+    res.json({ success: true });
+  } catch (e) {
+    console.error('❌ onlyoffice exhibit heartbeat error:', e);
+    res.status(500).json({ success: false, error: 'Failed to keep the editor open' });
+  }
+});
+
+// Close (or leaving the page) frees the exhibit for other admins right away
+app.post('/api/onlyoffice/exhibit-session/:sessionId/release', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const s = await getOwnExhibitSession(req, res);
+    if (!s) return;
+    if (s.status !== 'persisting' && s.status !== 'persisted') s.status = 'closed';
+    res.json({ success: true });
+  } catch (e) {
+    console.error('❌ onlyoffice exhibit release error:', e);
+    res.status(500).json({ success: false, error: 'Failed to close the editor' });
   }
 });
 
