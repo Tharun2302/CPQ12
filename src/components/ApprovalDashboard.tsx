@@ -30,6 +30,14 @@ import PdfCanvasViewer from './PdfCanvasViewer';
 import EditDatesModal from './EditDatesModal';
 import OnlyOfficeEditor from './OnlyOfficeEditor';
 import { SUPPRESS_PII } from '../analytics/privacy';
+import {
+  computeApprovalTiming,
+  decisionTimeMs,
+  stepNumberOf,
+  stepTimingTooltip,
+  timingForStep,
+} from '../utils/approvalTiming';
+import { StepTimeLabel, TotalTimeLabel } from './approval/ApprovalStepTime';
 
 type ViewKey = 'dashboard' | 'pending' | 'approved' | 'rejected';
 
@@ -44,20 +52,6 @@ const parseDateInputLocal = (s: string): Date | null => {
   const [y, m, d] = parts;
   if (m < 1 || m > 12 || d < 1 || d > 31) return null;
   return new Date(y, m - 1, d);
-};
-
-/** Latest step completion time for an approved workflow (fallback: updatedAt). */
-const getApprovalCompletedAtMs = (w: any): number | null => {
-  if (w.status !== 'approved') return null;
-  const steps = w.workflowSteps || [];
-  let max = 0;
-  for (const s of steps) {
-    const raw = s?.approvedAt || s?.completedAt || s?.updatedAt;
-    if (raw) max = Math.max(max, new Date(raw).getTime());
-  }
-  const fall = w.updatedAt || w.createdAt;
-  const t = max || (fall ? new Date(fall).getTime() : 0);
-  return t > 0 && !isNaN(t) ? t : null;
 };
 
 const badgeClass = (status: string) => {
@@ -1261,6 +1255,12 @@ const ApprovalDashboard: React.FC = () => {
                         ? workflow.workflowSteps.filter((s: any) => s?.role !== 'Deal Desk').length
                         : 0;
                       const totalDisplayed = Math.max(storedNonDealDesk, steps.length);
+                      const timing = computeApprovalTiming(
+                        workflow,
+                        steps
+                          .map((item: (typeof steps)[number]) => stepNumberOf(item.step))
+                          .filter((num: number | null): num is number => num !== null),
+                      );
 
                       return (
                         <div className="mt-2.5 min-w-0 max-w-full overflow-x-auto rounded-lg bg-gray-50/80 border border-gray-200 px-3 py-2">
@@ -1279,18 +1279,15 @@ const ApprovalDashboard: React.FC = () => {
                                 const who = item.step?.email ? `Email: ${item.step.email}` : null;
                                 const grp = item.step?.group ? `Group: ${item.step.group}` : null;
                                 const cmt = item.step?.comments ? `Comments: ${item.step.comments}` : null;
-                                const tsRaw =
-                                  item.step?.approvedAt ||
-                                  item.step?.completedAt ||
-                                  item.step?.updatedAt ||
-                                  item.step?.createdAt ||
-                                  null;
-                                const ts = tsRaw ? `Time: ${new Date(tsRaw).toLocaleString()}` : null;
+                                const decidedMs = decisionTimeMs(item.step);
+                                const ts = decidedMs !== null ? `Time: ${new Date(decidedMs).toLocaleString()}` : null;
+                                const stepTiming = timingForStep(timing, item.step);
+                                const timeLine = stepTimingTooltip(stepTiming);
                                 const statusLabel = raw === 'signed' ? 'Signed' : stepStatusLabel(raw);
                                 const title = [
                                   `${item.label}: ${statusLabel}`,
                                   ...(item.extra ? [`Info: ${item.extra}`] : []),
-                                  ...([who, grp, cmt, ts].filter(Boolean) as string[]),
+                                  ...([who, grp, cmt, ts, timeLine].filter(Boolean) as string[]),
                                 ].join('\n');
 
                                 const completed =
@@ -1306,14 +1303,18 @@ const ApprovalDashboard: React.FC = () => {
                                       <div className={`h-3.5 w-3.5 rounded-full ring-1 ring-white ${stepperDotClass(idx, resolvedCurrentIdx, dotStatus)}`} />
                                     )}
                                     <div className={`mt-1 text-xs leading-snug truncate max-w-full ${stepperLabelClass(idx, resolvedCurrentIdx, dotStatus)}`}>{item.label}</div>
+                                    <StepTimeLabel timing={stepTiming} />
                                   </div>
                                 );
                               })}
                             </div>
                           </div>
 
-                          <div className="mt-1.5 text-sm text-gray-600 sm:truncate" title={currentExtra}>
-                            Current: <span className="font-semibold text-gray-900 break-words sm:break-normal">{currentExtra}</span>
+                          <div className="mt-1.5 flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
+                            <div className="min-w-0 text-sm text-gray-600 sm:truncate" title={currentExtra}>
+                              Current: <span className="font-semibold text-gray-900 break-words sm:break-normal">{currentExtra}</span>
+                            </div>
+                            <TotalTimeLabel total={timing.total} />
                           </div>
                         </div>
                       );

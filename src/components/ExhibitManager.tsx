@@ -17,7 +17,8 @@ import {
   Download,
   Info,
   Shield,
-  UserPlus
+  UserPlus,
+  PenLine
 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { matchesAgreementFilter, agreementsSupportingExhibits, agreementsOwningExhibits, normalizeFolderKey } from '../utils/exhibitCombination';
@@ -34,6 +35,7 @@ import {
 } from '../utils/exhibitBulkDownload';
 import { useAuth } from '../hooks/useAuth';
 import BulkDownloadBanner from './BulkDownloadBanner';
+import ExhibitRedlineEditor from './ExhibitRedlineEditor';
 import '../assets/docx-preview.css';
 import { SUPPRESS_PII } from '../analytics/privacy';
 
@@ -266,10 +268,11 @@ type ExhibitCardProps = {
   onView: (exhibit: Exhibit) => void;
   onDownload: (exhibit: Exhibit) => void;
   onEdit: (exhibit: Exhibit) => void;
+  onRedline: (exhibit: Exhibit) => void;
   onDelete: (exhibit: Exhibit) => void;
 };
 
-function ExhibitCard({ exhibit, canManageExhibits, downloadingExhibitId, onView, onDownload, onEdit, onDelete }: ExhibitCardProps) {
+function ExhibitCard({ exhibit, canManageExhibits, downloadingExhibitId, onView, onDownload, onEdit, onRedline, onDelete }: ExhibitCardProps) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
       <div className="flex justify-between items-start mb-2">
@@ -318,6 +321,14 @@ function ExhibitCard({ exhibit, canManageExhibits, downloadingExhibitId, onView,
             >
               <Edit className="w-4 h-4" />
               Edit
+            </button>
+            <button
+              onClick={() => onRedline(exhibit)}
+              className="flex-1 min-w-[90px] flex items-center justify-center gap-2 px-3 py-2 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors text-sm"
+              title="Edit the document text in the Word editor"
+            >
+              <PenLine className="w-4 h-4" />
+              Edit for RedLine
             </button>
             <button
               onClick={() => onDelete(exhibit)}
@@ -375,6 +386,7 @@ const ExhibitManager: React.FC = () => {
   // Doubles as a synchronous double-click guard, since the disabled state lands a render later
   const bulkAbortRef = useRef<AbortController | null>(null);
   const [editingExhibit, setEditingExhibit] = useState<Exhibit | null>(null);
+  const [redlineExhibit, setRedlineExhibit] = useState<Exhibit | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('');
   // '' = every exhibit; a slug = only that agreement's; MIGRATION_ONLY = the migration pairs.
@@ -1318,6 +1330,12 @@ const ExhibitManager: React.FC = () => {
     }
   };
 
+  const handleRedlineSaved = (message: string) => {
+    setUploadSuccess(message);
+    loadExhibits();
+    setTimeout(() => setUploadSuccess(null), 3000);
+  };
+
   // Handle delete
   const handleDelete = async (exhibit: Exhibit) => {
     if (!confirm(`Are you sure you want to delete "${exhibit.name}"?`)) {
@@ -1608,6 +1626,7 @@ const ExhibitManager: React.FC = () => {
                         onView={handleView}
                         onDownload={handleDownload}
                         onEdit={handleEdit}
+                        onRedline={setRedlineExhibit}
                         onDelete={handleDelete}
                       />
                     ))}
@@ -2046,6 +2065,14 @@ const ExhibitManager: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {redlineExhibit && (
+        <ExhibitRedlineEditor
+          exhibit={redlineExhibit}
+          onClose={() => setRedlineExhibit(null)}
+          onSaved={handleRedlineSaved}
+        />
       )}
 
       {/* Edit Modal - Similar to Upload Modal but with update handler */}
