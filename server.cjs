@@ -7827,6 +7827,35 @@ app.get('/api/esign/documents/:id/file', async (req, res) => {
     const attachment = req.query.attachment === '1' || req.query.download === '1';
     const safeFileName = (doc.file_name || 'document.pdf').replace(/["\r\n\\]/g, '').trim() || 'document.pdf';
 
+    if (attachment && doc.zoho_signed_file_path) {
+      let documentOnly = null;
+      try {
+        documentOnly = await resolveZohoDocumentOnlyPdf({
+          doc,
+          client: getZohoSignRuntime().client,
+          saveDocumentOnly: async (buffer) => {
+            // Fixed name, so a re-fetch replaces the copy instead of leaving another one behind.
+            const outPath = path.join(signedDir, `signed-${doc._id}-document-only.pdf`);
+            await fs.promises.writeFile(outPath, buffer);
+            await db.collection('esign_documents').updateOne(
+              { _id: doc._id },
+              { $set: { zoho_document_only_file_path: outPath } }
+            );
+          },
+          log: (message) => console.warn(`⚠️ ${message}`),
+        });
+      } catch (zohoErr) {
+        console.warn('⚠️ Zoho Sign unavailable for document-only download:', zohoErr.code || 'error');
+      }
+      // Falls through to the stored executed PDF (with certificate) rather than failing the download.
+      if (documentOnly) {
+        res.set('Content-Type', 'application/pdf');
+        res.set('Content-Disposition', `attachment; filename="${safeFileName}"`);
+        res.set('Cache-Control', 'no-store');
+        return res.send(documentOnly);
+      }
+    }
+
     // Try disk paths in priority order: signed → review-merged → original
     const filePath = doc.signed_file_path || doc.review_merged_file_path || doc.file_path;
     if (filePath && fs.existsSync(filePath)) {
@@ -8121,7 +8150,7 @@ app.delete('/api/esign/documents/:id', async (req, res) => {
     await db.collection('audit_logs').deleteMany({ document_id: docId });
     await db.collection('esign_documents').deleteOne({ _id: docId });
 
-    [doc.file_path, doc.signed_file_path, doc.review_merged_file_path].filter(Boolean).forEach((filePath) => {
+    [doc.file_path, doc.signed_file_path, doc.review_merged_file_path, doc.zoho_document_only_file_path].filter(Boolean).forEach((filePath) => {
       try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { console.warn('Could not delete file:', filePath, e.message); }
     });
 
@@ -8346,7 +8375,7 @@ app.post('/api/approval-workflows/:workflowId/reset-esign', async (req, res) => 
         await db.collection('esign_documents').deleteOne({ _id: docId });
 
         if (esignDoc) {
-          [esignDoc.file_path, esignDoc.signed_file_path, esignDoc.review_merged_file_path]
+          [esignDoc.file_path, esignDoc.signed_file_path, esignDoc.review_merged_file_path, esignDoc.zoho_document_only_file_path]
             .filter(Boolean)
             .forEach((filePath) => {
               try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) {
@@ -8777,6 +8806,7 @@ const {
 const { createZohoSignClient } = require('./zoho-sign-client.cjs');
 const { createZohoSignSender, isValidObjectIdString, isZohoManagedDocument } = require('./zoho-sign-send.cjs');
 const { createZohoSignPoller, buildDueDocumentsQuery } = require('./zoho-sign-poller.cjs');
+const { resolveZohoDocumentOnlyPdf } = require('./zoho-sign-download.cjs');
 
 // Reminders are emails to customers and a send is an irreversible external action, so this is
 // the tightest limiter in the file. 10/min/IP, per design §8 E2.
