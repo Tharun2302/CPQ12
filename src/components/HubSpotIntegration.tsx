@@ -138,7 +138,7 @@ const HubSpotIntegration: React.FC<HubSpotIntegrationProps> = ({
     }
   };
 
-  const hubspotApiKey = import.meta.env.VITE_HUBSPOT_API_KEY || 'pat-na1-635cc313-80cb-4701-810a-a0492691b28d';
+  const hubspotApiKey = import.meta.env.VITE_HUBSPOT_API_KEY || '';
 
   // Error boundary - if there's an error, show a fallback UI
   if (hasError) {
