@@ -29,9 +29,6 @@ const EsignSendPage = lazy(() => import('./pages/EsignSendPage'));
 const EsignTrackingPage = lazy(() => import('./pages/EsignTrackingPage'));
 const EsignSignPage = lazy(() => import('./pages/EsignSignPage'));
 const EsignInboxByToken = lazy(() => import('./pages/EsignInboxByToken'));
-const EsignTeamLeadDashboard = lazy(() => import('./components/EsignTeamLeadDashboard'));
-const EsignTechnicalDashboard = lazy(() => import('./components/EsignTechnicalDashboard'));
-const EsignLegalDashboard = lazy(() => import('./components/EsignLegalDashboard'));
 const EsignAgreementStatusDashboard = lazy(() => import('./components/EsignAgreementStatusDashboard'));
 import { BACKEND_URL } from './config/api';
 import { initClarity, track, trackTierSelection, trackPricingCalculation } from './analytics/clarity';
@@ -2047,9 +2044,6 @@ function App() {
                 <Route path=":documentId/send" element={<EsignSendPage />} />
                 <Route path=":documentId/status" element={<EsignTrackingPage />} />
               </Route>
-              <Route path="/esign-team-lead" element={<EsignTeamLeadDashboard />} />
-              <Route path="/esign-technical" element={<EsignTechnicalDashboard />} />
-              <Route path="/esign-legal" element={<EsignLegalDashboard />} />
               <Route path="/esign-tracking" element={<EsignAgreementStatusDashboard />} />
 
              {/* Protected Routes - Dashboard with URL-based tab navigation */}
