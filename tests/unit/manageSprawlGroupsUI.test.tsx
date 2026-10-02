@@ -43,11 +43,11 @@ async function openDataSprawl() {
     onExhibitsChange: vi.fn(),
   };
   const { container, rerender } = render(<ConfigurationForm {...props} selectedExhibits={[]} />);
-  await user.click(screen.getByRole('button', { name: 'Manage' }));
+  // Data-Sprawl is listed under the Migrate tab, which is open by default.
   const select = await waitFor(() => {
     const match = Array.from(container.querySelectorAll('select')).find(el =>
       Array.from(el.options).some(o => o.value === 'data-sprawl'));
-    if (!match) throw new Error('Manage template <select> not found');
+    if (!match) throw new Error('Migrate <select> with Data-Sprawl not found');
     return match as HTMLSelectElement;
   });
   await user.selectOptions(select, 'data-sprawl');
@@ -69,9 +69,9 @@ afterEach(() => {
 });
 
 describe('ConfigurationForm — Data Sprawl groups per selected exhibit', () => {
-  it('shows the empty state and no sprawl type checkboxes before any exhibit is picked', async () => {
+  it('hides Project Configuration and shows no sprawl type checkboxes before any exhibit is picked', async () => {
     await openDataSprawl();
-    expect(await screen.findByTestId('sprawl-empty-state')).toBeTruthy();
+    expect(document.querySelector('[data-section="project-configuration"]')).toBeNull();
     expect(screen.queryByText('Data Sprawl Types')).toBeNull();
     for (const type of ['Content', 'Message', 'Email']) {
       expect(screen.queryByRole('checkbox', { name: type })).toBeNull();
@@ -85,7 +85,28 @@ describe('ConfigurationForm — Data Sprawl groups per selected exhibit', () => 
     await waitFor(() => expect(groups()).toHaveLength(2));
     expect(groups().map(g => g.getAttribute('aria-label'))).toEqual(['Data Sprawl – DropBox', 'Data Sprawl – Egnyte']);
     expect(within(groups()[1]).getByText('Content Sprawl Egnyte')).toBeTruthy();
-    expect(screen.queryByTestId('sprawl-empty-state')).toBeNull();
+    expect(document.querySelector('[data-section="project-configuration"]')).not.toBeNull();
+  });
+
+  it('hides Project Configuration again when every exhibit is unticked', async () => {
+    const { selectExhibits } = await openDataSprawl();
+    selectExhibits(['dbx']);
+    await waitFor(() => expect(groups()).toHaveLength(1));
+    selectExhibits([]);
+    await waitFor(() => expect(document.querySelector('[data-section="project-configuration"]')).toBeNull());
+  });
+
+  it('brings back the typed users when an exhibit is re-ticked after hiding the section', async () => {
+    const { user, selectExhibits } = await openDataSprawl();
+    selectExhibits(['dbx']);
+    await waitFor(() => expect(groups()).toHaveLength(1));
+    await user.type(within(groups()[0]).getByLabelText('Number of Users'), '7');
+
+    selectExhibits([]);
+    await waitFor(() => expect(document.querySelector('[data-section="project-configuration"]')).toBeNull());
+    selectExhibits(['dbx']);
+    await waitFor(() => expect(groups()).toHaveLength(1));
+    expect((within(groups()[0]).getByLabelText('Number of Users') as HTMLInputElement).value).toBe('7');
   });
 
   it('typing in one card does not change the other, and each group is priced on its own', async () => {
@@ -134,11 +155,12 @@ describe('Data Sprawl — agreement switch starts clean', () => {
     await waitFor(() => expect(groups()).toHaveLength(1));
     await user.type(within(groups()[0]).getByLabelText('Number of Users'), '7');
 
+    await user.click(screen.getByRole('button', { name: 'Manage' }));
     const select = screen.getAllByRole('combobox').find(el =>
       Array.from((el as HTMLSelectElement).options).some(o => o.value === 'mange+sprawl')) as HTMLSelectElement;
     await user.selectOptions(select, 'mange+sprawl');
     selectExhibits([]);
-    await waitFor(() => expect(screen.getByTestId('sprawl-empty-state')).toBeTruthy());
+    await waitFor(() => expect(document.querySelector('[data-section="project-configuration"]')).toBeNull());
 
     selectExhibits(['dbx']);
     await waitFor(() => expect(groups()).toHaveLength(1));

@@ -12,6 +12,7 @@ import ExhibitSelector from './ExhibitSelector';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
 import { PRICING_TIERS, calculateCombinationPricing, formatCurrency, calculateManageSaasPricing, normalizeSprawlTypes, withSprawlTypes, sprawlRowLabel, normalizeSprawlConfigs, hasSprawlConfigs, withSprawlConfigs, manageAgreementCard } from '../utils/pricing';
 import { sprawlConfigIssue } from '../utils/sprawlGroups';
+import { isDataSprawlOption, isDataSprawlSelected, displayedServicePlan } from '../utils/dataSprawlOption';
 import { persistConfig } from '../utils/sessionConfig';
 import { useSprawlGroups } from '../hooks/useSprawlGroups';
 import SprawlGroupCard from './SprawlGroupCard';
@@ -72,6 +73,11 @@ const MANAGE_STANDALONE_OPTION = '__manage-standalone__';
 const MANAGE_STANDALONE_LABEL = 'Manage Standalone';
 const isManageCombinationChosen = (c: ConfigurationData) =>
   !!c.migrationType || c.manageAgreementLabel === MANAGE_STANDALONE_LABEL;
+// A sprawl agreement has nothing to configure until an exhibit is ticked, so its section waits for one.
+const hasManageInputs = (c: ConfigurationData) =>
+  manageAgreementCard(c) === 'both'
+  || normalizeSprawlConfigs(c).length > 0
+  || normalizeSprawlTypes(c).length > 0;
 
 const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   onConfigurationChange, 
@@ -172,6 +178,40 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         }
       })
       .catch(() => {});
+  };
+
+  // Shared by the Manage dropdown and Data-Sprawl, which is listed under Migrate but saved as a Manage agreement.
+  const selectManageAgreement = (value: string) => {
+    const options = apiCombinations.filter(c => c.migrationType === 'Manage');
+    const isStandalone = value === MANAGE_STANDALONE_OPTION;
+    const newMigrationType = isStandalone ? '' : value;
+    const selected = options.find(o => o.value === newMigrationType);
+    const newRequiresUsers = selected ? selected.requiresUsers !== false : true;
+    // A new agreement starts with no exhibits, so its sprawl groups are cleared too.
+    const newConfig = withSprawlConfigs({
+      ...config,
+      migrationType: newMigrationType as any,
+      manageAgreementLabel: isStandalone ? MANAGE_STANDALONE_LABEL : (selected?.label || ''),
+      combination: 'manage-standalone',
+      timelineProjection: '',
+      servicePlan: 'Manage' as const,
+      manageRequiresUsers: newRequiresUsers,
+      // Clear manageUsers when switching to a no-users agreement
+      // so the pricing calculation doesn't use a stale value
+      manageUsers: newRequiresUsers ? config.manageUsers : 0,
+      ...NO_EXHIBIT_ROWS,
+    }, []);
+    setConfig(newConfig);
+    clearSprawlMemory();
+    onExhibitsChange([]);
+    onConfigurationChange(newConfig);
+    try {
+      sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+      const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
+      navState.migrationType = newMigrationType;
+      navState.combination = 'manage-standalone';
+      sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+    } catch (err) { console.warn('Could not save to sessionStorage:', err); }
   };
 
   useEffect(() => {
@@ -1397,12 +1437,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           </div>
         ))}
 
-        {sprawlGroups.length === 0 && sprawlTypes.length === 0 && isSprawlAgreement && (
-          <div role="status" data-testid="sprawl-empty-state" className="rounded-xl border-2 border-dashed border-gray-300 bg-white/60 px-4 sm:px-6 py-6 mb-6 text-sm text-gray-600">
-            Select one or more Data Sprawl exhibits below to configure each one.
-          </div>
-        )}
-
         {sprawlGroups.length === 0 && sprawlTypes.length === 0 && !isSprawlAgreement && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {showUsersField && usersField()}
@@ -2145,7 +2179,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </label>
               {/* Service plan tabs (Migrate / Manage / Bundle) + Timeline Projection */}
               {(() => {
-                const activePlan = config.servicePlan || 'Migrate';
+                const activePlan = displayedServicePlan(config);
                 const onMigration = migrationOrTimeline === 'migration';
 
                 const selectServicePlan = (plan: 'Migrate' | 'Manage' | 'Bundle') => {
@@ -2217,17 +2251,26 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               })()}
 
               {/* Migrate: Show all combinations for Migrate service plan */}
-              {migrationOrTimeline === 'migration' && config.servicePlan === 'Migrate' && (
+              {migrationOrTimeline === 'migration' && (config.servicePlan === 'Migrate' || isDataSprawlSelected(config)) && (
                 <select
-                  value={config.combination}
+                  value={isDataSprawlSelected(config) ? config.migrationType : config.combination}
                   onChange={(e) => {
                     const newCombination = e.target.value;
                     // Find the combination to get its migrationType
                     const selectedCombo = apiCombinations.find(c => c.value === newCombination);
+                    if (selectedCombo && isDataSprawlOption(selectedCombo)) {
+                      selectManageAgreement(newCombination);
+                      return;
+                    }
                     const newMigrationType = selectedCombo?.migrationType || '';
+                    // Leaving Data-Sprawl returns to the plain Migrate plan.
+                    const leavingDataSprawl = isDataSprawlSelected(config)
+                      ? { servicePlan: 'Migrate' as const, manageAgreementLabel: '' }
+                      : {};
 
                     const newConfig = withSprawlConfigs({
                       ...config,
+                      ...leavingDataSprawl,
                       combination: newCombination,
                       migrationType: newMigrationType as any,
                       timelineProjection: '',
@@ -2255,6 +2298,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     .map(combo => (
                       <option key={combo.value} value={combo.value}>{combo.label}</option>
                     ))}
+                  {apiCombinations.filter(isDataSprawlOption).map(combo => (
+                    <option key={combo.value} value={combo.value}>{combo.label}</option>
+                  ))}
                 </select>
               )}
 
@@ -2262,8 +2308,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   These are intentionally separate from B51/B56 (Migrate inputs).
                   Dropdown is driven by API combinations (migrationType === 'Manage').
                   requiresUsers flag on each combination controls whether Number of Users is shown. */}
-              {migrationOrTimeline === 'migration' && config.servicePlan === 'Manage' && (() => {
-                const options = apiCombinations.filter(c => c.migrationType === 'Manage');
+              {migrationOrTimeline === 'migration' && config.servicePlan === 'Manage' && !isDataSprawlSelected(config) && (() => {
+                const options = apiCombinations.filter(c => c.migrationType === 'Manage' && !isDataSprawlOption(c));
                 const selectedOption = options.find(o => o.value === config.migrationType);
                 const showUsersField = selectedOption ? selectedOption.requiresUsers !== false : true;
                 // Data Sprawl (E101) drives which basis input is collected:
@@ -2273,37 +2319,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   <>
                     <select
                       value={config.migrationType || (isManageCombinationChosen(config) ? MANAGE_STANDALONE_OPTION : '')}
-                      onChange={(e) => {
-                        const isStandalone = e.target.value === MANAGE_STANDALONE_OPTION;
-                        const newMigrationType = isStandalone ? '' : e.target.value;
-                        const selected = options.find(o => o.value === newMigrationType);
-                        const newRequiresUsers = selected ? selected.requiresUsers !== false : true;
-                        // A new agreement starts with no exhibits, so its sprawl groups are cleared too.
-                        const newConfig = withSprawlConfigs({
-                          ...config,
-                          migrationType: newMigrationType as any,
-                          manageAgreementLabel: isStandalone ? MANAGE_STANDALONE_LABEL : (selected?.label || ''),
-                          combination: 'manage-standalone',
-                          timelineProjection: '',
-                          servicePlan: 'Manage' as const,
-                          manageRequiresUsers: newRequiresUsers,
-                          // Clear manageUsers when switching to a no-users agreement
-                          // so the pricing calculation doesn't use a stale value
-                          manageUsers: newRequiresUsers ? config.manageUsers : 0,
-                          ...NO_EXHIBIT_ROWS,
-                        }, []);
-                        setConfig(newConfig);
-                        clearSprawlMemory();
-                        onExhibitsChange([]);
-                        onConfigurationChange(newConfig);
-                        try {
-                          sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                          const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
-                          navState.migrationType = newMigrationType;
-                          navState.combination = 'manage-standalone';
-                          sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
-                        } catch (err) { console.warn('Could not save to sessionStorage:', err); }
-                      }}
+                      onChange={(e) => selectManageAgreement(e.target.value)}
                       className="w-full px-6 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white hover:border-slate-300 text-base font-medium"
                     >
                       <option value="">Select Combination</option>
@@ -4000,7 +4016,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           )}
 
           {/* MANAGE PLAN: its own full-width section, same shell as Project Configuration below */}
-          {migrationOrTimeline === 'migration' && config.servicePlan === 'Manage' && isManageCombinationChosen(config) && (
+          {migrationOrTimeline === 'migration' && config.servicePlan === 'Manage' && isManageCombinationChosen(config) && hasManageInputs(config) && (
             <div data-section="project-configuration" className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 rounded-2xl shadow-2xl border border-blue-100/50 p-8 backdrop-blur-sm mb-8">
               <div className="text-center mb-8">
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Project Configuration</h3>

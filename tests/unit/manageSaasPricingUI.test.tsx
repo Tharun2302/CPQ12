@@ -60,7 +60,7 @@ function discountInput(section: HTMLElement): HTMLInputElement {
 
 function manageTemplateSelect(container: HTMLElement): HTMLSelectElement {
   const match = Array.from(container.querySelectorAll('select')).find((el) =>
-    Array.from(el.options).some((o) => o.value === 'data-sprawl'),
+    Array.from(el.options).some((o) => o.value === 'mange+sprawl'),
   );
   if (!match) throw new Error('Manage template <select> not found');
   return match as HTMLSelectElement;
@@ -118,7 +118,7 @@ describe('Manage SaaS pricing card (Manage tab, no template)', () => {
   it('hides the card once a Manage template is selected', async () => {
     const { user, container } = await openManageTab();
     const select = manageTemplateSelect(container);
-    await user.selectOptions(select, 'data-sprawl');
+    await user.selectOptions(select, 'mange+sprawl');
     await waitFor(() => expect(screen.queryByTestId('manage-saas-pricing')).toBeNull());
   });
 });
@@ -131,7 +131,6 @@ describe('Manage tab combination dropdown', () => {
       'Select Combination',
       'Manage Standalone',
       'mange+sprawl',
-      'data-sprawl',
     ]);
   });
 
@@ -141,10 +140,11 @@ describe('Manage tab combination dropdown', () => {
     expect(screen.queryByTestId('manage-saas-pricing')).toBeNull();
   });
 
-  it('loads the Manage configuration for a sprawl combination', async () => {
+  it('waits for a sprawl exhibit before showing the configuration of a sprawl combination', async () => {
     const { user, container, select } = await renderOnManageTab();
-    await user.selectOptions(select, 'data-sprawl');
-    await waitFor(() => expect(container.querySelector('[data-section="project-configuration"]')).not.toBeNull());
+    await user.selectOptions(select, 'mange+sprawl');
+    await waitFor(() => expect(select.value).toBe('mange+sprawl'));
+    expect(container.querySelector('[data-section="project-configuration"]')).toBeNull();
     expect(screen.queryByTestId('manage-saas-pricing')).toBeNull();
   });
 
