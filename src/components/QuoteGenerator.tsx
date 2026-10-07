@@ -41,6 +41,7 @@ import { BACKEND_URL, API_ENDPOINTS } from '../config/api';
 import { useNavigate } from 'react-router-dom';
 import { trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from '../analytics/clarity';
 import { getEffectiveDurationMonths, formatMonths } from '../utils/configDuration';
+import { serviceTermTokens } from '../utils/serviceTerm';
 import { getCurrentUser } from '../utils/authUtils';
 import { reportClientError } from '../utils/reportClientError';
 import { useAuth } from '../hooks/useAuth';
@@ -2258,23 +2259,15 @@ Quote ID: ${quoteData.id}
           '{{expiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
 
           // Service term tokens (Manage Plan SaaS Agreement)
-          // Manage Standalone has a fixed 3-month free trial; other plans use the configured duration.
+          // Manage Standalone and Data Sprawl set their own term, other Manage gets a 3-month trial; other plans use the configured duration.
           '{{service_start_date}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
-          '{{service_end_date}}': (() => {
-            const start = configuration?.startDate;
-            if (!start) return 'N/A';
-            const months = configuration?.servicePlan === 'Manage' ? 3 : (duration || 0);
-            if (!months) return 'N/A';
-            try {
-              const d = start.includes('-') ? new Date(start + 'T00:00:00') : new Date(start);
-              if (isNaN(d.getTime())) return 'N/A';
-              d.setMonth(d.getMonth() + months);
-              return formatDateMMDDYYYY(d.toISOString().split('T')[0]);
-            } catch { return 'N/A'; }
-          })(),
-          '{{service_term_label}}': configuration?.servicePlan === 'Manage'
-            ? '3-Month Free Trial'
-            : `${duration || 0}-Month${(duration || 0) === 1 ? '' : 's'}`,
+          ...((() => {
+            const { endDate: end, label } = serviceTermTokens(configuration, duration);
+            return {
+              '{{service_end_date}}': end ? formatDateMMDDYYYY(end) : 'N/A',
+              '{{service_term_label}}': label,
+            };
+          })()),
 
           // Payment terms information (overage agreements)
           '{{payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
@@ -3088,26 +3081,14 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
 
         // Service term tokens (Manage Plan SaaS Agreement)
         '{{service_start_date}}': quote.configuration?.startDate ? formatDateMMDDYYYY(quote.configuration.startDate) : 'N/A',
-        '{{service_end_date}}': (() => {
-          const start = quote.configuration?.startDate;
-          if (!start) return 'N/A';
-          const months = quote.configuration?.servicePlan === 'Manage'
-            ? 3
-            : (getEffectiveDurationMonths(quote.configuration) || 0);
-          if (!months) return 'N/A';
-          try {
-            const d = start.includes('-') ? new Date(start + 'T00:00:00') : new Date(start);
-            if (isNaN(d.getTime())) return 'N/A';
-            d.setMonth(d.getMonth() + months);
-            return formatDateMMDDYYYY(d.toISOString().split('T')[0]);
-          } catch { return 'N/A'; }
-        })(),
-        '{{service_term_label}}': quote.configuration?.servicePlan === 'Manage'
-          ? '3-Month Free Trial'
-          : (() => {
-              const m = getEffectiveDurationMonths(quote.configuration) || 0;
-              return `${m}-Month${m === 1 ? '' : 's'}`;
-            })()
+        ...((() => {
+          const migrateMonths = getEffectiveDurationMonths(quote.configuration) || 0;
+          const { endDate: end, label } = serviceTermTokens(quote.configuration, migrateMonths);
+          return {
+            '{{service_end_date}}': end ? formatDateMMDDYYYY(end) : 'N/A',
+            '{{service_term_label}}': label,
+          };
+        })())
     };
 
     // Create sample template text with placeholders - matches CloudFuze template
@@ -5761,23 +5742,15 @@ Total Price: {{total price}}`;
           '{{expiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
 
           // Service term tokens (Manage Plan SaaS Agreement)
-          // Manage Standalone has a fixed 3-month free trial; other plans use the configured duration.
+          // Manage Standalone and Data Sprawl set their own term, other Manage gets a 3-month trial; other plans use the configured duration.
           '{{service_start_date}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
-          '{{service_end_date}}': (() => {
-            const start = configuration?.startDate;
-            if (!start) return 'N/A';
-            const months = configuration?.servicePlan === 'Manage' ? 3 : (duration || 0);
-            if (!months) return 'N/A';
-            try {
-              const d = start.includes('-') ? new Date(start + 'T00:00:00') : new Date(start);
-              if (isNaN(d.getTime())) return 'N/A';
-              d.setMonth(d.getMonth() + months);
-              return formatDateMMDDYYYY(d.toISOString().split('T')[0]);
-            } catch { return 'N/A'; }
-          })(),
-          '{{service_term_label}}': configuration?.servicePlan === 'Manage'
-            ? '3-Month Free Trial'
-            : `${duration || 0}-Month${(duration || 0) === 1 ? '' : 's'}`,
+          ...((() => {
+            const { endDate: end, label } = serviceTermTokens(configuration, duration);
+            return {
+              '{{service_end_date}}': end ? formatDateMMDDYYYY(end) : 'N/A',
+              '{{service_term_label}}': label,
+            };
+          })()),
 
           // Payment terms information (overage agreements)
           '{{payment_terms}}': clientInfo.paymentTerms || '100% Upfront',

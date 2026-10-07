@@ -138,6 +138,8 @@ export interface ConfigurationData {
   // The dropdown's underlying value is admin-defined and opaque, so the label is what
   // decides which pricing card applies.
   manageAgreementLabel?: string;
+  // Data Sprawl only: Initial Service Term in months. Kept apart from `duration`, which drives pricing.
+  serviceTermMonths?: number;
   // Driven by the selected agreement's requiresUsers flag (set in CombinationManager).
   // false = hide Number of Users field and user cost rows in pricing display.
   manageRequiresUsers?: boolean;

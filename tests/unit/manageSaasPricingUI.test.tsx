@@ -14,10 +14,10 @@ const COMBINATIONS = [
 const json = (body: unknown) =>
   Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response);
 
-function mockFetch() {
+function mockFetch(combinations: unknown[] = COMBINATIONS) {
   const fetchMock = vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.includes('/api/combinations')) return json({ success: true, combinations: COMBINATIONS });
+    if (url.includes('/api/combinations')) return json({ success: true, combinations });
     if (url.includes('/api/exhibits')) return json({ success: true, exhibits: [] });
     return json({ success: true });
   });
@@ -25,8 +25,8 @@ function mockFetch() {
   return fetchMock;
 }
 
-async function renderOnManageTab() {
-  mockFetch();
+async function renderOnManageTab(combinations: unknown[] = COMBINATIONS) {
+  mockFetch(combinations);
   const user = userEvent.setup();
   const { container } = render(
     <ConfigurationForm
@@ -134,18 +134,52 @@ describe('Manage tab combination dropdown', () => {
     ]);
   });
 
+  it('lists Manage Standalone once when the catalog has a row with the same label', async () => {
+    const withCatalogRow = [
+      ...COMBINATIONS,
+      { value: 'manage-standalone', label: '  manage standalone ', migrationType: 'Manage', hasFile: true },
+    ];
+    const { user, select } = await renderOnManageTab(withCatalogRow);
+    const labels = Array.from(select.options).map(o => o.textContent);
+    expect(labels).toEqual(['Select Combination', 'Manage Standalone', 'mange+sprawl']);
+
+    await user.selectOptions(select, 'Manage Standalone');
+    const card = await screen.findByTestId('manage-saas-pricing');
+    expect(within(card).getByText('$5.00/Month/user')).toBeTruthy();
+  });
+
   it('shows no configuration until a combination is chosen', async () => {
     const { container } = await renderOnManageTab();
     expect(container.querySelector('[data-section="project-configuration"]')).toBeNull();
     expect(screen.queryByTestId('manage-saas-pricing')).toBeNull();
   });
 
-  it('waits for a sprawl exhibit before showing the configuration of a sprawl combination', async () => {
+  it('shows mange+sprawl configuration straight away and skips the exhibit step', async () => {
     const { user, container, select } = await renderOnManageTab();
     await user.selectOptions(select, 'mange+sprawl');
     await waitFor(() => expect(select.value).toBe('mange+sprawl'));
-    expect(container.querySelector('[data-section="project-configuration"]')).toBeNull();
+    const section = container.querySelector('[data-section="project-configuration"]') as HTMLElement;
+    expect(section).not.toBeNull();
+    expect(within(section).getByText('Number of Users')).toBeTruthy();
+    expect(within(section).getByText('Content data size in GB')).toBeTruthy();
+    expect(container.querySelector('[data-section="exhibits-selection"]')).toBeNull();
     expect(screen.queryByTestId('manage-saas-pricing')).toBeNull();
+  });
+
+  it('mange+sprawl ticks sprawl types directly and shows one card per type', async () => {
+    const { user, container, select } = await renderOnManageTab();
+    await user.selectOptions(select, 'mange+sprawl');
+    const section = await waitFor(() =>
+      container.querySelector('[data-section="project-configuration"]') as HTMLElement);
+    await user.click(within(section).getByRole('checkbox', { name: 'Message' }));
+    await user.click(within(section).getByRole('checkbox', { name: 'Email' }));
+    expect(within(section).getByText('Message Sprawl')).toBeTruthy();
+    expect(within(section).getByText('Email Sprawl')).toBeTruthy();
+    expect(within(section).queryByText('Data Sprawl')).toBeNull();
+
+    await user.click(within(section).getByRole('checkbox', { name: 'Email' }));
+    expect(within(section).queryByText('Email Sprawl')).toBeNull();
+    expect((within(section).getByRole('checkbox', { name: 'Message' }) as HTMLInputElement).checked).toBe(true);
   });
 
   it('hides the configuration again when "Select Combination" is re-chosen', async () => {

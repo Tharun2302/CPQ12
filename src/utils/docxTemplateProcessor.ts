@@ -2,6 +2,7 @@ import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import { saveAs } from 'file-saver';
 import { formatCurrency } from './pricing';
+import { removeExistingValidityLines } from './docxValidityLine';
 
 export interface DocxTemplateData {
   // Exact tokens from your template
@@ -1823,11 +1824,8 @@ export class DocxTemplateProcessor {
 
               // Step 1: Remove every existing validity paragraph or table row that already
               // carries the validity text (handles re-runs and scenario a).
-              const existingValidityParaRe = /<w:p(?:\s[^>]*)?>[\s\S]*?This quote is valid till[\s\S]*?<\/w:p>/g;
-              const existingValidityRowRe  = /<w:tr(?:\s[^>]*)?>[\s\S]*?This quote is valid till[\s\S]*?<\/w:tr>/g;
-              let xmlNoValidity = vXml
-                .replace(existingValidityRowRe, '')   // rows first (wider match)
-                .replace(existingValidityParaRe, ''); // then bare paragraphs
+              // Element-bounded: a lazy regex here once spanned from the pricing table to the signature table.
+              let xmlNoValidity = removeExistingValidityLines(vXml);
 
               // Step 2: Locate the "Total Price" row so we know which table to append to.
               const totalPricePos = xmlNoValidity.lastIndexOf('Total Price');

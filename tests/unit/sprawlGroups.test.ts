@@ -8,6 +8,7 @@ import {
   resolveSprawlExhibitType,
   sprawlConfigIssue,
   sprawlExhibitFolder,
+  sprawlTermIssue,
   type SprawlExhibit,
 } from '../../src/utils/sprawlGroups';
 import { sprawlGroupLabel, withSprawlConfigs } from '../../src/utils/pricing';
@@ -311,5 +312,50 @@ describe('manageCoreConfigReady (App recalculation gate)', () => {
     expect(manageCoreConfigReady(cfg({ ...plain, manageUsers: 5 }))).toBe(true);
     expect(manageCoreConfigReady(cfg({ ...plain, manageUsers: 0 }))).toBe(false);
     expect(manageCoreConfigReady(cfg({ ...plain, manageRequiresUsers: false, manageDataGB: 3 }))).toBe(true);
+  });
+
+  it('mange+sprawl prices from users and GB without an exhibit', () => {
+    const combined = { migrationType: 'mange+sprawl' as never, manageAgreementLabel: 'mange+sprawl' };
+    expect(sprawlConfigIssue(cfg(combined))).toBeNull();
+    expect(manageCoreConfigReady(cfg({ ...combined, manageUsers: 24, manageDataGB: 123 }))).toBe(true);
+    expect(manageCoreConfigReady(cfg({ ...combined, manageUsers: 0 }))).toBe(false);
+  });
+});
+
+describe('sprawlTermIssue (Data Sprawl Duration)', () => {
+  const MSG = 'Please enter the Duration (Months) for Data Sprawl';
+  const group: ManageSprawlConfig = { exhibitId: 'dbx', exhibitIds: ['dbx'], exhibitName: 'Content Sprawl DropBox', type: 'Content', users: 5, quantity: 10 };
+
+  it('requires a whole number of months from 1 to 60 for Data Sprawl', () => {
+    expect(sprawlTermIssue(cfg())).toBe(MSG);
+    for (const bad of [0, -1, 61, 1.5, NaN]) {
+      expect(sprawlTermIssue(cfg({ serviceTermMonths: bad }))).toBe(MSG);
+    }
+    for (const ok of [1, 12, 60]) {
+      expect(sprawlTermIssue(cfg({ serviceTermMonths: ok }))).toBeNull();
+    }
+  });
+
+  it('requires a whole number of months from 1 to 60 for Manage Standalone', () => {
+    const standalone = { migrationType: '' as never, manageAgreementLabel: 'Manage Standalone' };
+    const msg = 'Please enter the Duration (Months) for Manage Standalone';
+    expect(sprawlTermIssue(cfg(standalone))).toBe(msg);
+    for (const bad of [0, 61, 2.5, NaN]) expect(sprawlTermIssue(cfg({ ...standalone, serviceTermMonths: bad }))).toBe(msg);
+    for (const ok of [1, 12, 24, 60]) expect(sprawlTermIssue(cfg({ ...standalone, serviceTermMonths: ok }))).toBeNull();
+  });
+
+  it('does not apply to mange+sprawl, Migrate or a missing config', () => {
+    expect(sprawlTermIssue(cfg({ migrationType: 'mange+sprawl' as never, manageAgreementLabel: 'mange+sprawl' }))).toBeNull();
+    expect(sprawlTermIssue(cfg({ servicePlan: 'Migrate', migrationType: 'Content' as never, manageAgreementLabel: '' }))).toBeNull();
+    expect(sprawlTermIssue(undefined)).toBeNull();
+    expect(sprawlTermIssue(null)).toBeNull();
+  });
+
+  it('never blocks pricing: sprawlConfigIssue and manageCoreConfigReady ignore the term', () => {
+    const priced = withSprawlConfigs(cfg(), [group]);
+    expect(sprawlTermIssue(priced)).toBe(MSG);
+    expect(sprawlConfigIssue(priced)).toBeNull();
+    expect(manageCoreConfigReady(priced)).toBe(true);
+    expect(manageCoreConfigReady({ ...priced, serviceTermMonths: 12 })).toBe(true);
   });
 });

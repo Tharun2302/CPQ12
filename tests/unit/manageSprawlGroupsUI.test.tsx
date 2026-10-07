@@ -93,7 +93,7 @@ describe('ConfigurationForm — Data Sprawl groups per selected exhibit', () => 
     selectExhibits(['dbx']);
     await waitFor(() => expect(groups()).toHaveLength(1));
     selectExhibits([]);
-    await waitFor(() => expect(document.querySelector('[data-section="project-configuration"]')).toBeNull());
+    await waitFor(() => expect(groups()).toHaveLength(0));
   });
 
   it('brings back the typed users when an exhibit is re-ticked after hiding the section', async () => {
@@ -103,7 +103,7 @@ describe('ConfigurationForm — Data Sprawl groups per selected exhibit', () => 
     await user.type(within(groups()[0]).getByLabelText('Number of Users'), '7');
 
     selectExhibits([]);
-    await waitFor(() => expect(document.querySelector('[data-section="project-configuration"]')).toBeNull());
+    await waitFor(() => expect(groups()).toHaveLength(0));
     selectExhibits(['dbx']);
     await waitFor(() => expect(groups()).toHaveLength(1));
     expect((within(groups()[0]).getByLabelText('Number of Users') as HTMLInputElement).value).toBe('7');
@@ -160,7 +160,7 @@ describe('Data Sprawl — agreement switch starts clean', () => {
       Array.from((el as HTMLSelectElement).options).some(o => o.value === 'mange+sprawl')) as HTMLSelectElement;
     await user.selectOptions(select, 'mange+sprawl');
     selectExhibits([]);
-    await waitFor(() => expect(document.querySelector('[data-section="project-configuration"]')).toBeNull());
+    await waitFor(() => expect(groups()).toHaveLength(0));
 
     selectExhibits(['dbx']);
     await waitFor(() => expect(groups()).toHaveLength(1));

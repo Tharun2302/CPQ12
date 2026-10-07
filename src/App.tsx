@@ -4,8 +4,12 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from './types/pricing';
 import { calculateAllTiers, PRICING_TIERS } from './utils/pricing';
 import { manageCoreConfigReady } from './utils/sprawlGroups';
-import { readStoredConfiguration } from './utils/sessionConfig';
-import { templateChoiceChanged, templateSelectionKey } from './utils/templateSelection';
+import { persistConfig, readStoredConfiguration } from './utils/sessionConfig';
+import { effectiveTemplateKey, templateChoiceChanged, templateSelectionKey } from './utils/templateSelection';
+import { isBuiltInManageStandalone, normalizeLegacyManageStandalone } from './utils/manageStandaloneOption';
+
+const CATALOG_MAX_ATTEMPTS = 4;
+const CATALOG_RETRY_BASE_MS = 500;
 
 // Lazy load components for code splitting and better performance
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -116,6 +120,56 @@ function App() {
   // Template state management
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
   const [templates, setTemplates] = useState<any[]>([]);
+  // Fetched once (and on Combination Manager edits) so template effects never refetch it per render.
+  const [combinationCatalog, setCombinationCatalog] = useState<any[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const loadCatalog = async (attempt = 1) => {
+      clearTimeout(retryTimer);
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/combinations`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (res.ok && data.success) {
+          setCombinationCatalog(data.combinations || []);
+          return;
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Error loading combinations:', err);
+      }
+      // The backend may still be starting; without a retry no combination template loads until reload.
+      if (attempt < CATALOG_MAX_ATTEMPTS) {
+        const delay = CATALOG_RETRY_BASE_MS * 2 ** (attempt - 1);
+        retryTimer = setTimeout(() => loadCatalog(attempt + 1), delay);
+      }
+    };
+    const reloadCatalog = () => { loadCatalog(); };
+    loadCatalog();
+    window.addEventListener('combinationsUpdated', reloadCatalog);
+    return () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
+      window.removeEventListener('combinationsUpdated', reloadCatalog);
+    };
+  }, []);
+
+  // A reload on the Quote page never mounts ConfigurationForm, so legacy sessions are mapped here too.
+  useEffect(() => {
+    if (!combinationCatalog) return;
+    const normalized = normalizeLegacyManageStandalone(configuration, combinationCatalog);
+    if (!normalized || normalized === configuration) return;
+    setConfiguration(normalized);
+    setSelectedExhibits([]);
+    try {
+      sessionStorage.removeItem('cpq_selected_exhibits');
+    } catch (err) {
+      console.warn('Could not clear exhibits from sessionStorage:', err);
+    }
+    persistConfig(normalized);
+  }, [combinationCatalog]);
 
   // Load selected template from localStorage on app start
   useEffect(() => {
@@ -204,12 +258,15 @@ function App() {
       // CRITICAL CHECK: Verify template combination matches current configuration.
       // For Manage plans, config.combination is always 'manage-standalone' regardless of which
       // agreement is selected — use migrationType (the agreement slug) for comparison instead.
-      const currentCombination = configuration?.servicePlan === 'Manage'
-        ? (configuration?.migrationType || '').toLowerCase()
-        : (configuration?.combination || '').toLowerCase();
+      const isStandalone = isBuiltInManageStandalone(configuration);
+      // The built-in option's key is unknown until the catalog arrives; clearing now would refetch its file.
+      if (isStandalone && combinationCatalog === null) return;
+      const currentCombination = effectiveTemplateKey(configuration, combinationCatalog || []);
       const templateCombination = (selectedTemplate?.combination || '').toLowerCase();
 
-      if (currentCombination && templateCombination && templateCombination !== currentCombination) {
+      // The built-in option has no agreement of its own, so a hand-picked template is not a mismatch.
+      const mismatch = !!currentCombination && !!templateCombination && templateCombination !== currentCombination;
+      if (!isStandalone && mismatch) {
         console.log('🔄 Combination mismatch detected - clearing old template:', {
           currentCombination,
           templateCombination,
@@ -251,7 +308,10 @@ function App() {
         console.log('✅ Synced selected template with loaded templates:', templateToUse.name);
       }
     }
-  }, [templates, selectedTemplate, configuration?.combination]);
+  }, [
+    templates, selectedTemplate, configuration?.combination, configuration?.migrationType,
+    configuration?.servicePlan, configuration?.manageAgreementLabel, combinationCatalog,
+  ]);
 
   // Helper function to convert File to data URL
   const fileToDataURL = (file: File): Promise<string> => {
@@ -1179,21 +1239,17 @@ function App() {
     // be re-fetched; anything else already selected is left alone.
     const needsComboFile = !!selectedTemplate?.id?.startsWith?.('combo-') && !selectedTemplate?.file;
     if (selectedTemplate && !needsComboFile) return;
+    if (!combinationCatalog) return;
     // For Manage plans, use migrationType as the lookup key (the specific agreement slug)
-    const lookupValue = isManage
-      ? (migrationType || '').trim().toLowerCase()
-      : combination;
+    const lookupValue = isManage ? effectiveTemplateKey(configuration, combinationCatalog) : combination;
     if (!lookupValue) return;
+    const combo = combinationCatalog.find((c: any) =>
+      (c.value || '').toLowerCase() === lookupValue && c.hasFile);
+    if (!combo) return;
 
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/combinations`);
-        const data = await res.json();
-        if (!res.ok || !data.success || cancelled) return;
-        const combos = data.combinations || [];
-        const combo = combos.find((c: any) => (c.value || '').toLowerCase() === lookupValue && c.hasFile);
-        if (!combo || cancelled) return;
         const fileRes = await fetch(`${BACKEND_URL}/api/combinations/${combo.id}/file`);
         if (!fileRes.ok || cancelled) return;
         const blob = await fileRes.blob();
@@ -1212,7 +1268,10 @@ function App() {
       }
     })();
     return () => { cancelled = true; };
-  }, [configuration?.migrationType, configuration?.combination, selectedTemplate]);
+  }, [
+    configuration?.migrationType, configuration?.combination, configuration?.servicePlan,
+    configuration?.manageAgreementLabel, selectedTemplate, combinationCatalog,
+  ]);
 
   // Save company information to localStorage whenever it changes
   useEffect(() => {

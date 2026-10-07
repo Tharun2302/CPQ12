@@ -2,6 +2,7 @@ import { ConfigurationData, ManageSprawlConfig, SprawlType } from '../types/pric
 import {
   SPRAWL_TYPE_ORDER,
   hasSprawlConfigs,
+  isManageSaasConfig,
   manageAgreementCard,
   nonNegative,
   normalizeSprawlConfigs,
@@ -11,6 +12,8 @@ import {
   withSprawlConfigs
 } from './pricing';
 import { parseSprawlName, sprawlFolderKey, sprawlFolderLabel, sprawlTypeFromWord } from './sprawlName';
+import { isDataSprawlSelected } from './dataSprawlOption';
+import { isValidServiceTermMonths } from './serviceTerm';
 
 export interface SprawlExhibit {
   _id: string;
@@ -166,8 +169,17 @@ export function sprawlConfigIssue(config: ConfigurationData | undefined | null):
   }
   // A legacy per-type config keeps its existing checks.
   if (normalizeSprawlTypes(config).length > 0) return null;
-  if (manageAgreementCard(config) !== 'both') return 'Please select at least one Data Sprawl exhibit';
+  // mange+sprawl has no exhibits yet, so only Data-Sprawl requires one.
+  if (manageAgreementCard(config) === 'standalone') return 'Please select at least one Data Sprawl exhibit';
   return null;
+}
+
+// Submit-only: the term sets the agreement end date, never the price, so pricing does not wait on it.
+export function sprawlTermIssue(config: ConfigurationData | undefined | null): string | null {
+  if (!config) return null;
+  const plan = isDataSprawlSelected(config) ? 'Data Sprawl' : isManageSaasConfig(config) ? 'Manage Standalone' : null;
+  if (!plan) return null;
+  return isValidServiceTermMonths(config.serviceTermMonths) ? null : `Please enter the Duration (Months) for ${plan}`;
 }
 
 function legacyManageReady(config: ConfigurationData): boolean {
