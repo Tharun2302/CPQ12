@@ -10,7 +10,7 @@ export interface ApprovalWorkflow {
   creatorName?: string;
   // Optional flag to indicate special handling (e.g. overage agreement workflows)
   isOverage?: boolean;
-  // Discount percentage applied to the quote (used to show the High Discount Alert in approval emails)
+  // Discount percentage applied to the quote (shown to approvers; capped by the admin discount policy)
   discountPercent?: number;
   // True when the quote includes manually added custom line items (used to show an alert in approval emails)
   hasCustomLineItems?: boolean;

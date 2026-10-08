@@ -6,7 +6,7 @@ import {
 } from '../utils/exhibitCombination';
 import { numberInputValue } from '../utils/numberInput';
 import { ConfigurationData, PricingTier } from '../types/pricing';
-import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X, Mail, ChevronDown, Plus } from 'lucide-react';
+import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, MessageSquare, Search, X, Mail, ChevronDown, Plus } from 'lucide-react';
 import { trackConfiguration } from '../analytics/clarity';
 import ExhibitSelector from './ExhibitSelector';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
@@ -31,6 +31,8 @@ import { getContentTimelineByServerType, formatServerTypeLabel, type SourceEnvir
 import { BACKEND_URL } from '../config/api';
 import { SUPPRESS_PII } from '../analytics/privacy';
 import { calculateDiscount, sanitizeDiscountInput } from '../utils/discount';
+import { useDiscountPolicy } from '../hooks/useDiscountPolicy';
+import DiscountInputField from './DiscountInputField';
 
 interface ConfigurationFormProps {
   onConfigurationChange: (config: ConfigurationData) => void;
@@ -135,6 +137,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
   // Discount state for proper display
   const [discountValue, setDiscountValue] = useState<string>('');
+  const [discountExceeded, setDiscountExceeded] = useState<boolean>(false);
+  const { maxDiscountPercent, isLoading: isDiscountPolicyLoading, notifyDiscountClamped } = useDiscountPolicy();
   // Combination selection state
   const [combination, setCombination] = useState<string>('');
   // Search state for combinations
@@ -168,7 +172,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   // State to track collapsed/expanded sections
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [noteExpanded, setNoteExpanded] = useState<boolean>(false);
-  const [showDiscountRules, setShowDiscountRules] = useState<boolean>(false);
 
   // Combinations from API (user-managed via Combination Manager); fallback to hardcoded if empty
   const [apiCombinations, setApiCombinations] = useState<Array<{ value: string; label: string; migrationType: string; requiresUsers?: boolean }>>([]);
@@ -1221,6 +1224,21 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     setDiscountValue('');
   }, []);
 
+  // A lowered admin cap must also trim a discount already typed in this session
+  useEffect(() => {
+    if (isDiscountPolicyLoading) return;
+    const current = Number(discountValue);
+    if (discountValue === '' || !Number.isFinite(current) || current <= maxDiscountPercent) return;
+    const capped = String(maxDiscountPercent);
+    setDiscountValue(capped);
+    try {
+      sessionStorage.setItem('cpq_discount_session', capped);
+      localStorage.setItem('cpq_discount', capped);
+      window.dispatchEvent(new CustomEvent('discountUpdated'));
+    } catch {}
+    notifyDiscountClamped();
+  }, [maxDiscountPercent, isDiscountPolicyLoading, discountValue, notifyDiscountClamped]);
+
   // Sync combination with config (only use sessionStorage, no localStorage fallback)
   useEffect(() => {
     console.log('🔧 ConfigurationForm: Combination sync logic:', {
@@ -1550,7 +1568,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
   const renderManageSaasPricing = () => {
     const pricing = calculateManageSaasPricing(config.manageUsers);
-    const { percent: discountPct, finalTotal: discountedTotal } = calculateDiscount(pricing.totalCost, discountValue);
+    const { percent: discountPct, finalTotal: discountedTotal } = calculateDiscount(pricing.totalCost, discountValue, maxDiscountPercent);
     return (
       <div data-testid="manage-saas-pricing" className="mt-8 rounded-xl border-2 border-blue-100 bg-white/80 p-6">
         <h4 className="text-lg font-bold text-gray-900 mb-4">Pricing</h4>
@@ -1589,7 +1607,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
   // QuoteGenerator falls back between both stores, so they must always match
   const handleDiscountInput = (raw: string) => {
-    const value = sanitizeDiscountInput(raw);
+    const value = sanitizeDiscountInput(raw, maxDiscountPercent);
+    const attempted = Number(raw);
+    setDiscountExceeded(Number.isFinite(attempted) && attempted > maxDiscountPercent);
     setDiscountValue(value);
     try {
       sessionStorage.setItem('cpq_discount_session', value);
@@ -1599,41 +1619,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   };
 
   const renderDiscountField = () => (
-    <>
-    {/* Discount - now visible in UI */}
-    <div className="group">
-      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-        <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-600 rounded-lg flex items-center justify-center">
-          <Percent className="w-4 h-4 text-white" />
-        </div>
-        Discount (%)
-      </label>
-      <input
-        type="number"
-        min={0}
-        step={0.01}
-        max={100}
-        value={discountValue}
-        onChange={(e) => handleDiscountInput(e.target.value)}
-       className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
-       placeholder={`Enter discount percentage`}
-      />
-      <button
-        type="button"
-        onClick={() => setShowDiscountRules(!showDiscountRules)}
-        className="text-xs text-blue-600 hover:text-blue-700 font-medium mt-2 cursor-pointer flex items-center gap-1"
-      >
-        {showDiscountRules ? '▼' : '▶'} Discount Rules
-      </button>
-      {showDiscountRules && (
-        <p className="text-xs text-gray-600 mt-2 ml-4 border-l-2 border-blue-300 pl-3">
-          • Discount available at any amount (no minimum)
-          <br />• Up to 100%
-          <br />• Discounts above 15% require additional approval (Team Lead, Technical, Legal)
-        </p>
-      )}
-    </div>
-    </>
+    <DiscountInputField
+      value={discountValue}
+      onChange={handleDiscountInput}
+      maxDiscountPercent={maxDiscountPercent}
+      exceeded={discountExceeded}
+    />
   );
 
   const handleContactInfoChange = (field: keyof typeof contactInfo, value: string) => {
@@ -4051,41 +4042,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
               {/* Discount card */}
               <div className="bg-gradient-to-br from-white via-pink-50/30 to-rose-50/50 rounded-2xl shadow-lg border border-pink-100/50 p-6 backdrop-blur-sm">
-                <div className="group">
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 whitespace-nowrap shrink-0">
-                      <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-600 rounded-lg flex items-center justify-center">
-                        <Percent className="w-4 h-4 text-white" />
-                      </div>
-                      Discount (%)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      max={100}
-                      value={discountValue}
-                      onChange={(e) => handleDiscountInput(e.target.value)}
-                      className="no-spinner flex-1 min-w-0 px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
-                      placeholder={`Enter discount percentage`}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowDiscountRules(!showDiscountRules)}
-                    className="text-xs text-blue-600 hover:text-blue-700 font-medium mt-2 cursor-pointer flex items-center gap-1"
-                  >
-                    {showDiscountRules ? '▼' : '▶'} Discount Rules
-                  </button>
-                  {showDiscountRules && (
-                    <p className="text-xs text-gray-600 mt-2 ml-4 border-l-2 border-blue-300 pl-3">
-                      • Discount available at any amount (no minimum)
-                      <br />• Up to 100%
-                      <br />• Discounts above 15% require additional approval (Team Lead, Technical, Legal)
-                      <br />• Applied to combined total (all pricing sources)
-                    </p>
-                  )}
-                </div>
+                <DiscountInputField
+                  value={discountValue}
+                  onChange={handleDiscountInput}
+                  maxDiscountPercent={maxDiscountPercent}
+                  exceeded={discountExceeded}
+                  layout="inline"
+                  extraRules={['Applied to combined total (all pricing sources)']}
+                />
               </div>
 
               {/* Add More Exhibits card */}

@@ -216,12 +216,12 @@ describe('per-combination pricing plans', () => {
   // QuoteGenerator takes the discount off totalCost itself, so a pre-discounted total showed
   // up as the "Subtotal" in emails and could be discounted twice.
   it('hands the full, undiscounted total to onSelectTier when a discount is set', async () => {
-    sessionStorage.setItem('cpq_discount_session', '20');
+    sessionStorage.setItem('cpq_discount_session', '10');
     const user = userEvent.setup();
     const onSelectTier = renderPanel();
     const full = priceOf(BOX, 'Standard') + priceOf(EGNYTE, 'Standard');
 
-    expect(readTotal()).toBe(money(Math.round(full * 0.8 * 100) / 100));
+    expect(readTotal()).toBe(money(Math.round(full * 0.9 * 100) / 100));
 
     await user.click(screen.getByRole('button', { name: /Proceed with Custom Plan Selection/ }));
 

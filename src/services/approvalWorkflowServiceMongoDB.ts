@@ -22,6 +22,12 @@ async function extractErrorMessage(response: Response, fallback: string): Promis
   return (await readErrorBody(response, fallback)).message;
 }
 
+// Keeps the server's code (e.g. DISCOUNT_EXCEEDS_MAX) so callers can show its message instead of a generic one
+async function responseError(response: Response, fallback: string): Promise<Error & { status: number; code?: string }> {
+  const { message, code } = await readErrorBody(response, fallback);
+  return Object.assign(new Error(message), { status: response.status, code });
+}
+
 export type WorkflowStepError = Error & { status: number; code?: string };
 
 /** True when the server refused a step action because the step is no longer open to this approver. */
@@ -51,7 +57,7 @@ class ApprovalWorkflowServiceMongoDB {
       });
 
       if (!response.ok) {
-        throw new Error(await extractErrorMessage(response, 'Failed to save workflow'));
+        throw await responseError(response, 'Failed to save workflow');
       }
 
       const result = await response.json();
@@ -120,7 +126,7 @@ class ApprovalWorkflowServiceMongoDB {
       });
 
       if (!response.ok) {
-        throw new Error(await extractErrorMessage(response, 'Failed to update workflow'));
+        throw await responseError(response, 'Failed to update workflow');
       }
 
       console.log('✅ Workflow updated in MongoDB');

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { FileText, Upload, Building, Menu, X, CheckCircle, FolderOpen, PenLine, BarChart3, FileCheck, Lock, HelpCircle } from 'lucide-react';
+import { FileText, Upload, Building, Menu, X, CheckCircle, FolderOpen, PenLine, BarChart3, FileCheck, Lock, HelpCircle, Settings } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import UserMenu from './auth/UserMenu';
 import ContactUsModal from './ContactUsModal';
@@ -51,7 +51,10 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
     { id: 'templates', label: 'Templates',    icon: Upload,     path: '/templates' },
     { id: 'exhibits',  label: 'Exhibits',     icon: FolderOpen, path: '/exhibits' },
     { id: 'documents', label: 'Documents',    icon: FileText,   path: '/documents' },
+    { id: 'admin-settings', label: 'Admin Settings', icon: Settings, path: '/admin-settings' },
   ];
+  const isApprovalAdmin = Boolean(user?.isApprovalAdmin);
+  const adminSettingsTab = tabs.find((x) => x.id === 'admin-settings');
 
   const renderTabLink = (tab: typeof tabs[0], mobile = false) => {
     const Icon = tab.icon;
@@ -120,7 +123,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
 
           {/* Nav Links */}
           <div className="flex-1 flex flex-col py-4 px-3 space-y-2 overflow-y-auto">
-            {tabs.filter((t) => !['esign', 'esign-tracking', 'templates', 'exhibits', 'documents'].includes(t.id)).map((tab) => renderTabLink(tab))}
+            {tabs.filter((t) => !['esign', 'esign-tracking', 'templates', 'exhibits', 'documents', 'admin-settings'].includes(t.id)).map((tab) => renderTabLink(tab))}
 
             <button
               type="button"
@@ -136,6 +139,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
             {(() => { const t = tabs.find((x) => x.id === 'templates'); return t ? renderTabLink(t) : null; })()}
             {(() => { const t = tabs.find((x) => x.id === 'exhibits'); return t ? renderTabLink(t) : null; })()}
             {(() => { const t = tabs.find((x) => x.id === 'documents'); return t ? renderTabLink(t) : null; })()}
+            {isApprovalAdmin && adminSettingsTab && renderTabLink(adminSettingsTab)}
           </div>
 
           {/* Bottom: Help + User Menu */}
@@ -189,7 +193,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
           {isAuthenticated && isMobileMenuOpen && (
             <div className="border-t border-blue-100/50 py-4">
               <div className="flex flex-col space-y-2">
-                {tabs.filter((t) => !['esign', 'esign-tracking', 'templates', 'exhibits', 'documents'].includes(t.id)).map((tab) => renderTabLink(tab, true))}
+                {tabs.filter((t) => !['esign', 'esign-tracking', 'templates', 'exhibits', 'documents', 'admin-settings'].includes(t.id)).map((tab) => renderTabLink(tab, true))}
 
                 <button
                   type="button"
@@ -205,6 +209,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
                 {(() => { const t = tabs.find((x) => x.id === 'templates'); return t ? renderTabLink(t, true) : null; })()}
                 {(() => { const t = tabs.find((x) => x.id === 'exhibits'); return t ? renderTabLink(t, true) : null; })()}
                 {(() => { const t = tabs.find((x) => x.id === 'documents'); return t ? renderTabLink(t, true) : null; })()}
+                {isApprovalAdmin && adminSettingsTab && renderTabLink(adminSettingsTab, true)}
 
                 <button
                   type="button"

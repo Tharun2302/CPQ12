@@ -19,6 +19,15 @@ const {
   applyStepUpdate,
   stripLockedWorkflowFields
 } = require('./approval-step-guard.cjs');
+const {
+  DISCOUNT_POLICY_SETTINGS_ID,
+  INVALID_MAX_DISCOUNT_ERROR,
+  validateMaxDiscountPercent,
+  checkDiscountWithinMax,
+  discountRejectionBody,
+  toDiscountPolicyResponse,
+  createMaxDiscountReader
+} = require('./discount-policy.cjs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { spawn } = require('child_process');
@@ -853,8 +862,8 @@ async function createApprovalAccessToken(db, workflowId, role) {
   return token;
 }
 
-// Backfill fields the triggering dashboard may not have forwarded (discountPercent,
-// hasCustomLineItems, amount) from the persisted workflow record, so approval-email
+// Backfill fields the triggering dashboard may not have forwarded (hasCustomLineItems,
+// amount) from the persisted workflow record, so approval-email
 // alert banners render consistently on every step regardless of which UI fired it.
 async function enrichWorkflowDataFromRecord(workflowData) {
   if (!workflowData || !db || !workflowData.workflowId) return;
@@ -862,7 +871,6 @@ async function enrichWorkflowDataFromRecord(workflowData) {
     const wf = await db.collection('approval_workflows').findOne({ id: workflowData.workflowId });
     if (!wf) return;
     if (workflowData.amount == null) workflowData.amount = wf.amount;
-    if (workflowData.discountPercent == null) workflowData.discountPercent = wf.discountPercent;
     if (workflowData.hasCustomLineItems == null) workflowData.hasCustomLineItems = wf.hasCustomLineItems;
   } catch (e) {
     console.error('⚠️ enrichWorkflowDataFromRecord failed:', e.message);
@@ -882,13 +890,6 @@ function generateTeamEmailHTML(workflowData, token) {
     ? `${baseUrl}/approval/${workflowData.workflowId}?role=teamlead&token=${encodeURIComponent(token)}`
     : `${baseUrl}/team-approval?workflow=${workflowData.workflowId}`;
   const teamLabel = (workflowData && workflowData.teamGroup) ? String(workflowData.teamGroup).toUpperCase() : null;
-  const discountPercent = Number(workflowData.discountPercent) || 0;
-  const highDiscountNote = discountPercent > 15
-    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
-        <p style="margin: 0; color: #92400E;"><strong>⚠️ High Discount Alert (${discountPercent}%)</strong><br>
-        This quote includes a ${discountPercent}% discount, which exceeds 15%. This requires your approval as <strong>Team Lead</strong>.</p>
-      </div>`
-    : '';
   const HIGH_VALUE_THRESHOLD = 30000;
   const amountNum = Number(workflowData.amount) || 0;
   const highValueNote = amountNum > HIGH_VALUE_THRESHOLD
@@ -921,7 +922,6 @@ function generateTeamEmailHTML(workflowData, token) {
 
           <p>A new document requires your <strong>Team Approval</strong>:</p>
 
-          ${highDiscountNote}
           ${highValueNote}
           ${customLineItemsNote}
 
@@ -960,13 +960,6 @@ function generateTechnicalTeamEmailHTML(workflowData, token) {
   const approvalLink = token
     ? `${baseUrl}/approval/${workflowData.workflowId}?role=technical&token=${encodeURIComponent(token)}`
     : `${baseUrl}/technical-approval?workflow=${workflowData.workflowId}`;
-  const discountPercent = Number(workflowData.discountPercent) || 0;
-  const highDiscountNote = discountPercent > 15
-    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
-        <p style="margin: 0; color: #92400E;"><strong>⚠️ High Discount Alert (${discountPercent}%)</strong><br>
-        This quote includes a ${discountPercent}% discount, which exceeds 15%. This requires your approval as the <strong>Technical Team</strong>.</p>
-      </div>`
-    : '';
   const HIGH_VALUE_THRESHOLD = 30000;
   const amountNum = Number(workflowData.amount) || 0;
   const highValueNote = amountNum > HIGH_VALUE_THRESHOLD
@@ -999,7 +992,6 @@ function generateTechnicalTeamEmailHTML(workflowData, token) {
 
           <p>A new document requires your <strong>Technical Team</strong> approval:</p>
 
-          ${highDiscountNote}
           ${highValueNote}
           ${customLineItemsNote}
 
@@ -1038,13 +1030,6 @@ function generateLegalTeamEmailHTML(workflowData, token) {
   const approvalLink = token
     ? `${baseUrl}/approval/${workflowData.workflowId}?role=legal&token=${encodeURIComponent(token)}`
     : `${baseUrl}/legal-approval?workflow=${workflowData.workflowId}`;
-  const discountPercent = Number(workflowData.discountPercent) || 0;
-  const highDiscountNote = discountPercent > 15
-    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
-        <p style="margin: 0; color: #92400E;"><strong>⚠️ High Discount Alert (${discountPercent}%)</strong><br>
-        This quote includes a ${discountPercent}% discount, which exceeds 15%. This requires your approval as the <strong>Legal Team</strong>.</p>
-      </div>`
-    : '';
   const HIGH_VALUE_THRESHOLD = 30000;
   const amountNum = Number(workflowData.amount) || 0;
   const highValueNote = amountNum > HIGH_VALUE_THRESHOLD
@@ -1077,7 +1062,6 @@ function generateLegalTeamEmailHTML(workflowData, token) {
 
           <p>A new document requires your <strong>Legal Team</strong> approval:</p>
 
-          ${highDiscountNote}
           ${highValueNote}
           ${customLineItemsNote}
 
@@ -2221,8 +2205,11 @@ app.post('/api/quotes', async (req, res) => {
       });
     }
 
-    const { id, clientName, clientEmail, company, configuration, selectedTier, calculation, status } = req.body;
-    
+    const { id, clientName, clientEmail, company, configuration, selectedTier, calculation, status, discount } = req.body;
+
+    const discountCheck = await enforceDiscountCap(discount, res);
+    if (!discountCheck.ok) return;
+
     const quote = {
       id,
       client_name: clientName,
@@ -2231,6 +2218,7 @@ app.post('/api/quotes', async (req, res) => {
       configuration,
       selected_tier: selectedTier,
       calculation,
+      discount: discountCheck.value,
       status,
       created_at: new Date(),
       updated_at: new Date()
@@ -3386,6 +3374,88 @@ app.delete('/api/settings/approval-admins/:email', async (req, res) => {
   } catch (e) {
     console.error('DELETE approval-admins error:', e);
     res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+async function loadDiscountPolicyDoc() {
+  if (!db) return null;
+  return db.collection('settings').findOne({ _id: DISCOUNT_POLICY_SETTINGS_ID });
+}
+
+const maxDiscountReader = createMaxDiscountReader({ loadDoc: loadDiscountPolicyDoc });
+
+/** Current admin cap on discount percent; falls back to the default when the DB or doc is unavailable. */
+function getMaxDiscountPercent() {
+  return maxDiscountReader.get();
+}
+
+function invalidateMaxDiscountCache() {
+  maxDiscountReader.invalidate();
+}
+
+/**
+ * Responds 400 and returns false when `discount` is over the admin cap or not a number.
+ * @returns {Promise<{ ok: boolean, value?: number }>}
+ */
+async function enforceDiscountCap(discount, res) {
+  const check = checkDiscountWithinMax(discount, await getMaxDiscountPercent());
+  if (!check.ok) res.status(400).json(discountRejectionBody(check));
+  return check;
+}
+
+// Policy edits are rare; this only blunts scripted abuse of an admin token.
+const discountPolicyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests. Try again in a minute.' },
+});
+
+app.get('/api/settings/discount-policy', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+    const doc = await loadDiscountPolicyDoc();
+    res.json({ success: true, data: toDiscountPolicyResponse(doc) });
+  } catch (e) {
+    console.error('GET discount-policy error:', e);
+    res.status(500).json({ success: false, error: 'Failed to load discount policy' });
+  }
+});
+
+app.put('/api/settings/discount-policy', discountPolicyLimiter, async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res);
+    if (!authUser) return;
+    const check = validateMaxDiscountPercent(req.body?.maxDiscountPercent);
+    if (!check.ok) {
+      return res.status(400).json({ success: false, error: INVALID_MAX_DISCOUNT_ERROR, code: 'INVALID_MAX_DISCOUNT' });
+    }
+    const previous = toDiscountPolicyResponse(await loadDiscountPolicyDoc());
+    const updatedAt = new Date();
+    await db.collection('settings').updateOne(
+      { _id: DISCOUNT_POLICY_SETTINGS_ID },
+      { $set: { maxDiscountPercent: check.value, updatedAt, updatedBy: authUser.email } },
+      { upsert: true }
+    );
+    invalidateMaxDiscountCache();
+    logger.info('Discount policy updated', {
+      source: 'discount-policy',
+      actor: authUser.email,
+      oldMaxDiscountPercent: previous.maxDiscountPercent,
+      newMaxDiscountPercent: check.value,
+    });
+    res.json({
+      success: true,
+      data: { maxDiscountPercent: check.value, updatedAt, updatedBy: authUser.email },
+      message: 'Discount policy updated',
+    });
+  } catch (e) {
+    console.error('PUT discount-policy error:', e);
+    res.status(500).json({ success: false, error: 'Failed to update discount policy' });
   }
 });
 
@@ -11942,6 +12012,8 @@ app.post('/api/approval-workflows', async (req, res) => {
 
     // Server-owned fields (id, status, redline history) are never taken from the body
     const { updates: workflowData } = stripLockedWorkflowFields(req.body, { allow: ['documentId'] });
+    const discountCheck = await enforceDiscountCap(workflowData.discountPercent, res);
+    if (!discountCheck.ok) return;
     // A verified login decides the requester; the body is only trusted when there is none
     const actor = await getOptionalAuthenticatedUser(req);
     const bodyCreator = typeof req.body?.creatorEmail === 'string' ? normalizeEmail(req.body.creatorEmail) : '';
@@ -12228,7 +12300,13 @@ app.put('/api/approval-workflows/:id', async (req, res) => {
     if (stripped.length) {
       console.warn('⛔ Ignored locked fields on workflow update:', JSON.stringify(id), stripped);
     }
-    
+
+    // Status-only updates on workflows created before the cap must keep working.
+    if (Object.prototype.hasOwnProperty.call(updates, 'discountPercent')) {
+      const discountCheck = await enforceDiscountCap(updates.discountPercent, res);
+      if (!discountCheck.ok) return;
+    }
+
     console.log('📝 Updating approval workflow:', id, updates);
     
     // Add updatedAt timestamp

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { DiscountPolicyProvider } from './contexts/DiscountPolicyContext';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from './types/pricing';
 import { calculateAllTiers, PRICING_TIERS } from './utils/pricing';
 import { manageCoreConfigReady } from './utils/sprawlGroups';
@@ -34,6 +35,7 @@ const EsignTrackingPage = lazy(() => import('./pages/EsignTrackingPage'));
 const EsignSignPage = lazy(() => import('./pages/EsignSignPage'));
 const EsignInboxByToken = lazy(() => import('./pages/EsignInboxByToken'));
 const EsignAgreementStatusDashboard = lazy(() => import('./components/EsignAgreementStatusDashboard'));
+const AdminSettingsPage = lazy(() => import('./pages/AdminSettingsPage'));
 import { BACKEND_URL } from './config/api';
 import { initClarity, track, trackTierSelection, trackPricingCalculation } from './analytics/clarity';
 
@@ -2082,6 +2084,7 @@ function App() {
    return (
     <Router>
       <AuthProvider>
+        <DiscountPolicyProvider>
         <Suspense fallback={<LoadingFallback />}>
           <HubSpotAuthHandler>
             <Routes>
@@ -2104,6 +2107,11 @@ function App() {
                 <Route path=":documentId/status" element={<EsignTrackingPage />} />
               </Route>
               <Route path="/esign-tracking" element={<EsignAgreementStatusDashboard />} />
+              <Route path="/admin-settings" element={
+                <ProtectedRoute>
+                  <AdminSettingsPage />
+                </ProtectedRoute>
+              } />
 
              {/* Protected Routes - Dashboard with URL-based tab navigation */}
              <Route path="/approval-tracking" element={
@@ -2546,6 +2554,7 @@ function App() {
             </Routes>
           </HubSpotAuthHandler>
         </Suspense>
+        </DiscountPolicyProvider>
       </AuthProvider>
     </Router>
   );

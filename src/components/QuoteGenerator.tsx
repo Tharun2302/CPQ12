@@ -48,6 +48,8 @@ import { useAuth } from '../hooks/useAuth';
 import CustomDatePicker from './CustomDatePicker';
 import OnlyOfficeEditor from './OnlyOfficeEditor';
 import { calculateDiscount, normalizeDiscountPercent } from '../utils/discount';
+import { useDiscountPolicy } from '../hooks/useDiscountPolicy';
+import { discountPolicyErrorMessage } from '../services/discountPolicyService';
 import { SUPPRESS_PII } from '../analytics/privacy';
 // EmailJS import removed - now using server-side email with attachment support
 
@@ -489,6 +491,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     console.warn('⚠️ QuoteGenerator: calculation value:', calculation);
     console.warn('⚠️ QuoteGenerator: configuration value:', configuration);
   }
+  const { maxDiscountPercent, isLoading: isDiscountPolicyLoading, notifyDiscountClamped } = useDiscountPolicy();
   const [clientInfo, setClientInfo] = useState<ClientInfo>({
     clientName: '',
     clientEmail: '',
@@ -657,7 +660,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     percent: discountPercent,
     amount: discountAmount,
     finalTotal: finalTotalAfterDiscount,
-  } = calculateDiscount(totalCost, clientInfo.discount ?? storedDiscountPercent);
+  } = calculateDiscount(totalCost, clientInfo.discount ?? storedDiscountPercent, maxDiscountPercent);
 
   // Discount can apply at ANY amount - no minimum threshold
   const hasValidDiscount = discountPercent > 0;
@@ -896,10 +899,19 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [customLineItemsDiscount, setCustomLineItemsDiscount] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('cpq_quote_custom_line_items_discount');
-      if (saved !== null && saved !== '' && !isNaN(Number(saved))) return normalizeDiscountPercent(saved);
+      if (saved !== null && saved !== '' && !isNaN(Number(saved))) return normalizeDiscountPercent(saved, maxDiscountPercent);
     } catch {}
     return 0;
   });
+
+  const [customDiscountExceeded, setCustomDiscountExceeded] = useState(false);
+
+  // A lowered admin cap must also trim the custom-items discount already entered
+  useEffect(() => {
+    if (isDiscountPolicyLoading || customLineItemsDiscount <= maxDiscountPercent) return;
+    setCustomLineItemsDiscount(maxDiscountPercent);
+    notifyDiscountClamped();
+  }, [maxDiscountPercent, isDiscountPolicyLoading, customLineItemsDiscount, notifyDiscountClamped]);
 
   // Persist custom line items and their discount so they remain across navigation
   useEffect(() => {
@@ -919,7 +931,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // do the same — otherwise the card/email under-reports vs the PDF whenever custom items exist.
   const customLineItemsTotalForTotal = customLineItems.reduce((sum, item) => sum + (item.price || 0), 0);
   const customLineItemsDiscountAmountForTotal =
-    calculateDiscount(customLineItemsTotalForTotal, customLineItemsDiscount).amount;
+    calculateDiscount(customLineItemsTotalForTotal, customLineItemsDiscount, maxDiscountPercent).amount;
   const finalTotalWithCustomItems =
     finalTotalAfterDiscount + (customLineItemsTotalForTotal - customLineItemsDiscountAmountForTotal);
   // Start expanded if there are already saved custom line items or a discount, so returning
@@ -1924,7 +1936,7 @@ Quote ID: ${quoteData.id}
           percent: localDiscountPercent,
           amount: localDiscountAmount,
           finalTotal: localFinalTotalAfterDiscount,
-        } = calculateDiscount(totalCost, clientInfo.discount ?? storedDiscountPercent);
+        } = calculateDiscount(totalCost, clientInfo.discount ?? storedDiscountPercent, maxDiscountPercent);
         const localHasValidDiscount = localDiscountPercent > 0;
         const localShouldApplyDiscount = localHasValidDiscount;
         
@@ -2345,7 +2357,7 @@ Quote ID: ${quoteData.id}
           let discountedCustomTotal = customLineItemsTotal;
           let customLineItemsDiscountAmount = 0;
           if (customLineItemsDiscount > 0) {
-            const customDiscount = calculateDiscount(customLineItemsTotal, customLineItemsDiscount);
+            const customDiscount = calculateDiscount(customLineItemsTotal, customLineItemsDiscount, maxDiscountPercent);
             discountedCustomTotal = customDiscount.finalTotal;
             customLineItemsDiscountAmount = customDiscount.amount;
           }
@@ -3478,7 +3490,7 @@ Total Price: {{total price}}`;
         creatorEmail,
         creatorName: requestedByName || undefined,
         isOverage: isOverageWorkflow,
-        // Persist so approval emails can show the High Discount / Custom Line Items alerts on every step
+        // Persist so approval emails can show the discount and Custom Line Items alerts on every step
         discountPercent: discountPercent || 0,
         hasCustomLineItems: customLineItems.length > 0,
         totalSteps: 4,
@@ -3563,7 +3575,7 @@ Total Price: {{total price}}`;
 
     } catch (error) {
       console.error('❌ Error starting approval workflow:', error);
-      alert('Error starting approval workflow. Please try again.');
+      alert(discountPolicyErrorMessage(error) ?? 'Error starting approval workflow. Please try again.');
     } finally {
       setIsStartingWorkflow(false);
     }
@@ -5220,7 +5232,7 @@ Total Price: {{total price}}`;
           percent: localDiscountPercent,
           amount: localDiscountAmount,
           finalTotal: localFinalTotalAfterDiscount,
-        } = calculateDiscount(totalCost, clientInfo.discount ?? storedDiscountPercent);
+        } = calculateDiscount(totalCost, clientInfo.discount ?? storedDiscountPercent, maxDiscountPercent);
         const localHasValidDiscount = localDiscountPercent > 0;
         const localShouldApplyDiscount = localHasValidDiscount;
         
@@ -8004,7 +8016,7 @@ Total Price: {{total price}}`;
             
             if (localShouldApplyDiscount) {
               const { amount: discountOnDisplayed, finalTotal: finalDisplayedTotal } =
-                calculateDiscount(displayedTotalPrice, localDiscountPercent);
+                calculateDiscount(displayedTotalPrice, localDiscountPercent, maxDiscountPercent);
               // Update discount_amount to match the discount calculated on displayedTotalPrice (excluding cfm_user_total)
               templateData['{{discount_amount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
               templateData['{{discount amount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
@@ -8253,7 +8265,7 @@ Total Price: {{total price}}`;
             
             if (localShouldApplyDiscount) {
               const { amount: discountOnDisplayed, finalTotal: finalDisplayedTotal } =
-                calculateDiscount(displayedTotalPrice, localDiscountPercent);
+                calculateDiscount(displayedTotalPrice, localDiscountPercent, maxDiscountPercent);
               // Update discount_amount to match the discount calculated on displayedTotalPrice (excluding cfm_user_total)
               templateData['{{discount_amount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
               templateData['{{discount amount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
@@ -8719,7 +8731,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           let discountedCustomTotal = customLineItemsTotal;
           customLineItemsDiscountAmount = 0;
           if (customLineItemsDiscount > 0) {
-            const customDiscount = calculateDiscount(customLineItemsTotal, customLineItemsDiscount);
+            const customDiscount = calculateDiscount(customLineItemsTotal, customLineItemsDiscount, maxDiscountPercent);
             discountedCustomTotal = customDiscount.finalTotal;
             customLineItemsDiscountAmount = customDiscount.amount;
           }
@@ -11203,23 +11215,33 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   <input
                     type="number"
                     min="0"
-                    max="100"
+                    max={maxDiscountPercent}
                     step="0.1"
                     placeholder="Enter discount percentage"
+                    aria-describedby="custom-items-discount-help"
+                    aria-invalid={customDiscountExceeded}
                     disabled={customLineItems.length === 0}
                     className="w-full px-4 py-2 border-2 border-indigo-200 rounded-lg focus:ring-4 focus:border-indigo-500 focus:ring-indigo-500/20 transition-all duration-200 bg-white text-sm disabled:border-amber-300 disabled:bg-amber-50 disabled:opacity-60 disabled:cursor-not-allowed"
                     value={customLineItemsDiscount || ''}
                     onChange={(e) => {
-                      setCustomLineItemsDiscount(normalizeDiscountPercent(e.target.value));
+                      const attempted = Number(e.target.value);
+                      setCustomDiscountExceeded(Number.isFinite(attempted) && attempted > maxDiscountPercent);
+                      setCustomLineItemsDiscount(normalizeDiscountPercent(e.target.value, maxDiscountPercent));
                     }}
                   />
+                  <p id="custom-items-discount-help" className="text-xs text-gray-500 mt-1">Allowed: 0–{maxDiscountPercent}%</p>
+                  {customDiscountExceeded && (
+                    <p role="alert" className="text-xs font-medium text-red-600 mt-1">
+                      The maximum discount is {maxDiscountPercent}% (set by admin). The value was capped.
+                    </p>
+                  )}
 
                   {customLineItemsDiscount > 0 ? (
                     <p className="text-xs text-gray-600 mt-2">
                       <span className="font-medium">✅ Discount Rules:</span>
                       <br />• Discount available at any amount (no minimum)
-                      <br />• Up to 100% (discounts above 15% require additional approval)
-                      <br />• Discount applied to custom items subtotal: {formatCurrency(calculateDiscount(customLineItemsTotal, customLineItemsDiscount).amount)}
+                      <br />• Up to {maxDiscountPercent}% (set by admin)
+                      <br />• Discount applied to custom items subtotal: {formatCurrency(calculateDiscount(customLineItemsTotal, customLineItemsDiscount, maxDiscountPercent).amount)}
                     </p>
                   ) : customLineItems.length === 0 ? (
                     <p className="text-xs text-blue-700 mt-2">

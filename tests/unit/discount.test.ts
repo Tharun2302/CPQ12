@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { calculateDiscount, getQuoteTotals, normalizeDiscountPercent, sanitizeDiscountInput } from '../../src/utils/discount';
+import {
+  ABSOLUTE_MAX_DISCOUNT_PERCENT,
+  DEFAULT_MAX_DISCOUNT_PERCENT,
+  calculateDiscount,
+  clampMaxDiscount,
+  getQuoteTotals,
+  normalizeDiscountPercent,
+  sanitizeDiscountInput,
+} from '../../src/utils/discount';
 
 describe('normalizeDiscountPercent', () => {
   it('passes through a normal percent', () => {
@@ -81,5 +89,56 @@ describe('getQuoteTotals', () => {
   it('falls back to a top-level totalCost and handles missing quotes', () => {
     expect(getQuoteTotals({ totalCost: 400, discount: 50 }).finalTotal).toBe(200);
     expect(getQuoteTotals(undefined)).toEqual({ subtotal: 0, percent: 0, amount: 0, finalTotal: 0 });
+  });
+});
+
+describe('admin max discount', () => {
+  it('exposes the default and absolute caps', () => {
+    expect(DEFAULT_MAX_DISCOUNT_PERCENT).toBe(15);
+    expect(ABSOLUTE_MAX_DISCOUNT_PERCENT).toBe(100);
+  });
+
+  it('normalizeDiscountPercent caps at the given max', () => {
+    expect(normalizeDiscountPercent(20, 15)).toBe(15);
+    expect(normalizeDiscountPercent(10, 15)).toBe(10);
+    expect(normalizeDiscountPercent(5, 0)).toBe(0);
+  });
+
+  it('normalizeDiscountPercent never exceeds 100 even with a larger or invalid max', () => {
+    expect(normalizeDiscountPercent(150, 200)).toBe(100);
+    expect(normalizeDiscountPercent(150, NaN)).toBe(100);
+  });
+
+  it('calculateDiscount applies the max before computing the amount', () => {
+    expect(calculateDiscount(10000, 30, 15)).toEqual({ percent: 15, amount: 1500, finalTotal: 8500 });
+  });
+
+  it('sanitizeDiscountInput caps the typed value at the max', () => {
+    expect(sanitizeDiscountInput('20', 15)).toBe('15');
+    expect(sanitizeDiscountInput('12.5', 15)).toBe('12.5');
+    expect(sanitizeDiscountInput('7.25', 7.25)).toBe('7.25');
+    expect(sanitizeDiscountInput('', 15)).toBe('');
+  });
+
+  it('getQuoteTotals keeps the absolute cap so saved quotes above the admin max are unchanged', () => {
+    expect(getQuoteTotals({ calculation: { totalCost: 10000 }, discount: 40 }).finalTotal).toBe(6000);
+  });
+});
+
+describe('clampMaxDiscount', () => {
+  it('keeps valid caps (rounded to cents)', () => {
+    expect(clampMaxDiscount(25)).toBe(25);
+    expect(clampMaxDiscount('12.5')).toBe(12.5);
+    expect(clampMaxDiscount(0)).toBe(0);
+    expect(clampMaxDiscount(100)).toBe(100);
+  });
+
+  it('falls back to 15 (never 100) for missing or out-of-range values', () => {
+    expect(clampMaxDiscount(undefined)).toBe(15);
+    expect(clampMaxDiscount(null)).toBe(15);
+    expect(clampMaxDiscount('abc')).toBe(15);
+    expect(clampMaxDiscount(-1)).toBe(15);
+    expect(clampMaxDiscount(101)).toBe(15);
+    expect(clampMaxDiscount(Infinity)).toBe(15);
   });
 });

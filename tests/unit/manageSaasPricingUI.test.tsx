@@ -104,14 +104,14 @@ describe('Manage SaaS pricing card (Manage tab, no template)', () => {
     expect(within(card).getByText('$0.00')).toBeTruthy();
   });
 
-  it('has no discount line at 0% and shows $900.00 after 50% discount on 30 users', async () => {
+  it('has no discount line at 0% and shows $1,620.00 after 10% discount on 30 users', async () => {
     const { user, card, section } = await openManageTab();
     await user.type(usersInput(), '30');
     expect(within(card).queryByText(/Total after/)).toBeNull();
 
-    await user.type(discountInput(section), '50');
-    await waitFor(() => expect(within(card).getByText('Total after 50% discount:')).toBeTruthy());
-    expect(within(card).getByText('$900.00')).toBeTruthy();
+    await user.type(discountInput(section), '10');
+    await waitFor(() => expect(within(card).getByText('Total after 10% discount:')).toBeTruthy());
+    expect(within(card).getByText('$1,620.00')).toBeTruthy();
     expect(within(card).getByText('$1,800.00')).toBeTruthy();
   });
 
@@ -207,9 +207,9 @@ describe('Discount (%) input keeps both stores in sync', () => {
     const { user, section } = await openManageTab();
     const input = discountInput(section);
 
-    await user.type(input, '20');
-    expect(sessionStorage.getItem('cpq_discount_session')).toBe('20');
-    expect(localStorage.getItem('cpq_discount')).toBe('20');
+    await user.type(input, '12');
+    expect(sessionStorage.getItem('cpq_discount_session')).toBe('12');
+    expect(localStorage.getItem('cpq_discount')).toBe('12');
 
     await user.clear(input);
     expect(input.value).toBe('');
@@ -229,13 +229,16 @@ describe('Discount (%) input keeps both stores in sync', () => {
     expect(localStorage.getItem('cpq_discount')).toBe('0');
   });
 
-  it('caps a value above 100 at 100', async () => {
+  // Rendered without DiscountPolicyProvider, so the safe default cap (15%) applies
+  it('caps a value above the max discount at the max and explains why', async () => {
     const { user, section } = await openManageTab();
     const input = discountInput(section);
 
     await user.type(input, '150');
-    expect(input.value).toBe('100');
-    expect(sessionStorage.getItem('cpq_discount_session')).toBe('100');
-    expect(localStorage.getItem('cpq_discount')).toBe('100');
+    expect(input.value).toBe('15');
+    expect(sessionStorage.getItem('cpq_discount_session')).toBe('15');
+    expect(localStorage.getItem('cpq_discount')).toBe('15');
+    expect(within(section).getByRole('alert').textContent).toContain('The maximum discount is 15%');
+    expect(within(section).getByText('Allowed: 0–15%')).toBeTruthy();
   });
 });

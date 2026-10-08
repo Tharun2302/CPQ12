@@ -3,6 +3,7 @@ import { CheckCircle } from 'lucide-react';
 import { PricingCalculation, ConfigurationData, PricingTier } from '../types/pricing';
 import { formatCurrency, formatUnitRate, PRICING_TIERS, calculateCombinationPricing, getManageDataRatePerGB, resolveSprawlLines, sprawlDisplayTotal, manageAgreementCard, isManageSaasConfig, MANAGE_SAAS_PRICE_PER_USER_MONTHLY } from '../utils/pricing';
 import { calculateDiscount, normalizeDiscountPercent } from '../utils/discount';
+import { useDiscountPolicy } from '../hooks/useDiscountPolicy';
 
 interface PricingComparisonProps {
   calculations: PricingCalculation[];
@@ -21,6 +22,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
   templates = []
 }) => {
   const [discount, setDiscount] = useState<number>(0);
+  const { maxDiscountPercent } = useDiscountPolicy();
 
   // EXHIBIT plan per combination (key: combinationName, value: plan name). This drives which
   // plan's EXHIBITS each combination pulls into the agreement — independent of pricing.
@@ -240,7 +242,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
       try {
         const savedDiscount = sessionStorage.getItem('cpq_discount_session');
         if (savedDiscount !== null && savedDiscount !== '' && !isNaN(Number(savedDiscount))) {
-          setDiscount(normalizeDiscountPercent(savedDiscount));
+          setDiscount(normalizeDiscountPercent(savedDiscount, maxDiscountPercent));
         } else {
           setDiscount(0);
         }
@@ -271,7 +273,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('discountUpdated', handleDiscountUpdate);
     };
-  }, []);
+  }, [maxDiscountPercent]);
 
   // Filter plans: only Basic and Standard are shown (Advanced is retained in PRICING_TIERS
   // for any backend templates still referencing it, but never surfaced in the UI).
@@ -341,7 +343,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
   // Helper function to apply discount calculations
   const calculateDiscountedPrice = (totalCost: number) => {
-    const { amount: discountAmount, finalTotal } = calculateDiscount(totalCost, discount);
+    const { amount: discountAmount, finalTotal } = calculateDiscount(totalCost, discount, maxDiscountPercent);
 
     if (discount > 0) {
       return {
@@ -1144,7 +1146,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
               <div className="mt-6 flex justify-between items-center text-lg bg-gradient-to-r from-purple-200 to-indigo-200 border-2 border-purple-400 rounded-lg p-4">
                 <span className="font-bold text-purple-900">Custom Combined Total:</span>
                 <span className="font-bold text-2xl text-purple-900">
-                  {formatCurrency(calculateDiscount(customTotal, discount).finalTotal)}
+                  {formatCurrency(calculateDiscount(customTotal, discount, maxDiscountPercent).finalTotal)}
                 </span>
               </div>
               
