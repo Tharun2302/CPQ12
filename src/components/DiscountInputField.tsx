@@ -1,6 +1,8 @@
 import React, { useId, useState } from 'react';
 import { Percent } from 'lucide-react';
 
+import { discountExceededMessage } from '../utils/discount';
+
 interface DiscountInputFieldProps {
   value: string;
   onChange: (raw: string) => void;
@@ -8,10 +10,31 @@ interface DiscountInputFieldProps {
   exceeded?: boolean;
   layout?: 'stacked' | 'inline';
   extraRules?: string[];
+  disabled?: boolean;
+}
+
+interface DiscountLimitNotesProps {
+  helpId: string;
+  errorId: string;
+  maxDiscountPercent: number;
+  exceeded: boolean;
+}
+
+export function DiscountLimitNotes({ helpId, errorId, maxDiscountPercent, exceeded }: DiscountLimitNotesProps) {
+  return (
+    <>
+      <p id={helpId} className="text-xs text-gray-500 mt-1">Allowed: 0–{maxDiscountPercent}%</p>
+      {exceeded && (
+        <p id={errorId} role="alert" className="text-xs font-medium text-red-600 mt-1">
+          {discountExceededMessage(maxDiscountPercent)}
+        </p>
+      )}
+    </>
+  );
 }
 
 const INPUT_BASE =
-  'px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300';
+  'px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300 disabled:cursor-not-allowed disabled:opacity-60';
 
 function DiscountInputField({
   value,
@@ -20,6 +43,7 @@ function DiscountInputField({
   exceeded = false,
   layout = 'stacked',
   extraRules = [],
+  disabled = false,
 }: DiscountInputFieldProps) {
   const [showRules, setShowRules] = useState(false);
   const inputId = useId();
@@ -48,6 +72,8 @@ function DiscountInputField({
       max={maxDiscountPercent}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+      aria-busy={disabled || undefined}
       aria-invalid={exceeded}
       aria-describedby={exceeded ? `${helpId} ${errorId}` : helpId}
       className={isInline ? `no-spinner flex-1 min-w-0 ${INPUT_BASE}` : `w-full ${INPUT_BASE}`}
@@ -68,12 +94,7 @@ function DiscountInputField({
           {input}
         </>
       )}
-      <p id={helpId} className="text-xs text-gray-500 mt-1">Allowed: 0–{maxDiscountPercent}%</p>
-      {exceeded && (
-        <p id={errorId} role="alert" className="text-xs font-medium text-red-600 mt-1">
-          The maximum discount is {maxDiscountPercent}% (set by admin). The value was capped.
-        </p>
-      )}
+      <DiscountLimitNotes helpId={helpId} errorId={errorId} maxDiscountPercent={maxDiscountPercent} exceeded={exceeded} />
       <button
         type="button"
         onClick={() => setShowRules((prev) => !prev)}

@@ -1,8 +1,8 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
 
 import { useAuth } from '../hooks/useAuth';
-import { getDiscountPolicy, updateDiscountPolicy, DiscountPolicyResult } from '../services/discountPolicyService';
-import { DEFAULT_MAX_DISCOUNT_PERCENT, clampMaxDiscount } from '../utils/discount';
+import { getDiscountPolicy, updateDiscountPolicy, DiscountPolicy, DiscountPolicyResult } from '../services/discountPolicyService';
+import { DEFAULT_MAX_DISCOUNT_PERCENT } from '../utils/discount';
 import {
   DISCOUNT_POLICY_STORAGE_KEY,
   clampInProgressDiscounts,
@@ -11,6 +11,7 @@ import {
 } from '../utils/discountSession';
 
 const CLAMP_NOTICE_MS = 6000;
+export const FOCUS_REFETCH_THROTTLE_MS = 30_000;
 
 export interface DiscountPolicyState {
   maxDiscountPercent: number;
@@ -18,6 +19,8 @@ export interface DiscountPolicyState {
   error: string | null;
   updatedAt: string | null;
   updatedBy: string | null;
+  // True once the server has answered; until then the cached/default cap is only a display guess
+  hasLivePolicy: boolean;
 }
 
 export interface DiscountPolicyContextValue extends DiscountPolicyState {
@@ -32,6 +35,8 @@ export const DEFAULT_DISCOUNT_POLICY_VALUE: DiscountPolicyContextValue = {
   error: null,
   updatedAt: null,
   updatedBy: null,
+  // No server outside the provider, so the safe default is treated as authoritative
+  hasLivePolicy: true,
   updateMaxDiscount: async () => ({ success: false, error: 'Discount policy is unavailable' }),
   refresh: async () => undefined,
   notifyDiscountClamped: () => undefined,
@@ -40,6 +45,24 @@ export const DEFAULT_DISCOUNT_POLICY_VALUE: DiscountPolicyContextValue = {
 export const DiscountPolicyContext = createContext<DiscountPolicyContextValue | undefined>(undefined);
 
 const fallbackMax = (): number => readCachedMaxDiscount() ?? DEFAULT_MAX_DISCOUNT_PERCENT;
+
+// Returning prev keeps the context value stable, so a no-op refetch does not re-render every consumer
+function applyLivePolicy(prev: DiscountPolicyState, policy: DiscountPolicy): DiscountPolicyState {
+  const unchanged =
+    prev.hasLivePolicy &&
+    !prev.isLoading &&
+    prev.error === null &&
+    prev.maxDiscountPercent === policy.maxDiscountPercent &&
+    prev.updatedAt === policy.updatedAt &&
+    prev.updatedBy === policy.updatedBy;
+  return unchanged ? prev : { ...policy, isLoading: false, error: null, hasLivePolicy: true };
+}
+
+function applyFailure(prev: DiscountPolicyState, error: string): DiscountPolicyState {
+  const maxDiscountPercent = prev.hasLivePolicy ? prev.maxDiscountPercent : fallbackMax();
+  if (!prev.isLoading && prev.error === error && prev.maxDiscountPercent === maxDiscountPercent) return prev;
+  return { ...prev, maxDiscountPercent, isLoading: false, error };
+}
 
 function useClampNotice() {
   const [notice, setNotice] = useState<string | null>(null);
@@ -70,8 +93,10 @@ export function DiscountPolicyProvider({ children }: DiscountPolicyProviderProps
     error: null,
     updatedAt: null,
     updatedBy: null,
+    hasLivePolicy: false,
   }));
   const requestIdRef = useRef(0);
+  const lastLiveAtRef = useRef(0);
   const { notice, show } = useClampNotice();
   const userEmail = user?.email;
 
@@ -79,7 +104,10 @@ export function DiscountPolicyProvider({ children }: DiscountPolicyProviderProps
     if (authLoading) return;
     const requestId = ++requestIdRef.current;
     if (!isAuthenticated) {
-      setState((prev) => ({ ...prev, maxDiscountPercent: fallbackMax(), isLoading: false }));
+      const max = fallbackMax();
+      setState((prev) =>
+        !prev.isLoading && prev.maxDiscountPercent === max ? prev : { ...prev, maxDiscountPercent: max, isLoading: false },
+      );
       return;
     }
     const result = await getDiscountPolicy();
@@ -87,16 +115,13 @@ export function DiscountPolicyProvider({ children }: DiscountPolicyProviderProps
     if (requestId !== requestIdRef.current) return;
     if (result.success && result.data) {
       const policy = result.data;
+      lastLiveAtRef.current = Date.now();
       writeCachedMaxDiscount(policy.maxDiscountPercent);
-      setState({ ...policy, isLoading: false, error: null });
+      setState((prev) => applyLivePolicy(prev, policy));
       return;
     }
-    setState((prev) => ({
-      ...prev,
-      maxDiscountPercent: fallbackMax(),
-      isLoading: false,
-      error: result.error || 'Failed to load discount policy',
-    }));
+    const error = result.error || 'Failed to load discount policy';
+    setState((prev) => applyFailure(prev, error));
     // userEmail is listed on purpose: switching accounts must refetch the policy
   }, [authLoading, isAuthenticated, userEmail]);
 
@@ -106,11 +131,13 @@ export function DiscountPolicyProvider({ children }: DiscountPolicyProviderProps
 
   useEffect(() => {
     const handleFocus = () => {
+      if (Date.now() - lastLiveAtRef.current < FOCUS_REFETCH_THROTTLE_MS) return;
       refresh();
     };
+    // Another tab saved a new policy: refetch so updatedAt/updatedBy follow the new cap too
     const handleStorage = (e: StorageEvent) => {
       if (e.key !== DISCOUNT_POLICY_STORAGE_KEY || e.newValue === null) return;
-      setState((prev) => ({ ...prev, maxDiscountPercent: clampMaxDiscount(e.newValue) }));
+      refresh();
     };
     window.addEventListener('focus', handleFocus);
     window.addEventListener('storage', handleStorage);
@@ -124,18 +151,20 @@ export function DiscountPolicyProvider({ children }: DiscountPolicyProviderProps
     show(`Discount reduced to the maximum allowed (${state.maxDiscountPercent}%).`);
   }, [show, state.maxDiscountPercent]);
 
-  // Wait for the first answer so a stale cached cap never trims a discount the live policy allows
+  // Only the server's answer may trim discounts; a stale cached or default cap must never do it
   useEffect(() => {
-    if (state.isLoading) return;
+    if (!state.hasLivePolicy) return;
     if (clampInProgressDiscounts(state.maxDiscountPercent)) notifyDiscountClamped();
-  }, [state.isLoading, state.maxDiscountPercent, notifyDiscountClamped]);
+  }, [state.hasLivePolicy, state.maxDiscountPercent, notifyDiscountClamped]);
 
   const updateMaxDiscount = useCallback(async (maxDiscountPercent: number) => {
     const result = await updateDiscountPolicy(maxDiscountPercent);
     if (result.success && result.data) {
+      const policy = result.data;
       requestIdRef.current += 1;
-      writeCachedMaxDiscount(result.data.maxDiscountPercent);
-      setState({ ...result.data, isLoading: false, error: null });
+      lastLiveAtRef.current = Date.now();
+      writeCachedMaxDiscount(policy.maxDiscountPercent);
+      setState((prev) => applyLivePolicy(prev, policy));
     }
     return result;
   }, []);

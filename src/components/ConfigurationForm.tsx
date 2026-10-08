@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   exhibitCombinationKey,
   restrictExhibitsToCombination,
@@ -30,7 +30,8 @@ import SprawlGroupCard from './SprawlGroupCard';
 import { getContentTimelineByServerType, formatServerTypeLabel, type SourceEnvironment, type ContentMigrationType } from '../utils/timelineProjection';
 import { BACKEND_URL } from '../config/api';
 import { SUPPRESS_PII } from '../analytics/privacy';
-import { calculateDiscount, sanitizeDiscountInput } from '../utils/discount';
+import { calculateDiscount, isDiscountAboveMax, sanitizeDiscountInput } from '../utils/discount';
+import { DISCOUNT_UPDATED_EVENT } from '../utils/discountSession';
 import { useDiscountPolicy } from '../hooks/useDiscountPolicy';
 import DiscountInputField from './DiscountInputField';
 
@@ -138,7 +139,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   // Discount state for proper display
   const [discountValue, setDiscountValue] = useState<string>('');
   const [discountExceeded, setDiscountExceeded] = useState<boolean>(false);
-  const { maxDiscountPercent, isLoading: isDiscountPolicyLoading, notifyDiscountClamped } = useDiscountPolicy();
+  const { maxDiscountPercent, hasLivePolicy, isLoading: isDiscountPolicyLoading, notifyDiscountClamped } = useDiscountPolicy();
+  const isDiscountInputLocked = !hasLivePolicy && isDiscountPolicyLoading;
   // Combination selection state
   const [combination, setCombination] = useState<string>('');
   // Search state for combinations
@@ -1224,20 +1226,24 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     setDiscountValue('');
   }, []);
 
+  // QuoteGenerator falls back between both stores, so they must always match
+  const persistDiscount = useCallback((value: string) => {
+    setDiscountValue(value);
+    try {
+      sessionStorage.setItem('cpq_discount_session', value);
+      localStorage.setItem('cpq_discount', value);
+      window.dispatchEvent(new CustomEvent(DISCOUNT_UPDATED_EVENT));
+    } catch {}
+  }, []);
+
   // A lowered admin cap must also trim a discount already typed in this session
   useEffect(() => {
-    if (isDiscountPolicyLoading) return;
+    if (!hasLivePolicy) return;
     const current = Number(discountValue);
     if (discountValue === '' || !Number.isFinite(current) || current <= maxDiscountPercent) return;
-    const capped = String(maxDiscountPercent);
-    setDiscountValue(capped);
-    try {
-      sessionStorage.setItem('cpq_discount_session', capped);
-      localStorage.setItem('cpq_discount', capped);
-      window.dispatchEvent(new CustomEvent('discountUpdated'));
-    } catch {}
+    persistDiscount(String(maxDiscountPercent));
     notifyDiscountClamped();
-  }, [maxDiscountPercent, isDiscountPolicyLoading, discountValue, notifyDiscountClamped]);
+  }, [maxDiscountPercent, hasLivePolicy, discountValue, persistDiscount, notifyDiscountClamped]);
 
   // Sync combination with config (only use sessionStorage, no localStorage fallback)
   useEffect(() => {
@@ -1605,17 +1611,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     );
   };
 
-  // QuoteGenerator falls back between both stores, so they must always match
   const handleDiscountInput = (raw: string) => {
-    const value = sanitizeDiscountInput(raw, maxDiscountPercent);
-    const attempted = Number(raw);
-    setDiscountExceeded(Number.isFinite(attempted) && attempted > maxDiscountPercent);
-    setDiscountValue(value);
-    try {
-      sessionStorage.setItem('cpq_discount_session', value);
-      localStorage.setItem('cpq_discount', value);
-      window.dispatchEvent(new CustomEvent('discountUpdated'));
-    } catch {}
+    setDiscountExceeded(isDiscountAboveMax(raw, maxDiscountPercent));
+    persistDiscount(sanitizeDiscountInput(raw, maxDiscountPercent));
   };
 
   const renderDiscountField = () => (
@@ -1624,6 +1622,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       onChange={handleDiscountInput}
       maxDiscountPercent={maxDiscountPercent}
       exceeded={discountExceeded}
+      disabled={isDiscountInputLocked}
     />
   );
 
@@ -4047,6 +4046,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   onChange={handleDiscountInput}
                   maxDiscountPercent={maxDiscountPercent}
                   exceeded={discountExceeded}
+                  disabled={isDiscountInputLocked}
                   layout="inline"
                   extraRules={['Applied to combined total (all pricing sources)']}
                 />

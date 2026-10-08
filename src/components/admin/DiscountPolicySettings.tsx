@@ -61,11 +61,12 @@ function DiscountPolicySettings() {
     save(value);
   };
 
+  // Only fills the field: lowering the cap trims everyone's in-progress discounts, so the admin confirms with Save
   const handleReset = () => {
-    const defaultValue = String(DEFAULT_MAX_DISCOUNT_PERCENT);
-    setValue(defaultValue);
+    setValue(String(DEFAULT_MAX_DISCOUNT_PERCENT));
     setIsDirty(true);
-    save(defaultValue);
+    setValidationError(null);
+    setStatus(null);
   };
 
   const inputId = 'max-discount-percent';

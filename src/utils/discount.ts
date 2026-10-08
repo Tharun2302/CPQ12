@@ -38,14 +38,33 @@ export function calculateDiscount(
   return { percent: pct, amount, finalTotal: roundToCents(safeTotal - amount) };
 }
 
-// Returns the value to store for a raw Discount (%) input: '' clears it, otherwise a clamped number string
+// Decimal-string shift so 12.555 rounds to 12.56 (multiplying by 100 gives 1255.4999…)
+function roundPercent(n: number): number {
+  const shifted = Math.round(Number(`${n}e2`));
+  return Number.isFinite(shifted) ? Number(`${shifted}e-2`) : roundToCents(n);
+}
+
+const PLAIN_TWO_DECIMALS = /^\d+(\.\d{0,2})?$/;
+
+// Returns the value to store for a raw Discount (%) input: '' clears it, otherwise a clamped 2-decimal number string
 export function sanitizeDiscountInput(raw: string, max: number = ABSOLUTE_MAX_DISCOUNT_PERCENT): string {
   if (raw.trim() === '') return '';
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) return '0';
   const cap = effectiveMax(max);
   if (n > cap) return String(cap);
-  return raw;
+  // Echo plain values back untouched so a controlled input can still hold '1.0' while '1.05' is typed
+  if (PLAIN_TWO_DECIMALS.test(raw.trim())) return raw.trim();
+  return String(roundPercent(n));
+}
+
+export function isDiscountAboveMax(raw: string, max: number): boolean {
+  const n = Number(raw);
+  return raw.trim() !== '' && Number.isFinite(n) && n > max;
+}
+
+export function discountExceededMessage(max: number): string {
+  return `The maximum discount is ${max}% (set by admin). The value was capped.`;
 }
 
 export interface QuoteTotals extends DiscountResult {

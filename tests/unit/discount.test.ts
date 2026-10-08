@@ -7,6 +7,7 @@ import {
   getQuoteTotals,
   normalizeDiscountPercent,
   sanitizeDiscountInput,
+  isDiscountAboveMax,
 } from '../../src/utils/discount';
 
 describe('normalizeDiscountPercent', () => {
@@ -69,6 +70,34 @@ describe('sanitizeDiscountInput', () => {
 
   it('keeps a valid value as typed', () => {
     expect(sanitizeDiscountInput('12.5')).toBe('12.5');
+    expect(sanitizeDiscountInput('10')).toBe('10');
+    expect(sanitizeDiscountInput('1.0')).toBe('1.0');
+  });
+
+  it('rounds to 2 decimals (half up, despite binary floating point)', () => {
+    expect(sanitizeDiscountInput('12.555')).toBe('12.56');
+    expect(sanitizeDiscountInput('12.554')).toBe('12.55');
+    expect(sanitizeDiscountInput('1.005')).toBe('1.01');
+  });
+
+  it('normalizes exponent notation', () => {
+    expect(sanitizeDiscountInput('1e-3')).toBe('0');
+    expect(sanitizeDiscountInput('1e1')).toBe('10');
+    expect(sanitizeDiscountInput('1e-7')).toBe('0');
+  });
+
+  it('caps at the given admin max', () => {
+    expect(sanitizeDiscountInput('20', 15)).toBe('15');
+    expect(sanitizeDiscountInput('14.999', 15)).toBe('15');
+  });
+});
+
+describe('isDiscountAboveMax', () => {
+  it('is true only for a number above the max', () => {
+    expect(isDiscountAboveMax('16', 15)).toBe(true);
+    expect(isDiscountAboveMax('15', 15)).toBe(false);
+    expect(isDiscountAboveMax('', 15)).toBe(false);
+    expect(isDiscountAboveMax('abc', 15)).toBe(false);
   });
 });
 

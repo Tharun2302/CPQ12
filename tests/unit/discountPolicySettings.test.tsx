@@ -5,7 +5,10 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 const authState = vi.hoisted(() => ({
-  value: { user: { email: 'admin@example.com', isApprovalAdmin: true } as { email: string; isApprovalAdmin?: boolean } | null },
+  value: {
+    user: { email: 'admin@example.com', isApprovalAdmin: true } as { email: string; isApprovalAdmin?: boolean } | null,
+    loading: false,
+  },
 }));
 
 vi.mock('../../src/hooks/useAuth', () => ({
@@ -43,7 +46,7 @@ function renderWithPolicy(ui: React.ReactElement, overrides: Partial<DiscountPol
 const maxInput = () => screen.getByLabelText('Maximum Discount (%)') as HTMLInputElement;
 
 beforeEach(() => {
-  authState.value = { user: { email: 'admin@example.com', isApprovalAdmin: true } };
+  authState.value = { user: { email: 'admin@example.com', isApprovalAdmin: true }, loading: false };
 });
 
 afterEach(() => {
@@ -113,14 +116,33 @@ describe('DiscountPolicySettings', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('Approval admin access required');
   });
 
-  it('Reset to default saves 15', async () => {
+  it('Reset to default only fills the field with 15; Save persists it', async () => {
     const user = userEvent.setup();
     const policy = renderWithPolicy(<DiscountPolicySettings />, { maxDiscountPercent: 40 });
+    expect(maxInput().value).toBe('40');
 
     await user.click(screen.getByRole('button', { name: /Reset to default/ }));
 
+    expect(maxInput().value).toBe('15');
+    expect(policy.updateMaxDiscount).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(policy.updateMaxDiscount).toHaveBeenCalledWith(15));
     expect((await screen.findByRole('status')).textContent).toContain('saved as 15%');
+  });
+
+  it('keeps the typed value and shows the error when saving fails', async () => {
+    const user = userEvent.setup();
+    renderWithPolicy(<DiscountPolicySettings />, {
+      updateMaxDiscount: vi.fn(async () => ({ success: false, error: 'Network down' })),
+    });
+
+    await user.clear(maxInput());
+    await user.type(maxInput(), '18');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect((await screen.findByRole('alert')).textContent).toBe('Network down');
+    expect(maxInput().value).toBe('18');
   });
 });
 
@@ -130,8 +152,17 @@ describe('AdminSettingsPage', () => {
     expect(screen.getByLabelText('Maximum Discount (%)')).toBeTruthy();
   });
 
+  it('shows a loader instead of "Access denied" while auth is still loading', () => {
+    authState.value = { user: null, loading: true };
+    renderWithPolicy(<AdminSettingsPage />);
+
+    expect(screen.getByRole('status').textContent).toContain('Loading');
+    expect(screen.queryByText('Access denied')).toBeNull();
+    expect(screen.queryByLabelText('Maximum Discount (%)')).toBeNull();
+  });
+
   it('denies access to non-admins', () => {
-    authState.value = { user: { email: 'rep@example.com', isApprovalAdmin: false } };
+    authState.value = { user: { email: 'rep@example.com', isApprovalAdmin: false }, loading: false };
     renderWithPolicy(<AdminSettingsPage />);
 
     expect(screen.getByRole('alert').textContent).toContain('Access denied');

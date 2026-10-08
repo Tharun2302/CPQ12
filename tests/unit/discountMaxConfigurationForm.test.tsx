@@ -109,6 +109,28 @@ describe('ConfigurationForm discount follows the admin max', () => {
     expect(notify).toHaveBeenCalled();
   });
 
+  it('does not clamp against a non-live (cached/default) cap after a failed policy fetch', async () => {
+    const { user, input, rerender } = await openManageTab(policy(25));
+    await user.type(input, '20');
+
+    const notify = vi.fn();
+    rerender(form({ ...policy(10, notify), hasLivePolicy: false, error: 'Failed to load discount policy' }));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(input.value).toBe('20');
+    expect(sessionStorage.getItem('cpq_discount_session')).toBe('20');
+    expect(notify).not.toHaveBeenCalled();
+    expect(input).not.toBeDisabled();
+  });
+
+  it('disables the discount input until the first policy answer arrives', async () => {
+    const { input, rerender } = await openManageTab({ ...policy(15), hasLivePolicy: false, isLoading: true });
+    expect(input).toBeDisabled();
+
+    rerender(form(policy(15)));
+    await waitFor(() => expect(input).not.toBeDisabled());
+  });
+
   it('shows the rule text with the admin max and no stale approval note', async () => {
     const { user, section } = await openManageTab(policy(25));
     await user.click(within(section).getByRole('button', { name: /Discount Rules/ }));

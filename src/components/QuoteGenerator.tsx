@@ -47,7 +47,8 @@ import { reportClientError } from '../utils/reportClientError';
 import { useAuth } from '../hooks/useAuth';
 import CustomDatePicker from './CustomDatePicker';
 import OnlyOfficeEditor from './OnlyOfficeEditor';
-import { calculateDiscount, normalizeDiscountPercent } from '../utils/discount';
+import { calculateDiscount, isDiscountAboveMax, normalizeDiscountPercent, sanitizeDiscountInput } from '../utils/discount';
+import { DiscountLimitNotes } from './DiscountInputField';
 import { useDiscountPolicy } from '../hooks/useDiscountPolicy';
 import { discountPolicyErrorMessage } from '../services/discountPolicyService';
 import { SUPPRESS_PII } from '../analytics/privacy';
@@ -491,7 +492,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     console.warn('⚠️ QuoteGenerator: calculation value:', calculation);
     console.warn('⚠️ QuoteGenerator: configuration value:', configuration);
   }
-  const { maxDiscountPercent, isLoading: isDiscountPolicyLoading, notifyDiscountClamped } = useDiscountPolicy();
+  const { maxDiscountPercent, hasLivePolicy, isLoading: isDiscountPolicyLoading, notifyDiscountClamped } = useDiscountPolicy();
   const [clientInfo, setClientInfo] = useState<ClientInfo>({
     clientName: '',
     clientEmail: '',
@@ -899,7 +900,8 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [customLineItemsDiscount, setCustomLineItemsDiscount] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('cpq_quote_custom_line_items_discount');
-      if (saved !== null && saved !== '' && !isNaN(Number(saved))) return normalizeDiscountPercent(saved, maxDiscountPercent);
+      // Absolute cap only: the cached admin cap may be stale, so the live-policy effect below does the trimming
+      if (saved !== null && saved !== '' && !isNaN(Number(saved))) return normalizeDiscountPercent(saved);
     } catch {}
     return 0;
   });
@@ -908,10 +910,10 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
 
   // A lowered admin cap must also trim the custom-items discount already entered
   useEffect(() => {
-    if (isDiscountPolicyLoading || customLineItemsDiscount <= maxDiscountPercent) return;
+    if (!hasLivePolicy || customLineItemsDiscount <= maxDiscountPercent) return;
     setCustomLineItemsDiscount(maxDiscountPercent);
     notifyDiscountClamped();
-  }, [maxDiscountPercent, isDiscountPolicyLoading, customLineItemsDiscount, notifyDiscountClamped]);
+  }, [maxDiscountPercent, hasLivePolicy, customLineItemsDiscount, notifyDiscountClamped]);
 
   // Persist custom line items and their discount so they remain across navigation
   useEffect(() => {
@@ -3490,7 +3492,7 @@ Total Price: {{total price}}`;
         creatorEmail,
         creatorName: requestedByName || undefined,
         isOverage: isOverageWorkflow,
-        // Persist so approval emails can show the discount and Custom Line Items alerts on every step
+        // Persisted with the workflow; the server rejects values above the admin cap
         discountPercent: discountPercent || 0,
         hasCustomLineItems: customLineItems.length > 0,
         totalSteps: 4,
@@ -11208,33 +11210,35 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
               {/* Discount for Custom Line Items - Always show input */}
               <div className="mt-4 p-4 bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-xl">
-                  <label className="block text-sm font-semibold text-gray-800 mb-2">
+                  <label htmlFor="custom-items-discount" className="block text-sm font-semibold text-gray-800 mb-2">
                     Custom Items Discount (%)
                     <span className="text-xs text-gray-500 font-normal ml-2">(optional)</span>
                   </label>
                   <input
+                    id="custom-items-discount"
                     type="number"
                     min="0"
                     max={maxDiscountPercent}
-                    step="0.1"
+                    step="0.01"
                     placeholder="Enter discount percentage"
-                    aria-describedby="custom-items-discount-help"
+                    aria-describedby={
+                      customDiscountExceeded ? 'custom-items-discount-help custom-items-discount-error' : 'custom-items-discount-help'
+                    }
                     aria-invalid={customDiscountExceeded}
-                    disabled={customLineItems.length === 0}
+                    disabled={customLineItems.length === 0 || (!hasLivePolicy && isDiscountPolicyLoading)}
                     className="w-full px-4 py-2 border-2 border-indigo-200 rounded-lg focus:ring-4 focus:border-indigo-500 focus:ring-indigo-500/20 transition-all duration-200 bg-white text-sm disabled:border-amber-300 disabled:bg-amber-50 disabled:opacity-60 disabled:cursor-not-allowed"
                     value={customLineItemsDiscount || ''}
                     onChange={(e) => {
-                      const attempted = Number(e.target.value);
-                      setCustomDiscountExceeded(Number.isFinite(attempted) && attempted > maxDiscountPercent);
-                      setCustomLineItemsDiscount(normalizeDiscountPercent(e.target.value, maxDiscountPercent));
+                      setCustomDiscountExceeded(isDiscountAboveMax(e.target.value, maxDiscountPercent));
+                      setCustomLineItemsDiscount(Number(sanitizeDiscountInput(e.target.value, maxDiscountPercent)) || 0);
                     }}
                   />
-                  <p id="custom-items-discount-help" className="text-xs text-gray-500 mt-1">Allowed: 0–{maxDiscountPercent}%</p>
-                  {customDiscountExceeded && (
-                    <p role="alert" className="text-xs font-medium text-red-600 mt-1">
-                      The maximum discount is {maxDiscountPercent}% (set by admin). The value was capped.
-                    </p>
-                  )}
+                  <DiscountLimitNotes
+                    helpId="custom-items-discount-help"
+                    errorId="custom-items-discount-error"
+                    maxDiscountPercent={maxDiscountPercent}
+                    exceeded={customDiscountExceeded}
+                  />
 
                   {customLineItemsDiscount > 0 ? (
                     <p className="text-xs text-gray-600 mt-2">

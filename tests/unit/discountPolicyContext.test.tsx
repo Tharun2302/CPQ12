@@ -50,6 +50,7 @@ describe('DiscountPolicyContext', () => {
     const { result } = renderHook(() => useDiscountPolicy());
     expect(result.current.maxDiscountPercent).toBe(15);
     expect(result.current.isLoading).toBe(false);
+    expect(result.current.hasLivePolicy).toBe(true);
   });
 
   it('loads the policy from the server with the bearer token and caches it', async () => {
@@ -58,6 +59,7 @@ describe('DiscountPolicyContext', () => {
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.maxDiscountPercent).toBe(25);
+    expect(result.current.hasLivePolicy).toBe(true);
     expect(result.current.updatedBy).toBe('admin@example.com');
     expect(localStorage.getItem('cpq_discount_policy')).toBe('25');
     const [url, init] = fetchMock.mock.calls[0];
@@ -72,6 +74,41 @@ describe('DiscountPolicyContext', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.maxDiscountPercent).toBe(15);
     expect(result.current.error).toBeTruthy();
+    expect(result.current.hasLivePolicy).toBe(false);
+  });
+
+  it('does not clamp in-progress discounts when the policy fetch fails', async () => {
+    localStorage.setItem('cpq_discount_policy', '10');
+    sessionStorage.setItem('cpq_discount_session', '30');
+    localStorage.setItem('cpq_quote_custom_line_items_discount', '40');
+    stubFetch(() => jsonResponse(500, { success: false, error: 'Failed to load discount policy' }));
+
+    render(<DiscountPolicyProvider><div /></DiscountPolicyProvider>);
+
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    await act(async () => {});
+    expect(sessionStorage.getItem('cpq_discount_session')).toBe('30');
+    expect(localStorage.getItem('cpq_quote_custom_line_items_discount')).toBe('40');
+  });
+
+  it('keeps the live policy (and hasLivePolicy) when a later refetch fails', async () => {
+    const now = vi.spyOn(Date, 'now');
+    now.mockReturnValue(1_000_000);
+    let fail = false;
+    stubFetch(() => (fail ? Promise.reject(new Error('offline')) : policyResponse(20)));
+    const { result } = renderPolicy();
+    await waitFor(() => expect(result.current.maxDiscountPercent).toBe(20));
+
+    fail = true;
+    now.mockReturnValue(1_000_000 + 31_000);
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => expect(result.current.error).toBeTruthy());
+    expect(result.current.hasLivePolicy).toBe(true);
+    expect(result.current.maxDiscountPercent).toBe(20);
+    now.mockRestore();
   });
 
   it('falls back to the cached value when the server errors', async () => {
@@ -158,28 +195,64 @@ describe('DiscountPolicyContext', () => {
     expect(result.current.maxDiscountPercent).toBe(15);
   });
 
-  it('refetches when the window regains focus', async () => {
+  it('refetches when the window regains focus, at most once every 30s', async () => {
+    const now = vi.spyOn(Date, 'now');
+    now.mockReturnValue(1_000_000);
     let max = 15;
-    stubFetch(() => policyResponse(max));
+    const fetchMock = stubFetch(() => policyResponse(max));
     const { result } = renderPolicy();
     await waitFor(() => expect(result.current.maxDiscountPercent).toBe(15));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
     max = 12;
+    now.mockReturnValue(1_000_000 + 10_000);
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    now.mockReturnValue(1_000_000 + 31_000);
     act(() => {
       window.dispatchEvent(new Event('focus'));
     });
     await waitFor(() => expect(result.current.maxDiscountPercent).toBe(12));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    now.mockRestore();
   });
 
-  it('picks up a change saved in another tab', async () => {
-    stubFetch(() => policyResponse(15));
+  it('keeps the same context value when a refetch returns an unchanged policy', async () => {
+    const now = vi.spyOn(Date, 'now');
+    now.mockReturnValue(1_000_000);
+    const fetchMock = stubFetch(() => policyResponse(15, 'admin@example.com'));
+    const { result } = renderPolicy();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const before = result.current;
+
+    now.mockReturnValue(1_000_000 + 31_000);
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    expect(result.current).toBe(before);
+    now.mockRestore();
+  });
+
+  it('refetches (ignoring the focus throttle) when another tab saves a change', async () => {
+    let policy = { max: 15, by: 'boss@example.com' };
+    const fetchMock = stubFetch(() => policyResponse(policy.max, policy.by));
     const { result } = renderPolicy();
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
+    policy = { max: 8, by: 'admin@example.com' };
     act(() => {
       window.dispatchEvent(new StorageEvent('storage', { key: 'cpq_discount_policy', newValue: '8' }));
     });
-    expect(result.current.maxDiscountPercent).toBe(8);
+
+    await waitFor(() => expect(result.current.maxDiscountPercent).toBe(8));
+    expect(result.current.updatedBy).toBe('admin@example.com');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('does not call the API when signed out', async () => {

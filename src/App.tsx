@@ -37,6 +37,7 @@ const EsignInboxByToken = lazy(() => import('./pages/EsignInboxByToken'));
 const EsignAgreementStatusDashboard = lazy(() => import('./components/EsignAgreementStatusDashboard'));
 const AdminSettingsPage = lazy(() => import('./pages/AdminSettingsPage'));
 import { BACKEND_URL } from './config/api';
+import { buildQuoteSaveBody, readDiscountRejection, toQuoteDiscount } from './services/quoteSaveRequest';
 import { initClarity, track, trackTierSelection, trackPricingCalculation } from './analytics/clarity';
 
 // Loading fallback component
@@ -1925,7 +1926,8 @@ function App() {
         name: 'Default Template',
         isDefault: true
       },
-      dealData: activeDealData || null
+      dealData: activeDealData || null,
+      discount: toQuoteDiscount(clientInfo.discount)
     };
 
     // Add quote to state (localStorage)
@@ -1938,22 +1940,19 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          id: newQuote.id,
-          clientName: newQuote.clientName,
-          clientEmail: newQuote.clientEmail,
-          company: newQuote.company,
-          configuration: newQuote.configuration,
-          selectedTier: newQuote.selectedTier,
-          calculation: newQuote.calculation,
-          status: newQuote.status,
-          dealData: newQuote.dealData
-        })
+        body: JSON.stringify(buildQuoteSaveBody(newQuote))
       });
 
       if (response.ok) {
         console.log('✅ Quote saved to database successfully');
       } else {
+        const discountRejection = await readDiscountRejection(response);
+        if (discountRejection) {
+          // The quote was never stored, so drop the optimistic copy instead of showing a phantom quote
+          setQuotes(prevQuotes => prevQuotes.filter(quote => quote !== newQuote));
+          alert(discountRejection);
+          return;
+        }
         console.error('❌ Failed to save quote to database:', response.statusText);
       }
     } catch (error) {

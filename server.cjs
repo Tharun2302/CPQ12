@@ -24,6 +24,7 @@ const {
   INVALID_MAX_DISCOUNT_ERROR,
   validateMaxDiscountPercent,
   checkDiscountWithinMax,
+  hasNestedDiscountKey,
   discountRejectionBody,
   toDiscountPolicyResponse,
   createMaxDiscountReader
@@ -862,9 +863,7 @@ async function createApprovalAccessToken(db, workflowId, role) {
   return token;
 }
 
-// Backfill fields the triggering dashboard may not have forwarded (hasCustomLineItems,
-// amount) from the persisted workflow record, so approval-email
-// alert banners render consistently on every step regardless of which UI fired it.
+// Backfills amount and hasCustomLineItems from the stored workflow so the amount and custom-line-item email banners match on every step.
 async function enrichWorkflowDataFromRecord(workflowData) {
   if (!workflowData || !db || !workflowData.workflowId) return;
   try {
@@ -3284,7 +3283,7 @@ async function getAuthenticatedUser(req, res) {
   }
 }
 
-async function getApprovalAdminUser(req, res) {
+async function getApprovalAdminUser(req, res, forbiddenMessage = 'Only approval admins can manage this list') {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) {
     res.status(401).json({ success: false, error: 'Authentication required' });
@@ -3302,7 +3301,7 @@ async function getApprovalAdminUser(req, res) {
       return null;
     }
     if (!(await hasApprovalAdminAccess(user))) {
-      res.status(403).json({ success: false, error: 'Only approval admins can manage this list' });
+      res.status(403).json({ success: false, error: forbiddenMessage });
       return null;
     }
     return user;
@@ -3393,10 +3392,7 @@ function invalidateMaxDiscountCache() {
   maxDiscountReader.invalidate();
 }
 
-/**
- * Responds 400 and returns false when `discount` is over the admin cap or not a number.
- * @returns {Promise<{ ok: boolean, value?: number }>}
- */
+// Sends the 400 itself so callers only need `if (!check.ok) return;` and then store check.value.
 async function enforceDiscountCap(discount, res) {
   const check = checkDiscountWithinMax(discount, await getMaxDiscountPercent());
   if (!check.ok) res.status(400).json(discountRejectionBody(check));
@@ -3417,10 +3413,11 @@ app.get('/api/settings/discount-policy', async (req, res) => {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
     const authUser = await getAuthenticatedUser(req, res);
     if (!authUser) return;
+    const includeUpdatedBy = await hasApprovalAdminAccess(authUser);
     const doc = await loadDiscountPolicyDoc();
-    res.json({ success: true, data: toDiscountPolicyResponse(doc) });
+    res.json({ success: true, data: toDiscountPolicyResponse(doc, { includeUpdatedBy }) });
   } catch (e) {
-    console.error('GET discount-policy error:', e);
+    logger.error('GET discount-policy error', { source: 'discount-policy', error: e.message });
     res.status(500).json({ success: false, error: 'Failed to load discount policy' });
   }
 });
@@ -3428,7 +3425,7 @@ app.get('/api/settings/discount-policy', async (req, res) => {
 app.put('/api/settings/discount-policy', discountPolicyLimiter, async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const authUser = await getApprovalAdminUser(req, res);
+    const authUser = await getApprovalAdminUser(req, res, 'Only approval admins can change the discount policy');
     if (!authUser) return;
     const check = validateMaxDiscountPercent(req.body?.maxDiscountPercent);
     if (!check.ok) {
@@ -3454,7 +3451,7 @@ app.put('/api/settings/discount-policy', discountPolicyLimiter, async (req, res)
       message: 'Discount policy updated',
     });
   } catch (e) {
-    console.error('PUT discount-policy error:', e);
+    logger.error('PUT discount-policy error', { source: 'discount-policy', error: e.message });
     res.status(500).json({ success: false, error: 'Failed to update discount policy' });
   }
 });
@@ -12012,8 +12009,15 @@ app.post('/api/approval-workflows', async (req, res) => {
 
     // Server-owned fields (id, status, redline history) are never taken from the body
     const { updates: workflowData } = stripLockedWorkflowFields(req.body, { allow: ['documentId'] });
+    if (hasNestedDiscountKey(workflowData, 'discountPercent')) {
+      return res.status(400).json({ success: false, error: 'Invalid discount field', code: 'INVALID_DISCOUNT' });
+    }
     const discountCheck = await enforceDiscountCap(workflowData.discountPercent, res);
     if (!discountCheck.ok) return;
+    // Only normalise a supplied discount so workflows without one keep no discountPercent field.
+    if (Object.prototype.hasOwnProperty.call(workflowData, 'discountPercent')) {
+      workflowData.discountPercent = discountCheck.value;
+    }
     // A verified login decides the requester; the body is only trusted when there is none
     const actor = await getOptionalAuthenticatedUser(req);
     const bodyCreator = typeof req.body?.creatorEmail === 'string' ? normalizeEmail(req.body.creatorEmail) : '';
@@ -12301,10 +12305,14 @@ app.put('/api/approval-workflows/:id', async (req, res) => {
       console.warn('⛔ Ignored locked fields on workflow update:', JSON.stringify(id), stripped);
     }
 
+    if (hasNestedDiscountKey(updates, 'discountPercent')) {
+      return res.status(400).json({ success: false, error: 'Invalid discount field', code: 'INVALID_DISCOUNT' });
+    }
     // Status-only updates on workflows created before the cap must keep working.
     if (Object.prototype.hasOwnProperty.call(updates, 'discountPercent')) {
       const discountCheck = await enforceDiscountCap(updates.discountPercent, res);
       if (!discountCheck.ok) return;
+      updates.discountPercent = discountCheck.value;
     }
 
     console.log('📝 Updating approval workflow:', id, updates);

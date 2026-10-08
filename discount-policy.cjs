@@ -8,23 +8,22 @@ const DISCOUNT_POLICY_SETTINGS_ID = 'discount_policy';
 const MAX_DISCOUNT_CACHE_TTL_MS = 30 * 1000;
 const INVALID_MAX_DISCOUNT_ERROR = 'maxDiscountPercent must be a number between 0 and 100';
 
-// Absorbs float noise such as 0.29 * 100 = 28.999999999999996 without accepting 12.345.
+// Absorbs float noise such as 0.29 * 100 = 28.999999999999996 without accepting a 12.345 cap.
 const DECIMAL_TOLERANCE = 1e-6;
 
 // Strings are accepted for discounts only because older clients send "10" from form inputs.
 const NUMERIC_STRING = /^-?(\d+(\.\d*)?|\.\d+)$/;
+
+function roundToCents(n) {
+  return Math.round(n * 100) / 100;
+}
 
 function hasAtMostTwoDecimals(n) {
   const scaled = n * 100;
   return Math.abs(scaled - Math.round(scaled)) < DECIMAL_TOLERANCE;
 }
 
-/**
- * Validates an admin-supplied cap. Only real numbers are accepted so "15" or true
- * cannot slip into the settings document.
- * @param {unknown} value
- * @returns {{ ok: boolean, value?: number, error?: string }}
- */
+// Only real numbers are accepted so "15" or true cannot slip into the settings document.
 function validateMaxDiscountPercent(value) {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return { ok: false, error: INVALID_MAX_DISCOUNT_ERROR };
@@ -51,23 +50,18 @@ function parseDiscount(discount) {
   return NaN;
 }
 
-/**
- * Checks a quote/workflow discount against the current cap.
- * Missing values mean "no discount"; numeric strings are parsed.
- * @param {unknown} discount
- * @param {number} max
- * @returns {{ ok: boolean, value?: number, error?: string, code?: string, maxDiscountPercent: number }}
- */
+// Discounts are rounded to cents rather than rejected, so callers must store the returned value.
 function checkDiscountWithinMax(discount, max) {
   const maxDiscountPercent = resolveMax(max);
-  const value = parseDiscount(discount);
-  if (Number.isNaN(value)) {
+  const parsed = parseDiscount(discount);
+  if (Number.isNaN(parsed)) {
     return { ok: false, code: 'INVALID_DISCOUNT', error: 'Discount must be a number', maxDiscountPercent };
   }
-  if (value < 0) {
+  if (parsed < 0) {
     return { ok: false, code: 'INVALID_DISCOUNT', error: 'Discount cannot be negative', maxDiscountPercent };
   }
-  if (value > maxDiscountPercent + DECIMAL_TOLERANCE) {
+  const value = roundToCents(parsed);
+  if (value > maxDiscountPercent) {
     return {
       ok: false,
       code: 'DISCOUNT_EXCEEDS_MAX',
@@ -78,7 +72,11 @@ function checkDiscountWithinMax(discount, max) {
   return { ok: true, value, maxDiscountPercent };
 }
 
-/** 400 body for a failed checkDiscountWithinMax result. */
+// A dotted key such as "discountPercent.x" would write around the cap check via $set.
+function hasNestedDiscountKey(updates, field) {
+  return Object.keys(updates || {}).some((key) => key !== field && key.split('.')[0] === field);
+}
+
 function discountRejectionBody(check) {
   return {
     success: false,
@@ -88,21 +86,17 @@ function discountRejectionBody(check) {
   };
 }
 
-/** Shapes the stored settings doc for the API, falling back to the default when absent or corrupt. */
-function toDiscountPolicyResponse(doc) {
+// Falls back to the default when the doc is absent or corrupt; who edited it is admin-only.
+function toDiscountPolicyResponse(doc, { includeUpdatedBy = true } = {}) {
   const stored = doc ? validateMaxDiscountPercent(doc.maxDiscountPercent) : { ok: false };
   return {
     maxDiscountPercent: stored.ok ? stored.value : DEFAULT_MAX_DISCOUNT_PERCENT,
     updatedAt: (doc && doc.updatedAt) || null,
-    updatedBy: (doc && doc.updatedBy) || null,
+    updatedBy: (includeUpdatedBy && doc && doc.updatedBy) || null,
   };
 }
 
-/**
- * In-process cache around the settings lookup so every quote save does not hit Mongo.
- * A DB error is not cached, so the real cap comes back as soon as the database does.
- * @param {{ loadDoc: () => Promise<object|null>, ttlMs?: number, now?: () => number }} options
- */
+// DB errors are not cached so the real cap comes back as soon as the database does.
 function createMaxDiscountReader({ loadDoc, ttlMs = MAX_DISCOUNT_CACHE_TTL_MS, now = Date.now }) {
   let cached = null;
 
@@ -133,6 +127,7 @@ module.exports = {
   INVALID_MAX_DISCOUNT_ERROR,
   validateMaxDiscountPercent,
   checkDiscountWithinMax,
+  hasNestedDiscountKey,
   discountRejectionBody,
   toDiscountPolicyResponse,
   createMaxDiscountReader,
