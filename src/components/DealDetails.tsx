@@ -48,10 +48,15 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onUseDealData }) =>
     return companyName;
   };
 
-  // Get the effective company name (extracted from email if needed)
-  const getEffectiveCompanyName = (originalCompany?: string, email?: string): string => {
-    if (originalCompany && originalCompany !== 'Not Available') {
+  const hasValue = (value?: string): value is string => !!value && value !== 'Not Available';
+
+  // HubSpot's link can leave CompanyFromContact blank while still sending CompanyName
+  const getEffectiveCompanyName = (originalCompany?: string, email?: string, dealCompany?: string): string => {
+    if (hasValue(originalCompany)) {
       return originalCompany;
+    }
+    if (hasValue(dealCompany)) {
+      return dealCompany;
     }
     if (email) {
       const extracted = extractCompanyFromEmail(email);
@@ -96,7 +101,7 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onUseDealData }) =>
       // Create enhanced deal data with extracted company name
       const enhancedDealData = {
         ...dealData,
-        companyByContact: getEffectiveCompanyName(dealData.companyByContact, dealData.contactEmail)
+        companyByContact: getEffectiveCompanyName(dealData.companyByContact, dealData.contactEmail, dealData.company)
       };
       console.log('🔄 Using deal data with enhanced company name:', enhancedDealData);
       onUseDealData(enhancedDealData);
@@ -198,9 +203,9 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onUseDealData }) =>
                 <div>
                   <p className="text-sm text-gray-500 font-medium">Company Name</p>
                   <p className="font-semibold text-gray-900 text-lg">
-                    {getEffectiveCompanyName(dealData.companyByContact, dealData.contactEmail)}
+                    {getEffectiveCompanyName(dealData.companyByContact, dealData.contactEmail, dealData.company)}
                   </p>
-                  {dealData.companyByContact === 'Not Available' && dealData.contactEmail && (
+                  {!hasValue(dealData.companyByContact) && !hasValue(dealData.company) && hasValue(dealData.contactEmail) && (
                     <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
                       <CheckCircle className="w-3 h-3" />
                       Extracted from email domain

@@ -11,6 +11,7 @@ const { MongoClient } = require('mongodb');
 const { pickEsignCarriedFields } = require('./esign-field-carry.cjs');
 const { zohoSignEnabled, zohoSignConfigured, getZohoSignConfig } = require('./zoho-sign-config.cjs');
 const { DOCUMENTS_LIST_PROJECTION } = require('./documents-list-projection.cjs');
+const { createDealDetailsHandler } = require('./hubspot-deal-details.cjs');
 const { DEFAULT_EXHIBITS_SYNC_DIR, resolveExhibitSyncDir } = require('./exhibit-sync-dir.cjs');
 const {
   parseStepNumber,
@@ -6263,44 +6264,22 @@ app.get('/api/hubspot/contacts/:contactId', async (req, res) => {
   }
 });
 
-// Get HubSpot deal by ID
-app.get('/api/hubspot/deals/:dealId', async (req, res) => {
-  try {
-    const { dealId } = req.params;
-    
-    if (!HUBSPOT_API_KEY) {
-      return res.status(500).json({
-        success: false,
-        error: 'HubSpot API key not configured'
-      });
-    }
-
-    const response = await fetch(`https://api.hubapi.com/crm/v3/objects/deals/${dealId}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${HUBSPOT_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`HubSpot API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    res.json({
-      success: true,
-      data: data
-    });
-  } catch (error) {
-    console.error('❌ Error fetching HubSpot deal:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
+// Get HubSpot deal by ID, with its associated contact and company resolved
+// Contact/company PII is returned, so callers must be signed in and the route is capped
+const hubspotDealLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests. Try again in a minute.' },
 });
+
+app.get('/api/hubspot/deals/:dealId', hubspotDealLimiter, createDealDetailsHandler({
+  getDb: () => db,
+  getAuthenticatedUser,
+  getToken: () => HUBSPOT_API_KEY,
+  logger,
+}));
 
 // Test MongoDB connection
 app.get('/api/test-mongodb', async (req, res) => {

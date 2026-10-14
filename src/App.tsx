@@ -37,6 +37,8 @@ const EsignInboxByToken = lazy(() => import('./pages/EsignInboxByToken'));
 const EsignAgreementStatusDashboard = lazy(() => import('./components/EsignAgreementStatusDashboard'));
 const AdminSettingsPage = lazy(() => import('./pages/AdminSettingsPage'));
 import { BACKEND_URL } from './config/api';
+import { DealInfo, fetchHubSpotDealDetails, mergeDealDetails, toClientInfo } from './utils/hubspotDealDetails';
+import RefreshDealOnSignIn from './components/RefreshDealOnSignIn';
 import { buildQuoteSaveBody, readDiscountRejection, toQuoteDiscount } from './services/quoteSaveRequest';
 import { initClarity, track, trackTierSelection, trackPricingCalculation } from './analytics/clarity';
 
@@ -577,11 +579,11 @@ function App() {
                      urlParams.get('ContactName') || 
                      'Not Available'),
         contactEmail: contactEmail || 'Not Available',
-        contactPhone: contactPhone || '+1 (555) 123-4567',
-        contactJobTitle: contactJobTitle || 'Position from HubSpot',
-        companyDomain: companyDomain || 'hubspot.com',
-        companyPhone: companyPhone || '+1 (555) 987-6543',
-        companyAddress: companyAddress || 'Address from HubSpot'
+        contactPhone: contactPhone || '',
+        contactJobTitle: contactJobTitle || '',
+        companyDomain: companyDomain || '',
+        companyPhone: companyPhone || '',
+        companyAddress: companyAddress || ''
       };
       
       console.log('📋 Created deal data:', dealData);
@@ -592,84 +594,26 @@ function App() {
     return null;
   };
 
-  // Refresh deal data from HubSpot
-  const refreshDealData = async () => {
-    if (dealData?.dealId) {
-      try {
-        console.log('🔄 Refreshing deal data for ID:', dealData.dealId);
-        const response = await fetch(`${BACKEND_URL}/api/hubspot/deals/${dealData.dealId}`);
-        
-        if (response.ok) {
-          const result = await response.json();
-          console.log('📥 HubSpot API response:', result);
-          
-          if (result.success && result.data) {
-            // Extract properties from HubSpot response
-            const properties = result.data.properties || result.data;
-            
-            // Create updated deal data with enhanced contact and company information
-            const updatedDealData = {
-              dealId: dealData.dealId,
-              dealName: properties.dealname || properties.dealName || dealData.dealName || 'Not Set',
-              amount: properties.amount || dealData.amount || 'Not Set',
-              stage: properties.dealstage || properties.stage || dealData.stage || 'Not Set',
-              closeDate: properties.closedate || properties.closeDate || dealData.closeDate || '',
-              ownerId: properties.hubspot_owner_id || properties.ownerId || dealData.ownerId || 'Not Set',
-              // Enhanced company information
-              company: properties.company || dealData.company || '',
-              companyDomain: properties.company_domain || properties.companyDomain || '',
-              companyPhone: properties.company_phone || properties.companyPhone || '',
-              companyAddress: properties.company_address || properties.companyAddress || '',
-              // Enhanced contact information
-              contactName: properties.contact_name || properties.contactName || dealData.contactName || '',
-              contactEmail: properties.contact_email || properties.contactEmail || dealData.contactEmail || '',
-              contactPhone: properties.contact_phone || properties.contactPhone || '',
-              contactJobTitle: properties.contact_job_title || properties.contactJobTitle || ''
-            };
-            
-            console.log('✅ Updated deal data:', updatedDealData);
-            
-            // Update both dealData and activeDealData if they match
-            setDealData(updatedDealData);
-            if (activeDealData && activeDealData.dealId === dealData.dealId) {
-              setActiveDealData(updatedDealData);
-            }
-            
-            // Update localStorage
-            localStorage.setItem('dealInfo', JSON.stringify(updatedDealData));
-            
-            // Auto-fill client details from HubSpot data
-            const enhancedClientInfo = {
-              clientName: updatedDealData.contactName || '',
-              clientEmail: updatedDealData.contactEmail || '',
-              company: updatedDealData.company || '',
-              phone: updatedDealData.contactPhone || '',
-              jobTitle: updatedDealData.contactJobTitle || '',
-              companyDomain: updatedDealData.companyDomain || '',
-              companyPhone: updatedDealData.companyPhone || '',
-              companyAddress: updatedDealData.companyAddress || ''
-            };
-            
-            setCurrentClientInfo(enhancedClientInfo);
-            localStorage.setItem('cpq_client_info', JSON.stringify(enhancedClientInfo));
-            
-            console.log('✅ Client details auto-filled from HubSpot:', enhancedClientInfo);
-            
-            // Show success message
-            console.log('🎉 Deal data refreshed successfully from HubSpot with contact details!');
-          } else {
-            console.warn('⚠️ HubSpot API returned no data for deal:', dealData.dealId);
-          }
-        } else {
-          console.error('❌ HubSpot API error:', response.status, response.statusText);
-        }
-      } catch (error) {
-        console.error('❌ Error refreshing deal data:', error);
-      }
-    } else {
-      console.warn('⚠️ No deal ID available for refresh');
-    }
-  };
+  // The HubSpot link only carries a snapshot taken when it was generated, so the
+  // deal's current contact/company are pulled live and laid over the URL values
+  const dealDataRef = useRef<DealInfo | null>(null);
+  dealDataRef.current = dealData;
+  const refreshDealData = useCallback(async () => {
+    const baseDeal = dealDataRef.current;
+    if (!baseDeal) return;
+    const details = await fetchHubSpotDealDetails(baseDeal.dealId);
+    if (!details || dealDataRef.current?.dealId !== baseDeal.dealId) return;
+
+    const updatedDealData = mergeDealDetails(dealDataRef.current, details);
+    setDealData(updatedDealData);
+    setActiveDealData((prev: DealInfo | null) =>
+      prev && prev.dealId === baseDeal.dealId ? mergeDealDetails(prev, details) : prev);
+    localStorage.setItem('dealInfo', JSON.stringify(updatedDealData));
+
+    const enhancedClientInfo = toClientInfo(updatedDealData);
+    setCurrentClientInfo(enhancedClientInfo);
+    localStorage.setItem('cpq_client_info', JSON.stringify(enhancedClientInfo));
+  }, []);
 
   // Handle using deal data in configuration and quote generation
   const handleUseDealData = (dealData: any) => {
@@ -766,12 +710,6 @@ function App() {
       localStorage.setItem('dealInfo', JSON.stringify(dealParams));
       
       // Deal data is present - user can navigate to deal tab via URL
-      
-      // Automatically refresh deal data from HubSpot to get real values
-      console.log('🚀 Auto-refreshing deal data from HubSpot...');
-      setTimeout(() => {
-        refreshDealData();
-      }, 1000); // Small delay to ensure component is fully mounted
     } else {
       console.log('⚠️ No deal parameters found in URL');
     }
@@ -2083,6 +2021,7 @@ function App() {
    return (
     <Router>
       <AuthProvider>
+        <RefreshDealOnSignIn dealId={dealData?.dealId} onRefresh={refreshDealData} />
         <DiscountPolicyProvider>
         <Suspense fallback={<LoadingFallback />}>
           <HubSpotAuthHandler>
