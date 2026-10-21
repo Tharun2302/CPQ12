@@ -141,10 +141,12 @@ class ApprovalWorkflowServiceMongoDB {
     try {
       console.log('📝 Updating workflow step in MongoDB:', workflowId, stepNumber, stepUpdates);
 
+      // The Technical step is authorized against the signed-in approver; other roles ignore the header
       const response = await fetch(`${this.baseUrl}/approval-workflows/${workflowId}/step/${stepNumber}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          ...getAuthHeaders(),
         },
         body: JSON.stringify(stepUpdates)
       });
