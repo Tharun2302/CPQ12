@@ -49,6 +49,13 @@ describe('resolveExhibitSyncDir', () => {
     expect(result.rejectedReason).toBeNull();
   });
 
+  it('treats backslashes as folder separators on every platform', () => {
+    const result = resolveExhibitSyncDir(projectRoot, 'local\\exhibits');
+
+    expect(result.dir).toBe(path.join(projectRoot, 'local', 'exhibits'));
+    expect(result.rejectedReason).toBeNull();
+  });
+
   it.each([
     ['../outside'],
     ['..'],
