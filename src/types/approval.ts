@@ -61,8 +61,6 @@ export interface ApprovalStep {
   group?: string;
   comments?: string;
   timestamp?: string;
-  // Verified identity of the person who acted (set by the server for the Technical step)
-  actedBy?: { name?: string; email: string };
 }
 
 export interface ApprovalWorkflowState {

@@ -17,10 +17,8 @@ const {
   sanitizeStepUpdates,
   areAllApprovalStepsComplete,
   applyStepUpdate,
-  stripLockedWorkflowFields,
-  checkStepUpdateAllowed
+  stripLockedWorkflowFields
 } = require('./approval-step-guard.cjs');
-const technicalApproverGuard = require('./technical-approver-guard.cjs');
 const {
   DISCOUNT_POLICY_SETTINGS_ID,
   INVALID_MAX_DISCOUNT_ERROR,
@@ -2018,28 +2016,6 @@ app.get('/api/auth/me', async (req, res) => {
   }
 });
 
-// Returns { msVerified, tid } when Graph accepts the token for this email, otherwise {}. Never logs the token.
-async function verifyMicrosoftIdentity(accessToken, email) {
-  if (typeof accessToken !== 'string' || !accessToken || typeof email !== 'string') return {};
-  try {
-    const graph = await axios.get('https://graph.microsoft.com/v1.0/me', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      timeout: 5000,
-    });
-    if (graph.status !== 200) return {};
-    const claims = technicalApproverGuard.verifiedClaimsFromGraph({
-      graphUser: graph.data,
-      email,
-      tokenPayload: technicalApproverGuard.decodeJwtPayload(accessToken),
-      clientId: process.env.AZURE_CLIENT_ID || process.env.VITE_MSAL_CLIENT_ID,
-    });
-    return claims || {};
-  } catch (error) {
-    logger.warn('Microsoft identity not verified', { source: 'technical-approver', status: error.response?.status || null });
-    return {};
-  }
-}
-
 // Microsoft OAuth user creation/update
 app.post('/api/auth/microsoft', async (req, res) => {
   try {
@@ -2083,12 +2059,9 @@ app.post('/api/auth/microsoft', async (req, res) => {
       await db.collection('users').insertOne(user);
     }
 
-    // Only a Graph-confirmed identity may act on Technical steps; any failure keeps today's login.
-    const msClaims = await verifyMicrosoftIdentity(accessToken, email);
-
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user.id, email: user.email, ...msClaims },
+      { userId: user.id, email: user.email },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -12236,70 +12209,6 @@ app.get('/api/approval-workflows/verify-access', async (req, res) => {
   }
 });
 
-// Identity comes only from the signed JWT so the recorded actor is exactly the email that was authorised.
-function readTechnicalApproverIdentity(req) {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token || token.split('.').length !== 3) return null;
-  try {
-    const claims = jwt.verify(token, JWT_SECRET);
-    return { claims, name: typeof claims.msName === 'string' ? claims.msName : '', email: claims.email };
-  } catch {
-    return null;
-  }
-}
-
-async function loadTechnicalAllowList() {
-  try {
-    if (!db) return [];
-    const settings = await db.collection('team_approval_settings').findOne({ _id: 'main' }, { projection: { technicalEmails: 1 } });
-    return Array.isArray(settings?.technicalEmails) ? settings.technicalEmails : [];
-  } catch (error) {
-    logger.error('Technical allow-list unavailable', { source: 'technical-approver', error: error.message });
-    return [];
-  }
-}
-
-let technicalTenantWarningLogged = false;
-
-async function evaluateTechnicalRequest(req) {
-  const identity = readTechnicalApproverIdentity(req);
-  const allowList = await loadTechnicalAllowList();
-  const tenantId = process.env.AZURE_TENANT_ID;
-  const enforced = technicalApproverGuard.isSigninEnforced(process.env);
-  // Logged once so a missing setting does not flood the log on every portal poll.
-  if (enforced && !tenantId && !technicalTenantWarningLogged) {
-    technicalTenantWarningLogged = true;
-    logger.error('AZURE_TENANT_ID is not set; Technical approvals are refused until it is configured', { source: 'technical-approver' });
-  }
-  return { identity, allowList, tenantId, enforced };
-}
-
-// Registered before /api/approval-workflows/:id so the literal path is not read as an id.
-app.get('/api/approval-workflows/technical-signin-status', async (req, res) => {
-  try {
-    const { identity, allowList, tenantId, enforced } = await evaluateTechnicalRequest(req);
-    res.json(technicalApproverGuard.buildSigninStatus({
-      claims: identity?.claims, allowList, tenantId, enforced, name: identity?.name, email: identity?.email,
-    }));
-  } catch (error) {
-    logger.error('Technical sign-in status failed', { source: 'technical-approver', error: error.message });
-    res.json(technicalApproverGuard.buildSigninStatus({ enforced: technicalApproverGuard.isSigninEnforced(process.env) }));
-  }
-});
-
-// Returns { ok, actor } or { ok: false, httpStatus, code, error }; actor comes from the JWT/users record, never the body.
-async function authorizeTechnicalDecision(req, workflowId) {
-  const { identity, allowList, tenantId } = await evaluateTechnicalRequest(req);
-  const verdict = technicalApproverGuard.evaluateTechnicalApprover({ claims: identity?.claims, allowList, tenantId });
-  if (!verdict.allowed) {
-    logger.warn('Technical approval blocked', {
-      source: 'approval-step', workflowId, code: verdict.code, reason: verdict.reason, actorEmail: identity?.email || null,
-    });
-    return { ok: false, httpStatus: verdict.httpStatus, code: verdict.code, error: technicalApproverGuard.errorMessageFor(verdict.code) };
-  }
-  return { ok: true, actor: { name: identity.name || identity.email, email: identity.email } };
-}
-
 // Download workflow document (for Deal Desk email link - final signed PDF)
 app.get('/api/approval-workflows/:workflowId/document', async (req, res) => {
   try {
@@ -12495,18 +12404,6 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
       });
     }
 
-    const precheck = checkStepUpdateAllowed(workflow, parseStepNumber(stepNumber), stepUpdates);
-    const isTechnicalStep = precheck.allowed && precheck.step.role === technicalApproverGuard.TECHNICAL_ROLE;
-    const isOverageSkip = isTechnicalStep && technicalApproverGuard.isOverageTechnicalSkip(workflow, stepUpdates);
-    if (isTechnicalStep && !isOverageSkip && technicalApproverGuard.isSigninEnforced(process.env)) {
-      const techAuth = await authorizeTechnicalDecision(req, id);
-      if (!techAuth.ok) {
-        return res.status(techAuth.httpStatus).json({ success: false, code: techAuth.code, error: techAuth.error });
-      }
-      // A comment alone is not a decision, so only approve/deny records who acted.
-      if (stepUpdates.status) stepUpdates.actedBy = techAuth.actor;
-    }
-
     const outcome = await applyStepUpdate(workflows, workflow, parseStepNumber(stepNumber), stepUpdates);
     if (!outcome.allowed) {
       const raceNote = outcome.lostRace ? '(lost race)' : '';
@@ -12520,13 +12417,6 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
     }
     if (stepUpdates.status === 'denied') {
       notifyCreatorOfDenial(workflow, outcome.step, stepUpdates.comments);
-    }
-    if (isTechnicalStep) {
-      const event = isOverageSkip ? 'Technical step skipped for overage' : 'Technical approval decision';
-      logger.info(stepUpdates.status ? event : 'Technical step comment', {
-        source: 'approval-step', workflowId: id, step: outcome.step.step,
-        status: stepUpdates.status || null, actorEmail: stepUpdates.actedBy?.email || null,
-      });
     }
 
     console.log('✅ Workflow step updated');

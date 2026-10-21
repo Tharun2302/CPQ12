@@ -11,12 +11,6 @@
 VITE_MSAL_CLIENT_ID=your-microsoft-client-id-here
 VITE_MSAL_REDIRECT_URI=
 
-# Technical approval sign-in: approvers must sign in with this Microsoft tenant (CloudFuze = 66d8848d-26b6-4147-8124-127624d7b3a6).
-# Without it, Technical approve/deny is refused while enforcement is on. Approvers come from team_approval_settings.technicalEmails.
-AZURE_TENANT_ID=
-# Set to false to turn the Technical sign-in check off without a code rollback (on by default).
-TECH_APPROVER_SIGNIN_REQUIRED=true
-
 # ===========================================
 # DATABASE CONFIGURATION (Optional)
 # ===========================================

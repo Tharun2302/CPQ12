@@ -5,7 +5,6 @@ import { BACKEND_URL } from '../config/api';
 import TeamApprovalDashboard from './TeamApprovalDashboard';
 import TechnicalTeamApprovalDashboard from './TechnicalTeamApprovalDashboard';
 import LegalTeamApprovalDashboard from './LegalTeamApprovalDashboard';
-import TechnicalApproverSignIn from './approval/TechnicalApproverSignIn';
 
 /**
  * Gate for role-based approval portals. Validates token from email link
@@ -105,11 +104,7 @@ const ApprovalPortalGate: React.FC = () => {
     return <TeamApprovalDashboard initialWorkflowId={workflowId || undefined} />;
   }
   if (allowedRole === 'technical') {
-    return (
-      <TechnicalApproverSignIn>
-        <TechnicalTeamApprovalDashboard initialWorkflowId={workflowId || undefined} />
-      </TechnicalApproverSignIn>
-    );
+    return <TechnicalTeamApprovalDashboard initialWorkflowId={workflowId || undefined} />;
   }
   if (allowedRole === 'legal') {
     return <LegalTeamApprovalDashboard initialWorkflowId={workflowId || undefined} />;
