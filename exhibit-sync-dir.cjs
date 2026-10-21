@@ -50,7 +50,8 @@ function rejectionReason(root, value) {
 function resolveExhibitSyncDir(projectRoot, rawValue) {
   const root = path.resolve(projectRoot);
   const fallback = path.join(root, DEFAULT_EXHIBITS_SYNC_DIR);
-  const value = typeof rawValue === 'string' ? rawValue.trim() : '';
+  // POSIX reads "\" as part of a name, so "..\outside" would pass the escape check on Linux.
+  const value = typeof rawValue === 'string' ? rawValue.trim().replace(/\\/g, '/') : '';
   if (!value) return { dir: fallback, rejectedReason: null };
 
   let reason;
