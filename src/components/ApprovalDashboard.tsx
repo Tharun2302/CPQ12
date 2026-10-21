@@ -26,6 +26,7 @@ import { BACKEND_URL } from '../config/api';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import { authAwareError, getAuthHeaders } from '../utils/authUtils';
 import { redlineSaveMessage } from '../utils/redlineSaveMessage';
+import { formatStepActor } from '../utils/approvalActor';
 import PdfCanvasViewer from './PdfCanvasViewer';
 import EditDatesModal from './EditDatesModal';
 import OnlyOfficeEditor from './OnlyOfficeEditor';
@@ -1276,7 +1277,7 @@ const ApprovalDashboard: React.FC = () => {
                             <div className="relative z-10 flex min-w-[520px] sm:min-w-0 items-start justify-between gap-0.5 sm:gap-1">
                               {steps.map((item: (typeof steps)[number], idx: number) => {
                                 const raw = item.step?.status || 'pending';
-                                const who = item.step?.email ? `Email: ${item.step.email}` : null;
+                                const who = formatStepActor(item.step);
                                 const grp = item.step?.group ? `Group: ${item.step.group}` : null;
                                 const cmt = item.step?.comments ? `Comments: ${item.step.comments}` : null;
                                 const decidedMs = decisionTimeMs(item.step);
