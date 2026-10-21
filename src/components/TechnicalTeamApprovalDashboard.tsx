@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Clock, User, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Eye, FileText, Loader2, RefreshCw } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { isStepAlreadyHandledError } from '../services/approvalWorkflowServiceMongoDB';
+import { techSignInErrorMessage } from '../utils/technicalSignIn';
 import { getApprovalLinkNotice, ApprovalLinkNotice, APPROVAL_DELETED_NOTICE } from '../utils/approvalLinkNotice';
 import ApprovalLinkNoticeBox from './ApprovalLinkNoticeBox';
 import type { ApprovalWorkflow } from '../types/approval';
@@ -290,7 +291,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
         next.delete(workflowId);
         return next;
       });
-      alert('❌ Failed to approve workflow. Please try again.');
+      alert(techSignInErrorMessage(error) ?? '❌ Failed to approve workflow. Please try again.');
     } finally {
       setIsApproving(false);
     }
@@ -368,7 +369,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
         next.delete(workflowId);
         return next;
       });
-      alert('❌ Failed to deny workflow. Please try again.');
+      alert(techSignInErrorMessage(error) ?? '❌ Failed to deny workflow. Please try again.');
     } finally {
       setIsDenying(false);
     }
@@ -429,7 +430,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
         await handleAlreadyHandled(commentWorkflowId, error);
         return;
       }
-      alert('❌ Failed to add comment. Please try again.');
+      alert(techSignInErrorMessage(error) ?? '❌ Failed to add comment. Please try again.');
     } finally {
       setIsSavingComment(false);
     }
