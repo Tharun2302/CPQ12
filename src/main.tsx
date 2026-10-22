@@ -2,10 +2,14 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { initHotjar } from './analytics/hotjar';
+import { clearConfigureSessionOnReload } from './utils/configureReload';
 import './index.css';
 
 // Module scope, before render, so the login screen is recorded too. No-ops when VITE_HOTJAR_ID is blank.
 initHotjar();
+
+// Before render, so nothing restores the previous quote when the Configure page is refreshed.
+clearConfigureSessionOnReload();
 
 const rootElement = document.getElementById('root');
 
