@@ -153,6 +153,18 @@ export interface ConfigurationData {
   manageSprawlType?: SprawlType;
   // Canonical when non-empty; the per-type fields above are then derived mirrors.
   manageSprawlConfigs?: ManageSprawlConfig[];
+  // Multi combination + Data Sprawl: the sprawl groups above ride on a Migrate quote.
+  // Sprawl exhibits are kept out of the shared selection so the Multi rows never see them.
+  includeDataSprawl?: boolean;
+  dataSprawlExhibitIds?: string[];
+  // Slug of the Data Sprawl agreement whose exhibits are offered and merged.
+  dataSprawlCombination?: string;
+  // Overage ticked alongside Multi combination or Data Sprawl: billed instances added to that quote.
+  // No months of its own: it runs for the quote's shared Duration (sharedMigrateDuration).
+  overageAddOn?: {
+    instanceType: 'Small' | 'Standard' | 'Large' | 'Extra Large';
+    numberOfInstances: number;
+  };
 }
 
 export interface PricingCalculation {
@@ -222,6 +234,12 @@ export interface PricingCalculation {
   // Sum of sprawlLines[].cost, full precision.
   sprawlCost?: number;
   sprawlStandalone?: { dataCost: number; totalCost: number };
+  // Multi combination + Data Sprawl: priced on their own and included in totalCost.
+  // Kept apart from sprawlLines, whose presence switches the Manage display paths on.
+  multiSprawlLines?: SprawlLine[];
+  multiSprawlCost?: number;
+  // Overage add-on, included in totalCost; kept out of instanceCost, which the agreement prints on its own.
+  overageAddOnCost?: number;
   // Manage Standalone — set to 'custom' when users > 5000 (slab returns CUSTOM).
   // UI should surface as a "Contact sales" CTA rather than a numeric quote.
   status?: 'custom';

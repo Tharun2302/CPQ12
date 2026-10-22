@@ -5,6 +5,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import ConfigurationForm from '../../src/components/ConfigurationForm';
+import { chooseMigrateOnly, migrateOptionLabels } from './helpers/migratePicker';
 import type { ConfigurationData } from '../../src/types/pricing';
 import { calculateAllTiers, isManageSaasConfig } from '../../src/utils/pricing';
 import { isBuiltInManageStandalone } from '../../src/utils/manageStandaloneOption';
@@ -56,7 +57,6 @@ const lastConfig = (spy: ReturnType<typeof vi.fn>) =>
 
 async function openManage() {
   const ctx = renderForm();
-  await waitFor(() => selectWithOption(ctx.container, 'overage-agreement'));
   await ctx.user.click(screen.getByRole('button', { name: 'Manage' }));
   const manage = await waitFor(() => selectWithOption(ctx.container, 'mange+sprawl'));
   return { ...ctx, manage };
@@ -80,9 +80,8 @@ describe('Manage Standalone listed once with catalog rows of the same label', ()
   });
 
   it('Migrate still lists Data-Sprawl and no Manage Standalone row', async () => {
-    const { container } = renderForm();
-    const migrate = await waitFor(() => selectWithOption(container, 'overage-agreement'));
-    const labels = optionLabels(migrate);
+    const { user } = renderForm();
+    const labels = await migrateOptionLabels(user);
     expect(labels).toContain('Data-Sprawl');
     expect(labels.filter(l => /manage standalone/i.test(l))).toEqual([]);
   });

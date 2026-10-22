@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { BACKEND_URL } from '../config/api';
 import { ConfigurationData, ManageSprawlConfig } from '../types/pricing';
-import { manageAgreementCard, normalizeSprawlConfigs, withSprawlConfigs } from '../utils/pricing';
+import { isMultiWithSprawl, manageAgreementCard, normalizeSprawlConfigs, withSprawlConfigs } from '../utils/pricing';
 import { applySprawlGroups, buildSprawlGroups } from '../utils/sprawlGroups';
 import { persistConfig } from '../utils/sessionConfig';
 
 type SprawlPatch = Partial<Pick<ManageSprawlConfig, 'users' | 'quantity'>>;
 
-// Keeps a Manage sprawl agreement's per-exhibit groups in step with the selected exhibits.
+// Keeps the per-exhibit sprawl groups in step with the selected exhibits, for a Manage sprawl
+// agreement or a Multi combination quote with Data Sprawl added (which passes its own ids).
 export function useSprawlGroups(
   config: ConfigurationData,
   setConfig: Dispatch<SetStateAction<ConfigurationData>>,
@@ -16,7 +17,7 @@ export function useSprawlGroups(
 ) {
   const memoryRef = useRef<Map<string, ManageSprawlConfig>>(new Map());
   const memoryKeyRef = useRef('');
-  const active = config.servicePlan === 'Manage' && manageAgreementCard(config) !== 'both';
+  const active = (config.servicePlan === 'Manage' && manageAgreementCard(config) !== 'both') || isMultiWithSprawl(config);
 
   const clearSprawlMemory = useCallback(() => {
     memoryRef.current.clear();
@@ -28,7 +29,7 @@ export function useSprawlGroups(
       clearSprawlMemory();
       return;
     }
-    const agreementKey = `${config.migrationType}|${config.manageAgreementLabel || ''}`;
+    const agreementKey = `${config.migrationType}|${config.manageAgreementLabel || ''}|${config.dataSprawlCombination || ''}`;
     if (memoryKeyRef.current !== agreementKey) {
       memoryRef.current.clear();
       memoryKeyRef.current = agreementKey;
@@ -55,7 +56,7 @@ export function useSprawlGroups(
         if (import.meta.env?.DEV) console.error('Error fetching exhibits for Data Sprawl groups:', error);
       });
     return () => { cancelled = true; };
-  }, [active, config.migrationType, config.manageAgreementLabel, selectedExhibits, setConfig, clearSprawlMemory]);
+  }, [active, config.migrationType, config.manageAgreementLabel, config.dataSprawlCombination, selectedExhibits, setConfig, clearSprawlMemory]);
 
   // Functional update so two quick edits cannot overwrite each other from a stale render.
   const updateSprawlConfig = useCallback((exhibitId: string, patch: SprawlPatch) => {

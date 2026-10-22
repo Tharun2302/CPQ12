@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import userEvent from '@testing-library/user-event';
 
 import ConfigurationForm from '../../src/components/ConfigurationForm';
+import { chooseMigrateOnly } from './helpers/migratePicker';
 import type { ConfigurationData } from '../../src/types/pricing';
 import { serviceTermTokens } from '../../src/utils/serviceTerm';
 
@@ -63,8 +64,7 @@ async function chooseManage(ctx: Ctx, option: string) {
 
 async function chooseDataSprawl(ctx: Ctx) {
   await ctx.user.click(screen.getByRole('button', { name: 'Migrate' }));
-  const migrate = await waitFor(() => selectWithOption(ctx.container, 'data-sprawl'));
-  await ctx.user.selectOptions(migrate, 'data-sprawl');
+  await chooseMigrateOnly(ctx.user, 'data-sprawl');
   ctx.selectExhibits(['dbx']);
   await waitFor(() => expect(termInput(SPRAWL_TERM)).not.toBeNull());
 }

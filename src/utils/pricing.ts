@@ -1,5 +1,6 @@
 import { PricingTier, ConfigurationData, PricingCalculation, SprawlType, SprawlLine, ManageSprawlConfig } from '../types/pricing';
 import { parseSprawlName } from './sprawlName';
+import { getEffectiveDurationMonths } from './configDuration';
 
 /** Ensures total = userCost + dataCost + migrationCost + instanceCost (used when $2500 minimum is applied). */
 function assertPricingInvariant(
@@ -457,6 +458,58 @@ export function sprawlRowLabel(value: unknown): string {
   return 'Data Sprawl';
 }
 
+// Multi combination quote that also sells Data Sprawl (the "Also add Data Sprawl" toggle).
+export function isMultiWithSprawl(config: ConfigurationData | undefined | null): boolean {
+  return config?.migrationType === 'Multi combination'
+    && config?.servicePlan !== 'Manage'
+    && config?.includeDataSprawl === true;
+}
+
+// Flat sprawl lines, no licence: the migration already carries the users.
+export function multiSprawlLines(config: ConfigurationData | undefined | null): SprawlLine[] {
+  return isMultiWithSprawl(config) ? calcSprawlLinesFromConfig(config as ConfigurationData) : [];
+}
+
+// Sum of the rounded rows, so the agreement column adds up to the total it prints.
+export function multiSprawlTotal(config: ConfigurationData | undefined | null): number {
+  return sprawlDisplayTotal(multiSprawlLines(config));
+}
+
+// Overage is an add-on only when Multi combination or Data Sprawl is the main agreement.
+export function acceptsOverageAddOn(config: ConfigurationData | undefined | null): boolean {
+  if (!config) return false;
+  if (config.migrationType === 'Multi combination' && config.servicePlan !== 'Manage') return true;
+  return manageAgreementCard(config) === 'standalone';
+}
+
+export function hasOverageAddOn(config: ConfigurationData | undefined | null): boolean {
+  return acceptsOverageAddOn(config) && !!config?.overageAddOn;
+}
+
+// The one Duration a combined Migrate quote runs for: the migration's when Multi combination is
+// the main agreement (the longest row, as its service term reads), else the Data Sprawl term.
+export function sharedMigrateDuration(config: ConfigurationData | undefined | null): number {
+  if (!config) return 0;
+  if (config.migrationType === 'Multi combination' && config.servicePlan !== 'Manage') {
+    return Math.floor(nonNegative(getEffectiveDurationMonths(config)));
+  }
+  const term = Number(config.serviceTermMonths);
+  return Number.isInteger(term) && term > 0 ? term : 0;
+}
+
+// Same formula as the Overage Agreement itself: base monthly instance price x months x instances.
+export function overageAddOnCost(config: ConfigurationData | undefined | null): number {
+  if (!hasOverageAddOn(config)) return 0;
+  const { instanceType, numberOfInstances } = config!.overageAddOn!;
+  const instances = Math.floor(nonNegative(numberOfInstances));
+  return Math.round(getInstanceTypeCost(instanceType) * sharedMigrateDuration(config) * instances * 100) / 100;
+}
+
+// Everything ticked alongside the main Migrate agreement, priced flat.
+export function migrateAddOnTotal(config: ConfigurationData | undefined | null): number {
+  return multiSprawlTotal(config) + overageAddOnCost(config);
+}
+
 function manageDataGBInput(config: ConfigurationData): number {
   const rawGB = Number(config?.manageDataGB ?? 0);
   return Number.isFinite(rawGB) && rawGB > 0 ? rawGB : 0;
@@ -614,27 +667,30 @@ function calculateManagePricing(config: ConfigurationData, tier: PricingTier): P
     const sprawlLines = calcSprawlLinesFromConfig(config);            // B103, flat
     const sprawlCost = sumSprawlLines(sprawlLines);
     const license = isCustom ? 0 : (userCostRaw as number);         // K12 license (0 when CUSTOM)
+    // Overage ticked with Data Sprawl; zero for every other Manage agreement.
+    const overageCost = overageAddOnCost(config);
 
     const sprawlResult: PricingCalculation = {
       userCost: license,
       dataCost: sprawlCost,
       migrationCost: 0,
       instanceCost: 0,
-      totalCost: license + sprawlCost,                             // MANAGE + Sprawl (B104)
+      totalCost: license + sprawlCost + overageCost,               // MANAGE + Sprawl (B104)
       tier,
       sprawlTypes,
       sprawlLines,
       sprawlType: sprawlTypes[0],
       sprawlCost,
       // Standalone omits the license line — sprawl cost only (rows 106–110).
-      sprawlStandalone: { dataCost: sprawlCost, totalCost: sprawlCost }
+      sprawlStandalone: { dataCost: sprawlCost, totalCost: sprawlCost + overageCost },
+      ...(hasOverageAddOn(config) ? { overageAddOnCost: overageCost } : {})
     };
     if (isCustom) {
       // Combined license is "Contact sales"; the standalone sprawl figure still applies.
       sprawlResult.status = 'custom';
       sprawlResult.message = 'Contact sales for >5000 users (license)';
     }
-    assertPricingInvariant(sprawlResult.userCost, sprawlResult.dataCost, sprawlResult.migrationCost, sprawlResult.instanceCost, sprawlResult.totalCost);
+    assertPricingInvariant(sprawlResult.userCost, sprawlResult.dataCost, sprawlResult.migrationCost, sprawlResult.instanceCost, sprawlResult.totalCost - overageCost);
     return sprawlResult;
   }
 
@@ -1394,12 +1450,17 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
       combinedInstanceCost,
       totalCombined
     );
+    const sprawlLines = multiSprawlLines(config);
+    const sprawlCost = sprawlDisplayTotal(sprawlLines);
+    const overageCost = overageAddOnCost(config);
     return {
       userCost: combinedUserCost,
       dataCost: combinedDataCost,
       migrationCost: combinedMigrationCost,
       instanceCost: combinedInstanceCost,
-      totalCost: totalCombined,
+      totalCost: totalCombined + sprawlCost + overageCost,
+      ...(sprawlLines.length > 0 ? { multiSprawlLines: sprawlLines, multiSprawlCost: sprawlCost } : {}),
+      ...(hasOverageAddOn(config) ? { overageAddOnCost: overageCost } : {}),
       tier,
       messagingCalculation,
       contentCalculation,

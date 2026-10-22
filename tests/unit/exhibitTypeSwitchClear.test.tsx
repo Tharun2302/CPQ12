@@ -5,6 +5,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import ConfigurationForm from '../../src/components/ConfigurationForm';
+import { chooseMigrateOnly } from './helpers/migratePicker';
 import type { ConfigurationData } from '../../src/types/pricing';
 
 // The real catalogue shape: Data-Sprawl is a Manage row but is listed under Migrate.
@@ -89,11 +90,10 @@ describe('Configure: switching type or combination drops the previous exhibits',
 
   it('clears them when Migrate switches from Combination to Overage', async () => {
     const { container, onExhibitsChange, onConfigurationChange, user } = renderForm();
-    await waitFor(() => selectWithOption(container, 'overage-agreement'));
 
-    await user.selectOptions(selectWithOption(container, 'overage-agreement'), 'multi-combination');
+    await chooseMigrateOnly(user, 'multi-combination');
     onExhibitsChange.mockClear();
-    await user.selectOptions(selectWithOption(container, 'overage-agreement'), 'overage-agreement');
+    await chooseMigrateOnly(user, 'overage-agreement');
 
     expect(onExhibitsChange).toHaveBeenCalledWith([]);
     const config = lastEmittedConfig(onConfigurationChange);
@@ -103,9 +103,8 @@ describe('Configure: switching type or combination drops the previous exhibits',
 
   it('clears them when moving from Data-Sprawl (Migrate) to mange+sprawl (Manage)', async () => {
     const { container, onExhibitsChange, onConfigurationChange, user } = renderForm();
-    await waitFor(() => selectWithOption(container, 'data-sprawl'));
 
-    await user.selectOptions(selectWithOption(container, 'data-sprawl'), 'data-sprawl');
+    await chooseMigrateOnly(user, 'data-sprawl');
     onExhibitsChange.mockClear();
     await user.click(screen.getByRole('button', { name: 'Manage' }));
     await user.selectOptions(selectWithOption(container, 'mange+sprawl'), 'mange+sprawl');

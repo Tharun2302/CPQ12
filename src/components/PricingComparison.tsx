@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CheckCircle } from 'lucide-react';
 import { PricingCalculation, ConfigurationData, PricingTier } from '../types/pricing';
-import { formatCurrency, formatUnitRate, PRICING_TIERS, calculateCombinationPricing, getManageDataRatePerGB, resolveSprawlLines, sprawlDisplayTotal, manageAgreementCard, isManageSaasConfig, MANAGE_SAAS_PRICE_PER_USER_MONTHLY } from '../utils/pricing';
+import { formatCurrency, formatUnitRate, PRICING_TIERS, calculateCombinationPricing, getManageDataRatePerGB, resolveSprawlLines, sprawlDisplayTotal, manageAgreementCard, isManageSaasConfig, MANAGE_SAAS_PRICE_PER_USER_MONTHLY, multiSprawlLines, multiSprawlTotal, migrateAddOnTotal } from '../utils/pricing';
+import { overageLineItem } from '../utils/migrateSelection';
 import { calculateDiscount, normalizeDiscountPercent } from '../utils/discount';
 import { useDiscountPolicy } from '../hooks/useDiscountPolicy';
 
@@ -167,7 +168,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
       exhibitPlans: selectedTiersPerCombination
     });
 
-    return total;
+    // Data Sprawl and Overage added to the Multi quote are flat, so every plan carries the same amount.
+    return total + migrateAddOnTotal(configuration);
   }, [configuration, pricingPlanPerCombination]);
 
   // Each combination keeps its OWN plan (mixing allowed). Setting the plan applies it to the
@@ -234,6 +236,21 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     
     const pricing = calculateCombinationPricing(combinationName, combinationType, configuration, tierToUse);
     return pricing;
+  };
+
+  // Overage ticked alongside the main agreement; shown in its card so the card adds up.
+  const renderOverageAddOn = () => {
+    const item = overageLineItem(configuration);
+    if (!item) return null;
+    return (
+      <div data-testid="overage-add-on-breakdown" className="border-2 border-purple-200 bg-purple-50/50 rounded-lg p-4 mb-4">
+        <h4 className="font-bold text-purple-900 mb-3">Overage Agreement</h4>
+        <div className="flex justify-between items-center text-sm gap-3">
+          <span className="text-gray-700">{item.description}:</span>
+          <span className="font-bold text-gray-900">{item.price}</span>
+        </div>
+      </div>
+    );
   };
 
   // Read discount from sessionStorage (set in Configuration session)
@@ -450,6 +467,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
               });
             }
             
+            planTotal += migrateAddOnTotal(configuration);
             originalTotalBeforeMinimum = planTotal;
             
           }
@@ -814,6 +832,28 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       )
                     )}
 
+                    {multiSprawlLines(configuration).length > 0 && (
+                      <div data-testid="multi-sprawl-breakdown" className="border-2 border-emerald-200 bg-emerald-50/50 rounded-lg p-4 mb-4">
+                        <h4 className="font-bold text-emerald-900 mb-3">Data Sprawl</h4>
+                        <div className="space-y-2">
+                          {multiSprawlLines(configuration).map(line => (
+                            <div key={line.key || line.type} className="flex justify-between items-center text-sm">
+                              <span className="text-gray-700">
+                                {line.label} ({formatUnitRate(line.rate)} {line.basis === 'gb' ? 'per GB' : 'per user'}):
+                              </span>
+                              <span className="font-bold text-gray-900">{formatCurrency(Math.round(line.cost * 100) / 100)}</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between items-center text-sm bg-emerald-100 rounded p-2 mt-2">
+                            <span className="font-bold text-emerald-900">Data Sprawl Total:</span>
+                            <span className="font-bold text-emerald-900">{formatCurrency(multiSprawlTotal(configuration))}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {renderOverageAddOn()}
+
                   </>
                 ) : configuration?.combination === 'overage-agreement' || configuration?.migrationType === 'Overage Agreement' ? (
                   <>
@@ -1015,6 +1055,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                 <span className="font-bold text-gray-900">{formatCurrency(line.cost)}</span>
               </div>
             ))}
+            {renderOverageAddOn()}
 
             <button
               onClick={() => {
@@ -1237,6 +1278,14 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     contentCombinationBreakdowns: buildBreakdowns(configuration.contentConfigs, 'content'),
                     emailCombinationBreakdowns: buildBreakdowns(configuration.emailConfigs, 'email')
                   };
+                  const sprawlLines = multiSprawlLines(configuration);
+                  if (sprawlLines.length > 0) {
+                    customCalculation.multiSprawlLines = sprawlLines;
+                    customCalculation.multiSprawlCost = multiSprawlTotal(configuration);
+                  }
+                  if (calculations[0]?.overageAddOnCost !== undefined) {
+                    customCalculation.overageAddOnCost = calculations[0].overageAddOnCost;
+                  }
                   
                   console.log('🔧 Proceeding with custom plan selection:', {
                     customCalculation,

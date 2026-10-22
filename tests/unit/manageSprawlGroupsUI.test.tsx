@@ -5,6 +5,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 
 import ConfigurationForm from '../../src/components/ConfigurationForm';
+import { chooseMigrateOnly } from './helpers/migratePicker';
 import PricingComparison from '../../src/components/PricingComparison';
 import ExhibitSelector from '../../src/components/ExhibitSelector';
 import { PRICING_TIERS, calculatePricing, withSprawlConfigs } from '../../src/utils/pricing';
@@ -42,15 +43,9 @@ async function openDataSprawl() {
     onSubmit: vi.fn(),
     onExhibitsChange: vi.fn(),
   };
-  const { container, rerender } = render(<ConfigurationForm {...props} selectedExhibits={[]} />);
+  const { rerender } = render(<ConfigurationForm {...props} selectedExhibits={[]} />);
   // Data-Sprawl is listed under the Migrate tab, which is open by default.
-  const select = await waitFor(() => {
-    const match = Array.from(container.querySelectorAll('select')).find(el =>
-      Array.from(el.options).some(o => o.value === 'data-sprawl'));
-    if (!match) throw new Error('Migrate <select> with Data-Sprawl not found');
-    return match as HTMLSelectElement;
-  });
-  await user.selectOptions(select, 'data-sprawl');
+  await chooseMigrateOnly(user, 'data-sprawl');
   const selectExhibits = (ids: string[]) => rerender(<ConfigurationForm {...props} selectedExhibits={ids} />);
   return { user, onConfigurationChange, selectExhibits };
 }

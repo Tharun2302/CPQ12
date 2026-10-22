@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { PricingCalculation, ConfigurationData, Quote } from '../types/pricing';
-import { formatCurrency, getInstanceTypeCost, overagePerServerPerMonth, manageDataLineCost, manageUserLineCost } from '../utils/pricing';
+import { formatCurrency, getInstanceTypeCost, overagePerServerPerMonth, manageDataLineCost, manageUserLineCost, isMultiWithSprawl, migrateAddOnTotal, overageAddOnCost } from '../utils/pricing';
+import { migrateAddOnLineItems } from '../utils/migrateSelection';
 import { buildSprawlAgreementData, sprawlPerDataCost, withDiscountRow } from '../utils/sprawlAgreement';
 import { withPairCombinations, exhibitCombinationKey, restrictExhibitsToCombination } from '../utils/exhibitCombination';
 import { mergeManageExhibits } from '../utils/manageExhibitMerge';
@@ -641,8 +642,9 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         (Number(c.emailCalculation?.totalCost) || 0);
 
       const combined = messagingTotal + contentTotal + emailTotal;
-      // Fall back to the top-level totalCost if for some reason the above is empty
-      return combined > 0 ? combined : (Number(c.totalCost) || 0);
+      // Fall back to the top-level totalCost if for some reason the above is empty;
+      // that one already carries the Data Sprawl and Overage added to the quote.
+      return combined > 0 ? combined + migrateAddOnTotal(cfg) : (Number(c.totalCost) || 0);
     }
     return Number(c.totalCost) || 0;
   };
@@ -810,12 +812,17 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   };
 
   // Unlike the Multi combination merge, a Manage exhibit that fails to load is reported, not dropped silently
-  const mergeManageAgreementExhibits = async (agreement: Blob): Promise<Blob> => {
+  // Also merges the Data Sprawl exhibits of a Multi combination quote, which name their own slug and ids.
+  const mergeManageAgreementExhibits = async (
+    agreement: Blob,
+    templateValue: string = exhibitCombinationKey(configuration),
+    selectedIds: string[] = selectedExhibits || []
+  ): Promise<Blob> => {
     try {
       const { blob, failed } = await mergeManageExhibits(agreement, {
         backendUrl: BACKEND_URL,
-        templateValue: exhibitCombinationKey(configuration),
-        selectedIds: selectedExhibits || [],
+        templateValue,
+        selectedIds,
       });
       if (failed.length > 0) {
         alert(`Warning: These exhibits could not be attached to the agreement:\n- ${failed.join('\n- ')}\n\nThe rest of the agreement was generated.`);
@@ -1899,7 +1906,7 @@ Quote ID: ${quoteData.id}
         const numberOfInstances = configuration?.numberOfInstances || 1;
         // Keep the Total Price consistent with the two lines the sprawl agreement prints.
         const totalCost = sprawlRowType
-          ? sprawlAgreement!.totalCost
+          ? sprawlAgreement!.totalCost + overageAddOnCost(configuration)
           : getEffectiveTotalCost(configuration, calculation || safeCalculation);
 
         // Data size (GB)
@@ -2404,7 +2411,11 @@ Quote ID: ${quoteData.id}
           templateFileForEmail as File,
           templateData,
           {
-            customLineItems: customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) })),
+            // Data Sprawl and Overage rows go first so they sit with the priced rows, above any custom items.
+            customLineItems: [
+              ...migrateAddOnLineItems(configuration),
+              ...customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) }))
+            ],
             customLineItemsDiscount: customLineItemsDiscount > 0 ? { percentage: customLineItemsDiscount, amount: customLineItemsDiscountAmount } : null
           }
         );
@@ -2731,6 +2742,13 @@ Quote ID: ${quoteData.id}
           }
           if (restrictExhibitsToCombination(configuration) && uniqueSelectedExhibitsForMerge.length > 0) {
             agreementBlob = await mergeManageAgreementExhibits(agreementBlob);
+          }
+          if (agreementBlob && isMultiWithSprawl(configuration) && (configuration?.dataSprawlExhibitIds || []).length > 0) {
+            agreementBlob = await mergeManageAgreementExhibits(
+              agreementBlob,
+              configuration?.dataSprawlCombination || '',
+              configuration?.dataSprawlExhibitIds || []
+            );
           }
           
           if (agreementBlob) {
@@ -4865,6 +4883,11 @@ Total Price: {{total price}}`;
           manageMessageCount: finalConfiguration.manageMessageCount,
           manageEmailCount: finalConfiguration.manageEmailCount,
           manageAgreementLabel: finalConfiguration.manageAgreementLabel,
+          includeDataSprawl: finalConfiguration.includeDataSprawl,
+          dataSprawlExhibitIds: finalConfiguration.dataSprawlExhibitIds,
+          dataSprawlCombination: finalConfiguration.dataSprawlCombination,
+          overageAddOn: finalConfiguration.overageAddOn,
+          serviceTermMonths: finalConfiguration.serviceTermMonths,
           combination: finalConfiguration.combination,
           // IMPORTANT: preserve nested configs for Multi combination
           messagingConfig: finalConfiguration.messagingConfig,
@@ -5125,7 +5148,8 @@ Total Price: {{total price}}`;
           ? manageDataLineCost(agreementConfig)
           : (quoteData.calculation?.dataCost || 0);
         // Sprawl total must match the rows printed above it, including discount tokens.
-        const totalCost = sprawlRowType ? sprawlAgreement!.totalCost : calculatedTotalCost;
+        // Overage ticked with Data Sprawl is a row of this agreement, so the total and its discount include it.
+        const totalCost = sprawlRowType ? sprawlAgreement!.totalCost + overageAddOnCost(agreementConfig) : calculatedTotalCost;
         const duration = getEffectiveDurationMonths(quoteData.configuration) || 1;
         const migrationType = quoteData.configuration?.migrationType || 'Content';
         const clientName = quoteData.clientName || clientInfo.clientName || 'Demo Client';
@@ -5694,7 +5718,7 @@ Total Price: {{total price}}`;
           // to avoid stale totalCost from a previous configuration.
           ...((() => {
             const effectiveTotal = (finalConfiguration || quoteData.configuration)?.servicePlan === 'Manage'
-              ? (userCost || 0) + (dataCost || 0)
+              ? (userCost || 0) + (dataCost || 0) + overageAddOnCost(finalConfiguration || quoteData.configuration)
               : (totalCost || 0);
             return {
               '{{total price}}': formatCurrency(effectiveTotal),
@@ -7939,6 +7963,8 @@ Total Price: {{total price}}`;
                 cloudfuzeManageTotal += parseFloat(exhibitPriceStr) || 0;
               }
             }
+            // Data Sprawl and Overage rows are injected into this table, so the total and its one discount include them.
+            cloudfuzeManageTotal += migrateAddOnTotal(configuration);
             console.log('🔍 Multi-combination Total Price Calculation:', {
               serverPricesTotal: formatCurrency(total),
               migrationCost: formatCurrency(migrationCost || 0),
@@ -8204,7 +8230,8 @@ Total Price: {{total price}}`;
             const userCost = (calculation || safeCalculation)?.userCost ?? 0;
             const dataCost = (calculation || safeCalculation)?.dataCost ?? 0;
             const usersCost = userCost + dataCost;
-            let calculatedDisplayedTotal = usersCost + (migrationCost || 0) + singleInstanceCost;
+            // Overage ticked with Data Sprawl is an injected row, not part of instanceCost.
+            let calculatedDisplayedTotal = usersCost + (migrationCost || 0) + singleInstanceCost + overageAddOnCost(configuration);
 
             const finalUsersCost = usersCost;
 
@@ -8791,7 +8818,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           templateFileForAgreement,
           templateData,
           {
-            customLineItems: customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) })),
+            // Data Sprawl and Overage rows go first so they sit with the priced rows, above any custom items.
+            customLineItems: [
+              ...migrateAddOnLineItems(configuration),
+              ...customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) }))
+            ],
             customLineItemsDiscount: customLineItemsDiscount > 0 ? { percentage: customLineItemsDiscount, amount: customLineItemsDiscountAmount } : null
           }
         );
@@ -9654,6 +9685,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           }
           if (restrictExhibitsToCombination(configuration) && (selectedExhibits || []).length > 0) {
             processedDocument = await mergeManageAgreementExhibits(processedDocument);
+          }
+          if (isMultiWithSprawl(configuration) && (configuration?.dataSprawlExhibitIds || []).length > 0) {
+            processedDocument = await mergeManageAgreementExhibits(
+              processedDocument,
+              configuration?.dataSprawlCombination || '',
+              configuration?.dataSprawlExhibitIds || []
+            );
           }
         } else {
           console.error('❌ DOCX processing failed:', result.error);
@@ -10697,6 +10735,12 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               <td className="py-4 text-gray-700 font-medium">Instance costs ({configuration.numberOfInstances} instances)</td>
               <td className="text-right py-4 font-bold text-gray-900">{formatCurrency(safeCalculation.instanceCost)}</td>
             </tr>
+            {migrateAddOnLineItems(configuration).map((item) => (
+              <tr key={item.description} className="border-b border-gray-200">
+                <td className="py-4 text-gray-700 font-medium">{item.description}</td>
+                <td className="text-right py-4 font-bold text-gray-900">{item.price}</td>
+              </tr>
+            ))}
             <tr className="border-t-2 border-blue-300 bg-gradient-to-r from-blue-50 to-indigo-50">
               <td className="py-6 font-bold text-xl text-gray-900">Subtotal (Total Project Cost)</td>
               <td className="text-right py-6 font-bold text-2xl text-blue-600">{formatCurrency(totalCost)}</td>

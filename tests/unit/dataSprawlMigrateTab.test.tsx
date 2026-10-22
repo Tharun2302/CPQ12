@@ -7,6 +7,7 @@ import userEvent from '@testing-library/user-event';
 import ConfigurationForm from '../../src/components/ConfigurationForm';
 import type { ConfigurationData } from '../../src/types/pricing';
 import { isDataSprawlOption, displayedServicePlan } from '../../src/utils/dataSprawlOption';
+import { chooseMigrateOnly, migrateOptionLabels, migrateSelectedValues } from './helpers/migratePicker';
 
 // The real catalogue shape: Data-Sprawl is still a Manage row in the Combination Manager.
 const COMBINATIONS = [
@@ -55,8 +56,7 @@ const isActiveTab = (name: string) =>
 
 async function chooseDataSprawlOnMigrate() {
   const ctx = renderForm();
-  const migrate = await waitFor(() => selectWithOption(ctx.container, 'overage-agreement'));
-  await ctx.user.selectOptions(migrate, 'data-sprawl');
+  await chooseMigrateOnly(ctx.user, 'data-sprawl');
   return ctx;
 }
 
@@ -73,9 +73,8 @@ afterEach(() => {
 
 describe('Data-Sprawl is listed under Migrate only', () => {
   it('Migrate lists the existing options followed by Data-Sprawl', async () => {
-    const { container } = renderForm();
-    const migrate = await waitFor(() => selectWithOption(container, 'overage-agreement'));
-    expect(optionLabels(migrate)).toEqual(['Select Combination', 'Multi-Combination', 'Overage-Agreement', 'Data-Sprawl']);
+    const { user } = renderForm();
+    expect(await migrateOptionLabels(user)).toEqual(['Multi-Combination', 'Overage-Agreement', 'Data-Sprawl']);
   });
 
   it('Manage keeps Select Combination, Manage Standalone and mange+sprawl, without Data-Sprawl', async () => {
@@ -98,8 +97,8 @@ describe('Choosing Data-Sprawl from Migrate', () => {
   });
 
   it('keeps the Migrate tab active with Data-Sprawl selected, waiting for an exhibit before configuring', async () => {
-    const { container } = await chooseDataSprawlOnMigrate();
-    await waitFor(() => expect(selectWithOption(container, 'data-sprawl').value).toBe('data-sprawl'));
+    const { container, user } = await chooseDataSprawlOnMigrate();
+    expect(await migrateSelectedValues(user)).toEqual(['data-sprawl']);
     expect(isActiveTab('Migrate')).toBe(true);
     expect(isActiveTab('Manage')).toBe(false);
     expect(container.querySelector('[data-section="project-configuration"]')).toBeNull();
@@ -108,7 +107,7 @@ describe('Choosing Data-Sprawl from Migrate', () => {
   it('switching to another Migrate option returns to the plain Migrate plan', async () => {
     const { container, user, onConfigurationChange, onExhibitsChange } = await chooseDataSprawlOnMigrate();
     onExhibitsChange.mockClear();
-    await user.selectOptions(selectWithOption(container, 'data-sprawl'), 'overage-agreement');
+    await chooseMigrateOnly(user, 'overage-agreement');
 
     const config = lastConfig(onConfigurationChange);
     expect(config.servicePlan).toBe('Migrate');
@@ -118,9 +117,9 @@ describe('Choosing Data-Sprawl from Migrate', () => {
     expect(onExhibitsChange).toHaveBeenCalledWith([]);
   });
 
-  it('re-choosing "Select Combination" in Migrate leaves Data-Sprawl', async () => {
+  it('unticking everything in Migrate leaves Data-Sprawl', async () => {
     const { container, user, onConfigurationChange } = await chooseDataSprawlOnMigrate();
-    await user.selectOptions(selectWithOption(container, 'data-sprawl'), 'Select Combination');
+    await chooseMigrateOnly(user, '');
 
     const config = lastConfig(onConfigurationChange);
     expect(config.servicePlan).toBe('Migrate');
@@ -144,9 +143,8 @@ describe('Choosing Data-Sprawl from Migrate', () => {
     sessionStorage.setItem('cpq_configuration_session', JSON.stringify({
       servicePlan: 'Manage', migrationType: 'data-sprawl', combination: 'manage-standalone', manageAgreementLabel: 'Data-Sprawl',
     }));
-    const { container } = renderForm();
-    const migrate = await waitFor(() => selectWithOption(container, 'overage-agreement'));
-    await waitFor(() => expect(migrate.value).toBe('data-sprawl'));
+    const { user } = renderForm();
+    await waitFor(async () => expect(await migrateSelectedValues(user)).toEqual(['data-sprawl']));
     expect(isActiveTab('Migrate')).toBe(true);
   });
 });

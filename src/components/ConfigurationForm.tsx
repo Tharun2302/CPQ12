@@ -3,6 +3,7 @@ import {
   exhibitCombinationKey,
   restrictExhibitsToCombination,
   showExhibitSelector,
+  isOverageAgreement,
 } from '../utils/exhibitCombination';
 import { numberInputValue } from '../utils/numberInput';
 import { ConfigurationData, PricingTier } from '../types/pricing';
@@ -10,12 +11,29 @@ import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Spark
 import { trackConfiguration } from '../analytics/clarity';
 import ExhibitSelector from './ExhibitSelector';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
-import { PRICING_TIERS, calculateCombinationPricing, formatCurrency, calculateManageSaasPricing, normalizeSprawlTypes, withSprawlTypes, sprawlRowLabel, normalizeSprawlConfigs, hasSprawlConfigs, withSprawlConfigs, manageAgreementCard } from '../utils/pricing';
+import { PRICING_TIERS, calculateCombinationPricing, formatCurrency, calculateManageSaasPricing, normalizeSprawlTypes, withSprawlTypes, sprawlRowLabel, normalizeSprawlConfigs, hasSprawlConfigs, withSprawlConfigs, manageAgreementCard, isMultiWithSprawl, hasOverageAddOn, sharedMigrateDuration } from '../utils/pricing';
+import { multiSprawlIssue, withMultiSprawl, withoutMultiSprawl } from '../utils/multiSprawl';
+import MultiDataSprawlSection from './MultiDataSprawlSection';
+import MigrateOptionPicker, { type MigrateOption } from './MigrateOptionPicker';
+import OverageAddOnSection from './OverageAddOnSection';
+import {
+  EMPTY_OVERAGE_ADD_ON,
+  overageAddOnIssue,
+  durationToCarry,
+  isCombinedMulti,
+  withCommonDuration,
+  primaryMigrateKind,
+  selectedMigrateKinds,
+  withOverageAddOn,
+  type MigrateKind,
+  type OverageAddOn
+} from '../utils/migrateSelection';
 import { sprawlConfigIssue, sprawlTermIssue } from '../utils/sprawlGroups';
 import {
   MANAGE_STANDALONE_DEFAULT_TERM_MONTHS,
   SERVICE_TERM_MIN_MONTHS,
   SERVICE_TERM_MAX_MONTHS,
+  isValidServiceTermMonths,
 } from '../utils/serviceTerm';
 import { isDataSprawlOption, isDataSprawlSelected, displayedServicePlan } from '../utils/dataSprawlOption';
 import {
@@ -81,6 +99,7 @@ const resolveExhibitCategory = (exhibit: any): 'messaging' | 'content' | 'email'
 
 // Per-pair rows are merged into the agreement even when nothing is ticked, so a type switch must empty them
 const NO_EXHIBIT_ROWS = { messagingConfigs: [], contentConfigs: [], emailConfigs: [] };
+const NO_EXHIBITS: string[] = [];
 
 // Manage Standalone keeps migrationType '' (the SaaS pricing path), so the label records that it was chosen.
 const MANAGE_STANDALONE_OPTION = '__manage-standalone__';
@@ -166,7 +185,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   const [messagingTiers, setMessagingTiers] = useState<Record<string, PricingTier>>({});
   const [emailTiers, setEmailTiers] = useState<Record<string, PricingTier>>({});
 
-  const { clearSprawlMemory, updateSprawlConfig } = useSprawlGroups(config, setConfig, selectedExhibits);
+  // Multi + Data Sprawl keeps its sprawl exhibits apart from the pair exhibits in selectedExhibits.
+  const { clearSprawlMemory, updateSprawlConfig } = useSprawlGroups(
+    config,
+    setConfig,
+    isMultiWithSprawl(config) ? (config.dataSprawlExhibitIds || NO_EXHIBITS) : selectedExhibits
+  );
 
   // Shared instance type state - common for all project configurations
   const [sharedInstanceType, setSharedInstanceType] = useState<string>('Small');
@@ -195,16 +219,33 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       .catch(() => {});
   };
 
+  // Saves a new main agreement. The config goes up before the exhibits, because the parent
+  // clears its exhibits when the agreement type changes and a carried-over list must survive that.
+  const commitPrimaryConfig = (newConfig: ConfigurationData, exhibits: string[] | null) => {
+    setConfig(newConfig);
+    clearSprawlMemory();
+    setCombination(newConfig.combination || '');
+    onConfigurationChange(newConfig);
+    if (exhibits) onExhibitsChange(exhibits);
+    try {
+      sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+      const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
+      navState.migrationType = newConfig.migrationType;
+      navState.combination = newConfig.combination;
+      sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+    } catch (err) { console.warn('Could not save to sessionStorage:', err); }
+  };
+
   // Shared by the Manage dropdown and Data-Sprawl, which is listed under Migrate but saved as a Manage agreement.
-  const selectManageAgreement = (value: string) => {
+  const buildManageAgreementConfig = (value: string, base: ConfigurationData): ConfigurationData => {
     const options = apiCombinations.filter(c => c.migrationType === 'Manage');
     const isStandalone = value === MANAGE_STANDALONE_OPTION;
     const newMigrationType = isStandalone ? '' : value;
     const selected = options.find(o => o.value === newMigrationType);
     const newRequiresUsers = selected ? selected.requiresUsers !== false : true;
     // A new agreement starts with no exhibits, so its sprawl groups are cleared too.
-    const newConfig = withSprawlConfigs({
-      ...config,
+    return withSprawlConfigs({
+      ...withoutMultiSprawl(base),
       migrationType: newMigrationType as any,
       manageAgreementLabel: isStandalone ? MANAGE_STANDALONE_LABEL : (selected?.label || ''),
       combination: 'manage-standalone',
@@ -213,21 +254,129 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       manageRequiresUsers: newRequiresUsers,
       // Clear manageUsers when switching to a no-users agreement
       // so the pricing calculation doesn't use a stale value
-      manageUsers: newRequiresUsers ? config.manageUsers : 0,
+      manageUsers: newRequiresUsers ? base.manageUsers : 0,
       serviceTermMonths: isStandalone ? MANAGE_STANDALONE_DEFAULT_TERM_MONTHS : undefined,
+      overageAddOn: undefined,
       ...NO_EXHIBIT_ROWS,
     }, []);
-    setConfig(newConfig);
-    clearSprawlMemory();
-    onExhibitsChange([]);
-    onConfigurationChange(newConfig);
-    try {
-      sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-      const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
-      navState.migrationType = newMigrationType;
-      navState.combination = 'manage-standalone';
-      sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
-    } catch (err) { console.warn('Could not save to sessionStorage:', err); }
+  };
+
+  const selectManageAgreement = (value: string) => {
+    commitPrimaryConfig(buildManageAgreementConfig(value, config), []);
+  };
+
+  // Multi combination, Overage Agreement, or nothing ('') as the main Migrate agreement.
+  const buildMigrateOptionConfig = (value: string, base: ConfigurationData): ConfigurationData => {
+    const selectedCombo = apiCombinations.find(c => c.value === value);
+    // Leaving Data-Sprawl returns to the plain Migrate plan.
+    const leavingDataSprawl = isDataSprawlSelected(base)
+      ? { servicePlan: 'Migrate' as const, manageAgreementLabel: '', serviceTermMonths: undefined }
+      : {};
+    return withSprawlConfigs({
+      ...withoutMultiSprawl(base),
+      ...leavingDataSprawl,
+      combination: value,
+      migrationType: (selectedCombo?.migrationType || '') as any,
+      timelineProjection: '',
+      overageAddOn: undefined,
+      ...NO_EXHIBIT_ROWS
+    }, []);
+  };
+
+  const migrateOptions: MigrateOption[] = [
+    ...apiCombinations
+      .filter(c => c.migrationType === 'Multi combination' || c.migrationType === 'Overage Agreement')
+      .sort((a, b) => ((a as any).displayOrder || 999) - ((b as any).displayOrder || 999))
+      .map(c => ({ value: c.value, label: c.label, kind: (c.migrationType === 'Overage Agreement' ? 'overage' : 'multi') as MigrateKind })),
+    ...apiCombinations.filter(isDataSprawlOption).map(c => ({ value: c.value, label: c.label, kind: 'sprawl' as MigrateKind }))
+  ];
+
+  const selectedMigrateValues = (): string[] => {
+    const valueOf = (kind: MigrateKind): string | undefined => {
+      if (kind === 'multi') return config.combination;
+      if (kind === 'sprawl') return isMultiWithSprawl(config) ? config.dataSprawlCombination : config.migrationType;
+      return isOverageAgreement(config) ? config.combination : migrateOptions.find(o => o.kind === 'overage')?.value;
+    };
+    return selectedMigrateKinds(config).map(valueOf).filter((v): v is string => !!v);
+  };
+
+  // The main agreement is Multi combination, else Data Sprawl, else Overage; the rest ride on it.
+  const applyMigrateSelection = (values: string[]) => {
+    const picked = (kind: MigrateKind) => migrateOptions.find(o => o.kind === kind && values.includes(o.value));
+    const multi = picked('multi');
+    const sprawl = picked('sprawl');
+    const overage = picked('overage');
+    const newPrimary = primaryMigrateKind([multi && 'multi', sprawl && 'sprawl', overage && 'overage'].filter(Boolean) as MigrateKind[]);
+    const oldKinds = selectedMigrateKinds(config);
+    const oldPrimary = primaryMigrateKind(oldKinds);
+
+    // What the user already entered for each part survives a change of main agreement.
+    const keptOverage: OverageAddOn = config.overageAddOn
+      ?? (oldPrimary === 'overage'
+        ? { instanceType: config.instanceType, numberOfInstances: config.numberOfInstances }
+        : EMPTY_OVERAGE_ADD_ON);
+    const hadSprawl = oldKinds.includes('sprawl');
+    const keptSprawl = {
+      ids: oldPrimary === 'sprawl' ? [...(selectedExhibits || [])] : [...(config.dataSprawlExhibitIds || [])],
+      groups: normalizeSprawlConfigs(config)
+    };
+    // The quote has one Duration; it moves to wherever the new main agreement keeps it.
+    const carriedDuration = durationToCarry(config, oldPrimary);
+
+    const primaryValue = newPrimary === 'multi' ? multi!.value
+      : newPrimary === 'sprawl' ? sprawl!.value
+      : newPrimary === 'overage' ? overage!.value
+      : '';
+    const currentPrimaryValue = oldPrimary === 'sprawl' ? config.migrationType : (config.combination || '');
+    const primaryChanged = newPrimary !== oldPrimary || primaryValue !== currentPrimaryValue;
+
+    let next = config;
+    let exhibits: string[] | null = null;
+    if (primaryChanged) {
+      exhibits = [];
+      if (newPrimary === 'sprawl') {
+        next = buildManageAgreementConfig(primaryValue, config);
+        if (hadSprawl) {
+          next = withSprawlConfigs(next, keptSprawl.groups);
+          exhibits = keptSprawl.ids;
+        }
+        if (isValidServiceTermMonths(carriedDuration)) next = { ...next, serviceTermMonths: carriedDuration };
+      } else {
+        next = buildMigrateOptionConfig(primaryValue, config);
+        if (newPrimary === 'overage' && config.overageAddOn) {
+          next = { ...next, instanceType: config.overageAddOn.instanceType, numberOfInstances: config.overageAddOn.numberOfInstances };
+        }
+        // Multi rows created from here on start at this Duration instead of 1.
+        if (newPrimary && carriedDuration > 0) next = { ...next, duration: carriedDuration };
+      }
+    }
+
+    if (newPrimary === 'multi') {
+      if (!sprawl) next = withoutMultiSprawl(next);
+      else if (!isMultiWithSprawl(next) || next.dataSprawlCombination !== sprawl.value) {
+        next = withMultiSprawl(next, sprawl.value);
+        if (hadSprawl) {
+          next = { ...withSprawlConfigs(next, keptSprawl.groups), dataSprawlExhibitIds: keptSprawl.ids };
+        }
+      }
+    }
+    if (newPrimary === 'multi' || newPrimary === 'sprawl') {
+      next = withOverageAddOn(next, overage ? keptOverage : undefined);
+    }
+    // Rows that had their own durations now share one: the longest, which the service term already used.
+    if (isCombinedMulti(next) && !isCombinedMulti(config)) {
+      next = withCommonDuration(next, durationToCarry(config, oldPrimary) || sharedMigrateDuration(next));
+    }
+
+    if (primaryChanged) {
+      commitPrimaryConfig(next, exhibits);
+      return;
+    }
+    if (next !== config) {
+      if (!isMultiWithSprawl(next)) clearSprawlMemory();
+      setConfig(next);
+      persistConfig(next);
+    }
   };
 
   useEffect(() => {
@@ -574,6 +723,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             mergeGroupsBySameLabel(emailCombinationMap);
 
             // Convert maps to config arrays (one config per combination, not per exhibit)
+            // A combined quote has one Duration, so a new row starts at it rather than at 1.
+            const newRowDuration = (isMultiWithSprawl(config) || hasOverageAddOn(config)) && Number(config.duration) >= 1
+              ? Number(config.duration)
+              : 1;
             const newMessagingConfigs: ConfigurationData['messagingConfigs'] = [];
             const newContentConfigs: ConfigurationData['contentConfigs'] = [];
             const newEmailConfigs: ConfigurationData['emailConfigs'] = [];
@@ -613,7 +766,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   numberOfUsers: config.messagingConfig?.numberOfUsers || 1,
                   instanceType: sharedInstanceType,
                   numberOfInstances: config.messagingConfig?.numberOfInstances || 1,
-                  duration: config.messagingConfig?.duration || 1,
+                  duration: config.messagingConfig?.duration || newRowDuration,
                   messages: config.messagingConfig?.messages || 1,
                   planType: exhibitPlanType, // Store plan type from exhibit
                 });
@@ -652,7 +805,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   numberOfUsers: config.contentConfig?.numberOfUsers || 1,
                   instanceType: sharedInstanceType,
                   numberOfInstances: config.contentConfig?.numberOfInstances || 1,
-                  duration: config.contentConfig?.duration || 1,
+                  duration: config.contentConfig?.duration || newRowDuration,
                   dataSizeGB: config.contentConfig?.dataSizeGB || 1,
                   planType: exhibitPlanType, // Store plan type from exhibit
                 });
@@ -679,7 +832,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   numberOfUsers: 1,
                   instanceType: sharedInstanceType,
                   numberOfInstances: 1,
-                  duration: 1,
+                  duration: newRowDuration,
                   messages: 1,
                 }
               );
@@ -1362,6 +1515,56 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
   };
 
+  const renderCustomerLocationField = (id: string) => (
+    <div className="group">
+      <label htmlFor={id} className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+        <div className="w-8 h-8 bg-gradient-to-br from-sky-500 to-sky-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+          <Sparkles className="w-4 h-4 text-white" />
+        </div>
+        Customer Location
+      </label>
+      <select
+        id={id}
+        value={config.customerLocation || '1'}
+        onChange={(e) => handleChange('customerLocation', e.target.value as '1' | '0.8' | '0.65')}
+        className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
+      >
+        <option value="1">Region 1 — US, Canada, UK (x1.0)</option>
+        <option value="0.8">Region 2 — AUS, NZ, EU (x0.8)</option>
+        <option value="0.65">Region 3 — Rest of World (x0.65)</option>
+      </select>
+    </div>
+  );
+
+  // One Duration (Months) input; it sets the agreement term and end date, never the price.
+  const serviceTermField = (id: string) => (
+    <div className="group">
+      <label htmlFor={id} className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+        <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+          <Clock className="w-4 h-4 text-white" aria-hidden="true" />
+        </div>
+        Duration (Months)
+      </label>
+      <input
+        id={id}
+        type="number"
+        min={SERVICE_TERM_MIN_MONTHS}
+        max={SERVICE_TERM_MAX_MONTHS}
+        step="1"
+        aria-required="true"
+        value={config.serviceTermMonths ?? ''}
+        onChange={(e) => {
+          // Keep decimals as typed so validation rejects them instead of truncating 2.5 to 2.
+          const n = e.target.value === '' ? NaN : Number(e.target.value);
+          handleChange('serviceTermMonths', Number.isNaN(n) ? undefined : n);
+        }}
+        className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
+        placeholder="Enter duration in months"
+        autoComplete="off"
+      />
+    </div>
+  );
+
   // One Discount (%) card shared by every plan. The value is global (cpq_discount_session
   // + cpq_discount), which is why Manage totals already discounted before this field existed.
   // Manage plan inputs live in their own full-width section below the top cards, matching
@@ -1375,35 +1578,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     const sprawlTypes = normalizeSprawlTypes(config);
     const sprawlGroups = normalizeSprawlConfigs(config);
     const isDataSprawl = manageAgreementCard(config) === 'standalone';
-
-    // One Duration (Months) input; it sets the agreement term and end date, never the price.
-    const serviceTermField = (id: string) => (
-      <div className="group">
-        <label htmlFor={id} className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-          <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-            <Clock className="w-4 h-4 text-white" aria-hidden="true" />
-          </div>
-          Duration (Months)
-        </label>
-        <input
-          id={id}
-          type="number"
-          min={SERVICE_TERM_MIN_MONTHS}
-          max={SERVICE_TERM_MAX_MONTHS}
-          step="1"
-          aria-required="true"
-          value={config.serviceTermMonths ?? ''}
-          onChange={(e) => {
-            // Keep decimals as typed so validation rejects them instead of truncating 2.5 to 2.
-            const n = e.target.value === '' ? NaN : Number(e.target.value);
-            handleChange('serviceTermMonths', Number.isNaN(n) ? undefined : n);
-          }}
-          className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
-          placeholder="Enter duration in months"
-          autoComplete="off"
-        />
-      </div>
-    );
 
     const QUANTITY = {
       Content: { key: 'manageDataGB' as const, label: 'Content data size in GB', grad: 'from-emerald-500 to-emerald-600', ph: 'Enter data size in GB' },
@@ -1611,6 +1785,17 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     );
   };
 
+  // Multi combination ticked with Data Sprawl or Overage runs on one Duration, set in its own card.
+  const combinedMulti = isCombinedMulti(config);
+
+  // Overage rides on another agreement; it shows these shared fields only where that one does not.
+  const isMultiConfig = config.migrationType === 'Multi combination' && !!config.combination;
+  const multiLocationShown = isMultiConfig && Array.isArray(selectedExhibits) && selectedExhibits.length > 0;
+  const manageSectionShown = config.servicePlan === 'Manage' && isManageCombinationChosen(config) && hasManageInputs(config);
+  const discountShownElsewhere =
+    (isMultiConfig && (selectedExhibitCategories.hasMessaging || selectedExhibitCategories.hasContent || selectedExhibitCategories.hasEmail))
+    || manageSectionShown;
+
   const handleDiscountInput = (raw: string) => {
     setDiscountExceeded(isDiscountAboveMax(raw, maxDiscountPercent));
     persistDiscount(sanitizeDiscountInput(raw, maxDiscountPercent));
@@ -1724,6 +1909,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         alert(termIssue);
         return;
       }
+      const overageIssue = overageAddOnIssue(config);
+      if (overageIssue) {
+        alert(overageIssue);
+        return;
+      }
       // Legacy per-type sessions; group mode already passed above and its mirrors satisfy these.
       const sprawlTypes = normalizeSprawlTypes(config);
       if (sprawlTypes.length > 0) {
@@ -1775,6 +1965,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       // Require at least one exhibit (Messaging, Content, or Email)
       if (!selectedExhibitCategories.hasMessaging && !selectedExhibitCategories.hasContent && !selectedExhibitCategories.hasEmail) {
         alert('Please select at least one exhibit to proceed.');
+        return;
+      }
+      const addOnProblem = multiSprawlIssue(config) || overageAddOnIssue(config);
+      if (addOnProblem) {
+        alert(addOnProblem);
         return;
       }
       
@@ -2279,7 +2474,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   // Clear migrationType/combination when switching plans to avoid state conflicts
                   // Sprawl groups belong to the exhibits cleared below, so they go with them.
                   const newConfig: ConfigurationData = withSprawlConfigs({
-                    ...config,
+                    ...withoutMultiSprawl(config),
+                    overageAddOn: undefined,
                     servicePlan: plan,
                     timelineProjection: '',
                     migrationType: '' as any,
@@ -2342,58 +2538,13 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 );
               })()}
 
-              {/* Migrate: Show all combinations for Migrate service plan */}
+              {/* Migrate: tick one or more of Multi-Combination, Overage and Data Sprawl */}
               {migrationOrTimeline === 'migration' && (config.servicePlan === 'Migrate' || isDataSprawlSelected(config)) && (
-                <select
-                  value={isDataSprawlSelected(config) ? config.migrationType : config.combination}
-                  onChange={(e) => {
-                    const newCombination = e.target.value;
-                    // Find the combination to get its migrationType
-                    const selectedCombo = apiCombinations.find(c => c.value === newCombination);
-                    if (selectedCombo && isDataSprawlOption(selectedCombo)) {
-                      selectManageAgreement(newCombination);
-                      return;
-                    }
-                    const newMigrationType = selectedCombo?.migrationType || '';
-                    // Leaving Data-Sprawl returns to the plain Migrate plan.
-                    const leavingDataSprawl = isDataSprawlSelected(config)
-                      ? { servicePlan: 'Migrate' as const, manageAgreementLabel: '', serviceTermMonths: undefined }
-                      : {};
-
-                    const newConfig = withSprawlConfigs({
-                      ...config,
-                      ...leavingDataSprawl,
-                      combination: newCombination,
-                      migrationType: newMigrationType as any,
-                      timelineProjection: '',
-                      ...NO_EXHIBIT_ROWS
-                    }, []);
-                    setConfig(newConfig);
-                    clearSprawlMemory();
-                    setCombination(newCombination);
-                    onExhibitsChange([]);
-                    onConfigurationChange(newConfig);
-                    try {
-                      sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                      const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
-                      navState.migrationType = newMigrationType;
-                      navState.combination = newCombination;
-                      sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
-                    } catch (err) { console.warn('Could not save to sessionStorage:', err); }
-                  }}
-                  className="w-full px-6 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white hover:border-slate-300 text-base font-medium"
-                >
-                  <option value="">Select Combination</option>
-                  {apiCombinations
-                    .filter(c => c.migrationType === 'Multi combination' || c.migrationType === 'Overage Agreement')
-                    .sort((a, b) => (a.displayOrder || 999) - (b.displayOrder || 999))
-                    .map(combo => (
-                      <option key={combo.value} value={combo.value}>{combo.label}</option>
-                    ))}
-                  {apiCombinations.filter(isDataSprawlOption).map(combo => (
-                    <option key={combo.value} value={combo.value}>{combo.label}</option>
-                  ))}
-                </select>
+                <MigrateOptionPicker
+                  options={migrateOptions}
+                  selected={selectedMigrateValues()}
+                  onChange={applyMigrateSelection}
+                />
               )}
 
               {/* Manage Standalone — collects E99 (manageUsers) and E100 (manageDataGB).
@@ -2930,9 +3081,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
-          {/* Customer Location + Common Instance Type — side-by-side on lg, stacked on smaller screens */}
+          {/* Customer Location + Common Instance Type (+ Duration on a combined quote) — side-by-side on lg, stacked on smaller screens */}
           {config.migrationType === 'Multi combination' && config.combination && Array.isArray(selectedExhibits) && selectedExhibits.length > 0 && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+            <div className={`grid grid-cols-1 ${combinedMulti ? 'lg:grid-cols-3' : 'lg:grid-cols-2'} gap-4 mb-6`}>
               {/* Common Customer Location (Region) — Multi combination shared field */}
               <div className="bg-gradient-to-r from-sky-50 to-blue-50 rounded-xl shadow-md border-2 border-sky-200 p-6">
                 <div className="flex items-center">
@@ -3032,6 +3183,37 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </div>
             );
           })()}
+
+              {combinedMulti && (
+                <div data-testid="common-duration" className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl shadow-md border-2 border-orange-200 p-6">
+                  <label htmlFor="common-duration-months" className="block text-base font-bold text-gray-900 mb-1">
+                    Duration (Months)
+                  </label>
+                  <p className="text-sm text-gray-600 mb-3">
+                    One duration for the whole quote: every combination, Data Sprawl, Overage and the service term.
+                  </p>
+                  <input
+                    id="common-duration-months"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={sharedMigrateDuration(config) || ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const numValue = value === '' ? 0 : parseInt(value) || 0;
+                      setConfig(prev => {
+                        const newConfig = withCommonDuration(prev, numValue);
+                        persistConfig(newConfig);
+                        onConfigurationChange(newConfig);
+                        return newConfig;
+                      });
+                    }}
+                    className="w-full px-4 py-3 border-2 border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-base font-medium shadow-sm hover:border-orange-400"
+                    placeholder="Enter duration"
+                    autoComplete="off"
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -3080,6 +3262,48 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 const sectionId = `messaging-${messagingCfg.exhibitId}`;
                 const isCollapsed = collapsedSections.has(sectionId);
                 
+                // A combined quote has no Duration here, so this field fills that slot in the right column.
+                const messagingThirdField = (
+                          <div className="group">
+                            <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                              <div className="w-8 h-8 bg-teal-500 rounded-full flex items-center justify-center">
+                                <MessageSquare className="w-4 h-4 text-white" />
+                              </div>
+                              Messages
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={messagingCfg.messages || ''}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const numValue = value === '' ? 0 : parseInt(value) || 0;
+                                setConfig(prev => {
+                                  const newConfig = {
+                                    ...prev,
+                                    messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
+                                      i === messagingIndex ? { ...cfg, messages: numValue } : cfg
+                                    ),
+                                  };
+                                  // Explicitly save to sessionStorage
+                                  try {
+                                    sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                  } catch (e) {
+                                    console.warn('Could not save config:', e);
+                                  }
+                                  onConfigurationChange(newConfig);
+                                  return newConfig;
+                                });
+                              }}
+                              className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                              placeholder="Enter number of messages"
+                              autoComplete="off"
+                            />
+                            <p className="text-xs text-gray-500 mt-2">Number of messages for the messaging migration.</p>
+                          </div>
+                );
+
                 return (
                 <div
                   key={messagingCfg.exhibitId}
@@ -3198,44 +3422,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         </div>
 
                         {/* Messaging: Messages (required) */}
-                        <div className="group">
-                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                            <div className="w-8 h-8 bg-teal-500 rounded-full flex items-center justify-center">
-                              <MessageSquare className="w-4 h-4 text-white" />
-                            </div>
-                            Messages
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={messagingCfg.messages || ''}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              const numValue = value === '' ? 0 : parseInt(value) || 0;
-                              setConfig(prev => {
-                                const newConfig = {
-                                  ...prev,
-                                  messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
-                                    i === messagingIndex ? { ...cfg, messages: numValue } : cfg
-                                  ),
-                                };
-                                // Explicitly save to sessionStorage
-                                try {
-                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                                } catch (e) {
-                                  console.warn('Could not save config:', e);
-                                }
-                                onConfigurationChange(newConfig);
-                                return newConfig;
-                              });
-                            }}
-                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
-                            placeholder="Enter number of messages"
-                            autoComplete="off"
-                          />
-                          <p className="text-xs text-gray-500 mt-2">Number of messages for the messaging migration.</p>
-                        </div>
+                        {!combinedMulti && messagingThirdField}
                       </div>
 
                       {/* Right Column of Inputs */}
@@ -3278,44 +3465,47 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           </select>
                         </div>
 
-                        {/* Messaging: Duration */}
-                        <div className="group">
-                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-                              <Clock className="w-4 h-4 text-white" />
-                            </div>
-                            Duration (Months)
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={messagingCfg.duration || ''}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              const numValue = value === '' ? 0 : parseInt(value) || 0;
-                              setConfig(prev => {
-                                const newConfig = {
-                                  ...prev,
-                                  messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
-                                    i === messagingIndex ? { ...cfg, duration: numValue } : cfg
-                                  ),
-                                };
-                                // Explicitly save to sessionStorage
-                                try {
-                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                                } catch (e) {
-                                  console.warn('Could not save config:', e);
-                                }
-                                onConfigurationChange(newConfig);
-                                return newConfig;
-                              });
-                            }}
-                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
-                            placeholder="Enter duration"
-                            autoComplete="off"
-                          />
-                        </div>
+                        {/* Messaging: Duration — a combined quote uses the common Duration card instead */}
+                        {!combinedMulti && (
+                          <div className="group">
+                            <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                              <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+                                <Clock className="w-4 h-4 text-white" />
+                              </div>
+                              Duration (Months)
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={messagingCfg.duration || ''}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const numValue = value === '' ? 0 : parseInt(value) || 0;
+                                setConfig(prev => {
+                                  const newConfig = {
+                                    ...prev,
+                                    messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
+                                      i === messagingIndex ? { ...cfg, duration: numValue } : cfg
+                                    ),
+                                  };
+                                  // Explicitly save to sessionStorage
+                                  try {
+                                    sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                  } catch (e) {
+                                    console.warn('Could not save config:', e);
+                                  }
+                                  onConfigurationChange(newConfig);
+                                  return newConfig;
+                                });
+                              }}
+                              className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                              placeholder="Enter duration"
+                              autoComplete="off"
+                            />
+                          </div>
+                        )}
+                        {combinedMulti && messagingThirdField}
                       </div>
                     </div>
 
@@ -3412,6 +3602,48 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 const sectionId = `content-${contentCfg.exhibitId}`;
                 const isCollapsed = collapsedSections.has(sectionId);
                 
+                // A combined quote has no Duration here, so this field fills that slot in the right column.
+                const contentThirdField = (
+                          <div className="group">
+                            <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                              <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                                <Database className="w-4 h-4 text-white" />
+                              </div>
+                              Data Size (GB)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={contentCfg.dataSizeGB || ''}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const numValue = value === '' ? 0 : parseInt(value) || 0;
+                                setConfig(prev => {
+                                  const newConfig = {
+                                    ...prev,
+                                    contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                                      i === contentIndex ? { ...cfg, dataSizeGB: numValue } : cfg
+                                    ),
+                                  };
+                                  // Explicitly save to sessionStorage
+                                  try {
+                                    sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                  } catch (e) {
+                                    console.warn('Could not save config:', e);
+                                  }
+                                  onConfigurationChange(newConfig);
+                                  return newConfig;
+                                });
+                              }}
+                              className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                              placeholder="Enter data size in GB"
+                              autoComplete="off"
+                            />
+                            <p className="text-xs text-gray-500 mt-2">Total data size for the content migration.</p>
+                          </div>
+                );
+
                 return (
                 <div
                   key={contentCfg.exhibitId}
@@ -3530,44 +3762,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         </div>
 
                         {/* Content: Data Size (required) */}
-                        <div className="group">
-                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                            <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
-                              <Database className="w-4 h-4 text-white" />
-                            </div>
-                            Data Size (GB)
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={contentCfg.dataSizeGB || ''}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              const numValue = value === '' ? 0 : parseInt(value) || 0;
-                              setConfig(prev => {
-                                const newConfig = {
-                                  ...prev,
-                                  contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
-                                    i === contentIndex ? { ...cfg, dataSizeGB: numValue } : cfg
-                                  ),
-                                };
-                                // Explicitly save to sessionStorage
-                                try {
-                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                                } catch (e) {
-                                  console.warn('Could not save config:', e);
-                                }
-                                onConfigurationChange(newConfig);
-                                return newConfig;
-                              });
-                            }}
-                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
-                            placeholder="Enter data size in GB"
-                            autoComplete="off"
-                          />
-                          <p className="text-xs text-gray-500 mt-2">Total data size for the content migration.</p>
-                        </div>
+                        {!combinedMulti && contentThirdField}
                       </div>
 
                       {/* Right Column of Inputs */}
@@ -3610,44 +3805,47 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           </select>
                         </div>
 
-                        {/* Content: Duration */}
-                        <div className="group">
-                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-                              <Clock className="w-4 h-4 text-white" />
-                            </div>
-                            Duration (Months)
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={contentCfg.duration || ''}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              const numValue = value === '' ? 0 : parseInt(value) || 0;
-                              setConfig(prev => {
-                                const newConfig = {
-                                  ...prev,
-                                  contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
-                                    i === contentIndex ? { ...cfg, duration: numValue } : cfg
-                                  ),
-                                };
-                                // Explicitly save to sessionStorage
-                                try {
-                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                                } catch (e) {
-                                  console.warn('Could not save config:', e);
-                                }
-                                onConfigurationChange(newConfig);
-                                return newConfig;
-                              });
-                            }}
-                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
-                            placeholder="Enter duration"
-                            autoComplete="off"
-                          />
-                        </div>
+                        {/* Content: Duration — a combined quote uses the common Duration card instead */}
+                        {!combinedMulti && (
+                          <div className="group">
+                            <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                              <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+                                <Clock className="w-4 h-4 text-white" />
+                              </div>
+                              Duration (Months)
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={contentCfg.duration || ''}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const numValue = value === '' ? 0 : parseInt(value) || 0;
+                                setConfig(prev => {
+                                  const newConfig = {
+                                    ...prev,
+                                    contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                                      i === contentIndex ? { ...cfg, duration: numValue } : cfg
+                                    ),
+                                  };
+                                  // Explicitly save to sessionStorage
+                                  try {
+                                    sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                  } catch (e) {
+                                    console.warn('Could not save config:', e);
+                                  }
+                                  onConfigurationChange(newConfig);
+                                  return newConfig;
+                                });
+                              }}
+                              className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                              placeholder="Enter duration"
+                              autoComplete="off"
+                            />
+                          </div>
+                        )}
+                        {combinedMulti && contentThirdField}
                       </div>
                     </div>
 
@@ -3746,6 +3944,38 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 const sectionId = `email-${emailCfg.exhibitId}`;
                 const isCollapsed = collapsedSections.has(sectionId);
                 
+                // A combined quote has no Duration here, so this field fills that slot in the right column.
+                const emailThirdField = (
+                          <div className="group">
+                            <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                              <div className="w-8 h-8 bg-teal-500 rounded-full flex items-center justify-center">
+                                <Database className="w-4 h-4 text-white" />
+                              </div>
+                              Data Size (GB)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={emailCfg.dataSizeGB || ''}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const numValue = value === '' ? 0 : parseFloat(value) || 0;
+                                setConfig(prev => ({
+                                  ...prev,
+                                  emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                                    i === emailIndex ? { ...cfg, dataSizeGB: numValue } : cfg
+                                  ),
+                                }));
+                              }}
+                              className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                              placeholder="Enter data size in GB"
+                              autoComplete="off"
+                            />
+                            <p className="text-xs text-gray-500 mt-2">Data size in gigabytes for the email migration (optional).</p>
+                          </div>
+                );
+
                 return (
                 <div
                   key={emailCfg.exhibitId}
@@ -3864,34 +4094,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         </div>
 
                         {/* Email: Data Size (GB) */}
-                        <div className="group">
-                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                            <div className="w-8 h-8 bg-teal-500 rounded-full flex items-center justify-center">
-                              <Database className="w-4 h-4 text-white" />
-                            </div>
-                            Data Size (GB)
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={emailCfg.dataSizeGB || ''}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              const numValue = value === '' ? 0 : parseFloat(value) || 0;
-                              setConfig(prev => ({
-                                ...prev,
-                                emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
-                                  i === emailIndex ? { ...cfg, dataSizeGB: numValue } : cfg
-                                ),
-                              }));
-                            }}
-                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
-                            placeholder="Enter data size in GB"
-                            autoComplete="off"
-                          />
-                          <p className="text-xs text-gray-500 mt-2">Data size in gigabytes for the email migration (optional).</p>
-                        </div>
+                        {!combinedMulti && emailThirdField}
                       </div>
 
                       {/* Right Column of Inputs */}
@@ -3934,44 +4137,47 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           </select>
                         </div>
 
-                        {/* Email: Duration */}
-                        <div className="group">
-                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-                              <Clock className="w-4 h-4 text-white" />
-                            </div>
-                            Duration (Months)
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={emailCfg.duration || ''}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              const numValue = value === '' ? 0 : parseInt(value) || 0;
-                              setConfig(prev => {
-                                const newConfig = {
-                                  ...prev,
-                                  emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
-                                    i === emailIndex ? { ...cfg, duration: numValue } : cfg
-                                  ),
-                                };
-                                // Explicitly save to sessionStorage
-                                try {
-                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                                } catch (e) {
-                                  console.warn('Could not save config:', e);
-                                }
-                                onConfigurationChange(newConfig);
-                                return newConfig;
-                              });
-                            }}
-                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
-                            placeholder="Enter duration"
-                            autoComplete="off"
-                          />
-                        </div>
+                        {/* Email: Duration — a combined quote uses the common Duration card instead */}
+                        {!combinedMulti && (
+                          <div className="group">
+                            <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                              <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+                                <Clock className="w-4 h-4 text-white" />
+                              </div>
+                              Duration (Months)
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={emailCfg.duration || ''}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const numValue = value === '' ? 0 : parseInt(value) || 0;
+                                setConfig(prev => {
+                                  const newConfig = {
+                                    ...prev,
+                                    emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                                      i === emailIndex ? { ...cfg, duration: numValue } : cfg
+                                    ),
+                                  };
+                                  // Explicitly save to sessionStorage
+                                  try {
+                                    sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                  } catch (e) {
+                                    console.warn('Could not save config:', e);
+                                  }
+                                  onConfigurationChange(newConfig);
+                                  return newConfig;
+                                });
+                              }}
+                              className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                              placeholder="Enter duration"
+                              autoComplete="off"
+                            />
+                          </div>
+                        )}
+                        {combinedMulti && emailThirdField}
                       </div>
                     </div>
 
@@ -4034,6 +4240,36 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               })}
             </>
           )}
+
+          <MultiDataSprawlSection
+            config={config}
+            label={apiCombinations.find(c => c.value === config.dataSprawlCombination)?.label || 'Data Sprawl'}
+            onExhibitsChange={(ids) => {
+              setConfig(prev => {
+                const current = prev.dataSprawlExhibitIds || [];
+                // The picker re-reports its selection on load; an unchanged list must not re-render.
+                if (current.length === ids.length && current.every((id, i) => id === ids[i])) return prev;
+                const next = { ...prev, dataSprawlExhibitIds: [...ids] };
+                persistConfig(next);
+                return next;
+              });
+            }}
+            onGroupChange={updateSprawlConfig}
+          />
+
+          <OverageAddOnSection
+            config={config}
+            customerLocationField={!multiLocationShown && renderCustomerLocationField('overage-add-on-location')}
+            discountField={!discountShownElsewhere && renderDiscountField()}
+            durationField={isDataSprawlSelected(config) && !manageSectionShown && serviceTermField('overage-add-on-service-term')}
+            onChange={(addOn) => {
+              setConfig(prev => {
+                const next = withOverageAddOn(prev, addOn);
+                persistConfig(next);
+                return next;
+              });
+            }}
+          />
 
           {/* Multi combination: Discount input + Add More Exhibits — side-by-side */}
           {config.migrationType === 'Multi combination' && config.combination &&
@@ -4106,23 +4342,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
               {/* Customer Location (region multiplier) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-6">
-                <div className="group">
-                  <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                    <div className="w-8 h-8 bg-gradient-to-br from-sky-500 to-sky-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                      <Sparkles className="w-4 h-4 text-white" />
-                    </div>
-                    Customer Location
-                  </label>
-                  <select
-                    value={config.customerLocation || '1'}
-                    onChange={(e) => handleChange('customerLocation', e.target.value as '1' | '0.8' | '0.65')}
-                    className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
-                  >
-                    <option value="1">Region 1 — US, Canada, UK (x1.0)</option>
-                    <option value="0.8">Region 2 — AUS, NZ, EU (x0.8)</option>
-                    <option value="0.65">Region 3 — Rest of World (x0.65)</option>
-                  </select>
-                </div>
+                {renderCustomerLocationField('customer-location')}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

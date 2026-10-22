@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event';
 
 import ConfigurationForm from '../../src/components/ConfigurationForm';
+import { chooseMigrateOnly } from './helpers/migratePicker';
 import type { ConfigurationData } from '../../src/types/pricing';
 
 const COMBINATIONS = [
@@ -59,8 +60,7 @@ const section = (container: HTMLElement) =>
 
 async function openDataSprawlWithExhibit() {
   const ctx = renderForm();
-  const migrate = await waitFor(() => selectWithOption(ctx.container, 'data-sprawl'));
-  await ctx.user.selectOptions(migrate, 'data-sprawl');
+  await chooseMigrateOnly(ctx.user, 'data-sprawl');
   ctx.selectExhibits(['dbx']);
   await waitFor(() => expect(screen.queryAllByTestId('sprawl-group')).toHaveLength(1));
   return ctx;
@@ -89,8 +89,7 @@ afterEach(() => {
 describe('Data Sprawl — Duration (Months)', () => {
   it('appears only once an exhibit is ticked, between the cards and Discount', async () => {
     const ctx = renderForm();
-    const migrate = await waitFor(() => selectWithOption(ctx.container, 'data-sprawl'));
-    await ctx.user.selectOptions(migrate, 'data-sprawl');
+    await chooseMigrateOnly(ctx.user, 'data-sprawl');
     expect(termInput()).toBeNull();
 
     ctx.selectExhibits(['dbx']);
@@ -143,7 +142,7 @@ describe('Data Sprawl — Duration (Months)', () => {
   it('switching to another Migrate option clears the term', async () => {
     const ctx = await openDataSprawlWithExhibit();
     await ctx.user.type(termInput()!, '12');
-    await ctx.user.selectOptions(selectWithOption(ctx.container, 'data-sprawl'), 'overage-agreement');
+    await chooseMigrateOnly(ctx.user, 'overage-agreement');
     const config = lastConfig(ctx.onConfigurationChange);
     expect(config.servicePlan).toBe('Migrate');
     expect(config.serviceTermMonths).toBeUndefined();

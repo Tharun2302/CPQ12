@@ -156,17 +156,20 @@ export function applySprawlGroups(
   return unchanged ? prev : next;
 }
 
+// The first group missing an input it is priced on, or null.
+export function sprawlGroupsIssue(config: ConfigurationData): string | null {
+  for (const group of normalizeSprawlConfigs(config)) {
+    const label = sprawlGroupLabel(group.type, group.exhibitName);
+    if (group.users <= 0) return `Please enter the number of users for ${label}`;
+    if (group.type === 'Content' && group.quantity <= 0) return `Please enter the data size in GB for ${label}`;
+  }
+  return null;
+}
+
 // Shared by the form's submit and App's recalculation gate so the two cannot diverge.
 export function sprawlConfigIssue(config: ConfigurationData | undefined | null): string | null {
   if (!config || config.servicePlan !== 'Manage') return null;
-  if (hasSprawlConfigs(config)) {
-    for (const group of normalizeSprawlConfigs(config)) {
-      const label = sprawlGroupLabel(group.type, group.exhibitName);
-      if (group.users <= 0) return `Please enter the number of users for ${label}`;
-      if (group.type === 'Content' && group.quantity <= 0) return `Please enter the data size in GB for ${label}`;
-    }
-    return null;
-  }
+  if (hasSprawlConfigs(config)) return sprawlGroupsIssue(config);
   // A legacy per-type config keeps its existing checks.
   if (normalizeSprawlTypes(config).length > 0) return null;
   // mange+sprawl has no exhibits yet, so only Data-Sprawl requires one.
