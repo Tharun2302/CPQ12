@@ -13,7 +13,7 @@ import {
   withSprawlConfigs
 } from '../../src/utils/pricing';
 import { withMultiSprawl } from '../../src/utils/multiSprawl';
-import { buildSprawlAgreementData } from '../../src/utils/sprawlAgreement';
+import { buildSprawlAgreementData, withDiscountRow } from '../../src/utils/sprawlAgreement';
 import { DocxTemplateProcessor } from '../../src/utils/docxTemplateProcessor';
 import {
   migrateAddOnLineItems,
@@ -110,15 +110,15 @@ describe('overage add-on pricing', () => {
 describe('overage add-on rows and checks', () => {
   it('builds one agreement row', () => {
     expect(overageLineItem(multi({ overageAddOn: OVERAGE }))).toEqual({
-      name: 'Overage Agreement',
-      description: 'Standard Instance Type | 2 Instances | Valid for 3 Months',
+      name: 'Server Instance',
+      description: '2 Standard Instance in a High-End Enterprise Server 3 Months',
       price: '$6,000.00'
     });
     expect(overageLineItem(multi())).toBeNull();
   });
 
   it('lists Data Sprawl rows before the Overage row', () => {
-    expect(migrateAddOnLineItems(allThree()).map(i => i.name)).toEqual(['CloudFuze Data Sprawl', 'Overage Agreement']);
+    expect(migrateAddOnLineItems(allThree()).map(i => i.name)).toEqual(['CloudFuze Data Sprawl', 'Server Instance']);
   });
 
   it('asks for instances and duration', () => {
@@ -152,17 +152,29 @@ describe('selected Migrate options', () => {
 });
 
 describe('Data Sprawl agreement with an Overage row', () => {
-  it('injects the Overage row under the sprawl rows, above Total Price', () => {
-    const config = dataSprawl({ overageAddOn: OVERAGE });
+  const render = (rows: ReturnType<typeof buildSprawlAgreementData>['rows']) => {
     const doc = new Docxtemplater(new PizZip(fs.readFileSync('backend-templates/manage-datasprawl.docx')), {
       paragraphLoop: true, linebreaks: true, delimiters: { start: '{{', end: '}}' }, nullGetter: () => '',
     });
-    doc.render({ sprawlRows: buildSprawlAgreementData(config, null).rows });
-    const xml = doc.getZip().file('word/document.xml')!.asText();
-    const injected = (DocxTemplateProcessor.getInstance() as any).injectCustomLineItemRows(xml, migrateAddOnLineItems(config), null) as string;
-    const text = injected.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-    expect(text.indexOf('Overage Agreement')).toBeGreaterThan(text.indexOf('CloudFuze Data Sprawl'));
-    expect(text).toContain('Standard Instance Type | 2 Instances | Valid for 3 Months');
-    expect(text.indexOf('Overage Agreement')).toBeLessThan(text.indexOf('Total Price'));
+    doc.render({ sprawlRows: rows });
+    return doc.getZip().file('word/document.xml')!.asText();
+  };
+  const inject = (xml: string, config: ConfigurationData) =>
+    ((DocxTemplateProcessor.getInstance() as any).injectCustomLineItemRows(xml, migrateAddOnLineItems(config), null, ['CloudFuze Migrate', 'CloudFuze Data Sprawl']) as string)
+      .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+
+  it('injects the Overage row directly under the sprawl rows, above Total Price', () => {
+    const config = dataSprawl({ overageAddOn: OVERAGE });
+    const text = inject(render(buildSprawlAgreementData(config, null).rows), config);
+    expect(text.indexOf('Server Instance')).toBeGreaterThan(text.indexOf('CloudFuze Data Sprawl'));
+    expect(text).toContain('2 Standard Instance in a High-End Enterprise Server 3 Months');
+    expect(text.indexOf('Server Instance')).toBeLessThan(text.indexOf('Total Price'));
+  });
+
+  it('keeps it above the Discount row of the sprawl loop', () => {
+    const config = dataSprawl({ overageAddOn: OVERAGE });
+    const text = inject(render(withDiscountRow(buildSprawlAgreementData(config, null).rows, 10, 50)), config);
+    expect(text.indexOf('Server Instance')).toBeGreaterThan(text.indexOf('CloudFuze Data Sprawl'));
+    expect(text.indexOf('Server Instance')).toBeLessThan(text.indexOf('Discount'));
   });
 });

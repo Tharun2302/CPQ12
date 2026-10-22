@@ -39,12 +39,10 @@ export function overageAddOnIssue(config: ConfigurationData | undefined | null):
 export function overageLineItem(config: ConfigurationData | undefined | null): MultiSprawlLineItem | null {
   if (!config || !hasOverageAddOn(config)) return null;
   const { instanceType, numberOfInstances } = config.overageAddOn!;
-  const duration = sharedMigrateDuration(config);
-  const instances = `${numberOfInstances} Instance${numberOfInstances === 1 ? '' : 's'}`;
-  const months = `${duration} Month${duration === 1 ? '' : 's'}`;
+  // Worded exactly as the Overage Agreement template's own Server Instance row.
   return {
-    name: 'Overage Agreement',
-    description: `${instanceType} Instance Type | ${instances} | Valid for ${months}`,
+    name: 'Server Instance',
+    description: `${numberOfInstances} ${instanceType} Instance in a High-End Enterprise Server ${sharedMigrateDuration(config)} Months`,
     price: formatCurrency(overageAddOnCost(config))
   };
 }

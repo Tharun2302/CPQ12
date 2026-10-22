@@ -180,6 +180,16 @@ describe('mergeManageExhibits', () => {
     expect(options).toBeUndefined();
   });
 
+  it('grouped mode: passes the Included and Not Included headers it is given', async () => {
+    catalogue = [ex('in', { name: 'In', includeType: 'included' })];
+    files = { in: 200 };
+    const titles = { includedTitle: 'Exhibit 1 - INCLUDED IN SPRAWL', notIncludedTitle: 'Exhibit 2 - NOT INCLUDED IN SPRAWL' };
+
+    await mergeManageExhibits(agreement, { backendUrl: BACKEND, templateValue: 'data-sprawl', selectedIds: ['in'], titles });
+
+    expect(mergeDocxFiles.mock.calls[0][3]).toEqual(titles);
+  });
+
   it('two exhibits with the same name are both merged', async () => {
     catalogue = [ex('a', { name: 'Same' }), ex('b', { name: 'Same' })];
     files = { a: 200, b: 200 };

@@ -1,7 +1,11 @@
 import type { ConfigurationData } from '../types/pricing';
 import { hasSprawlConfigs, isMultiWithSprawl, multiSprawlLines, withSprawlConfigs } from './pricing';
 import { sprawlGroupsIssue } from './sprawlGroups';
-import { buildSprawlAgreementData } from './sprawlAgreement';
+import { buildOverageLine, buildSprawlAgreementData } from './sprawlAgreement';
+
+// Fixed text after {{sprawl_overage_line}} in the live Data Sprawl template; the Multi template
+// has no such line, so the combined agreement repeats it to read the same.
+export const DATA_SPRAWL_MONTHLY_OVERAGE = '$1500 / month';
 
 export interface MultiSprawlLineItem {
   name: string;
@@ -48,4 +52,10 @@ export function withMultiSprawl(config: ConfigurationData, sprawlCombination: st
     dataSprawlCombination: sprawlCombination,
     serviceTermMonths: undefined
   };
+}
+
+// Payment Notes line for Data Sprawl on a Multi combination agreement, worded as the Data Sprawl agreement prints it.
+export function multiSprawlOverageNote(config: ConfigurationData | undefined | null): string | null {
+  const lines = multiSprawlLines(config);
+  return lines.length > 0 ? `${buildOverageLine(lines)} | ${DATA_SPRAWL_MONTHLY_OVERAGE}` : null;
 }

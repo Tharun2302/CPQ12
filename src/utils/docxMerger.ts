@@ -178,13 +178,18 @@ export function stripUnsupportedForVerbatim(el: Element): VerbatimStripReport {
  * @param exhibitMetadata - Optional array of exhibit metadata (name, category, includeType) for grouping
  * @param options - sectionTitle adds a header bar before ungrouped appends (no effect when exhibitMetadata is supplied)
  *   keepAllContent turns off the Included / Not Included paragraph filter, so each file is appended as-is
+ *   includedTitle / notIncludedTitle replace the "Exhibit 1 - INCLUDED IN MIGRATION" and
+ *   "Exhibit 2 - NOT INCLUDED IN MIGRATION FEATURES" group headers
  * @returns Promise<Blob> - The merged DOCX file
  */
+export const MIGRATION_INCLUDED_TITLE = 'Exhibit 1 - INCLUDED IN MIGRATION';
+export const MIGRATION_NOT_INCLUDED_TITLE = 'Exhibit 2 - NOT INCLUDED IN MIGRATION FEATURES';
+
 export async function mergeDocxFiles(
   mainDocx: Blob,
   exhibitDocxBlobs: Blob[],
   exhibitMetadata?: Array<{ name: string; category?: string; includeType?: 'included' | 'notincluded' }>,
-  options?: { sectionTitle?: string; verbatim?: boolean; keepAllContent?: boolean; onStripReport?: (report: VerbatimStripReport) => void }
+  options?: { sectionTitle?: string; includedTitle?: string; notIncludedTitle?: string; verbatim?: boolean; keepAllContent?: boolean; onStripReport?: (report: VerbatimStripReport) => void }
 ): Promise<Blob> {
   try {
     console.log('📎 Starting DOCX merge...', {
@@ -731,7 +736,7 @@ export async function mergeDocxFiles(
         mainBody.insertBefore(pageBreak, mainBody.lastChild);
         
         // Add title for Included group (no page break after title)
-        const titleP = createExhibitTitleParagraph(mainDoc, 'Exhibit 1 - INCLUDED IN MIGRATION', 12);
+        const titleP = createExhibitTitleParagraph(mainDoc, options?.includedTitle?.trim() || MIGRATION_INCLUDED_TITLE, 12);
         // Space-before is dropped at the top of a page, so a spacer is needed to clear the header logos
         mainBody.insertBefore(createTitleSpacerParagraph(mainDoc), mainBody.lastChild);
         mainBody.insertBefore(titleP, mainBody.lastChild);
@@ -774,8 +779,9 @@ export async function mergeDocxFiles(
         mainBody.insertBefore(pageBreak, mainBody.lastChild);
         
         // Add "Exhibit 2" header FIRST - before any not included tables
-        console.log('📌 Adding "Exhibit 2 - NOT INCLUDED IN MIGRATION FEATURES" header...');
-        const titleP = createExhibitTitleParagraph(mainDoc, 'Exhibit 2 - NOT INCLUDED IN MIGRATION FEATURES');
+        const notIncludedTitle = options?.notIncludedTitle?.trim() || MIGRATION_NOT_INCLUDED_TITLE;
+        console.log(`📌 Adding "${notIncludedTitle}" header...`);
+        const titleP = createExhibitTitleParagraph(mainDoc, notIncludedTitle);
         mainBody.insertBefore(createTitleSpacerParagraph(mainDoc), mainBody.lastChild);
         mainBody.insertBefore(titleP, mainBody.lastChild);
         console.log('✅ "Exhibit 2" header added successfully');

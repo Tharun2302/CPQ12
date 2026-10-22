@@ -1,4 +1,6 @@
-import { scopeExhibitsForCombination } from './exhibitCombination';
+import { exhibitCombinationKey, scopeExhibitsForCombination } from './exhibitCombination';
+import { isMultiWithSprawl, manageAgreementCard } from './pricing';
+import type { ConfigurationData } from '../types/pricing';
 
 type IncludeType = 'included' | 'notincluded';
 
@@ -68,6 +70,27 @@ export function planManageExhibitMerge<T extends ManageExhibitLike>(
   return { exhibits, mode };
 }
 
+export const SPRAWL_INCLUDED_TITLE = 'Exhibit 1 - INCLUDED IN SPRAWL';
+export const SPRAWL_NOT_INCLUDED_TITLE = 'Exhibit 2 - NOT INCLUDED IN SPRAWL';
+
+export interface ExhibitGroupTitles {
+  includedTitle: string;
+  notIncludedTitle: string;
+}
+
+// Included / Not Included headers, decided by the agreement the exhibits belong to: a sprawl
+// agreement (Data Sprawl, or Data Sprawl ticked with Multi combination) heads them as Sprawl.
+export function manageExhibitTitles(config: ConfigurationData | undefined | null, templateValue: string): ExhibitGroupTitles | undefined {
+  if (!config || !templateValue) return undefined;
+  const sprawlAddOn = isMultiWithSprawl(config) && templateValue === config.dataSprawlCombination;
+  const sprawlAgreement = config.servicePlan === 'Manage'
+    && manageAgreementCard(config) !== 'both'
+    && templateValue === exhibitCombinationKey(config);
+  return sprawlAddOn || sprawlAgreement
+    ? { includedTitle: SPRAWL_INCLUDED_TITLE, notIncludedTitle: SPRAWL_NOT_INCLUDED_TITLE }
+    : undefined;
+}
+
 async function isDocxZip(blob: Blob): Promise<boolean> {
   if (blob.size < 4) return false;
   const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
@@ -77,7 +100,7 @@ async function isDocxZip(blob: Blob): Promise<boolean> {
 // Files that fail to load are reported in `failed` so the caller can tell the user
 export async function mergeManageExhibits(
   agreement: Blob,
-  opts: { backendUrl: string; templateValue: string; selectedIds: string[] },
+  opts: { backendUrl: string; templateValue: string; selectedIds: string[]; titles?: ExhibitGroupTitles },
 ): Promise<ManageMergeResult> {
   const listRes = await fetch(`${opts.backendUrl}/api/exhibits?t=${Date.now()}`, { cache: 'no-store' });
   if (!listRes.ok) throw new Error(`Could not load the exhibit list (status ${listRes.status}).`);
@@ -115,7 +138,7 @@ export async function mergeManageExhibits(
 
   const { mergeDocxFiles } = await import('./docxMerger');
   const blob = mode === 'grouped'
-    ? await mergeDocxFiles(agreement, blobs, metadata)
+    ? await mergeDocxFiles(agreement, blobs, metadata, opts.titles ? { ...opts.titles } : undefined)
     : await mergeDocxFiles(agreement, blobs, undefined, { keepAllContent: true });
   return { blob, attached: blobs.length, failed };
 }

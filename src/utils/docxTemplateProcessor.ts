@@ -148,6 +148,17 @@ export interface CustomLineItemInput {
 export interface DocxProcessingOptions {
   /** Extra rows to inject into the pricing table just above the "Total Price" row. */
   customLineItems?: CustomLineItemInput[];
+  /**
+   * Rows for Migrate options quoted alongside the main agreement (Data Sprawl, Overage). They go
+   * straight after the main agreement's own rows, i.e. the last row whose Job Requirement is one
+   * of `addOnAfterJobs`, and fall back to the custom-item position when the template has none.
+   */
+  addOnLineItems?: CustomLineItemInput[];
+  addOnAfterJobs?: string[];
+  /** Payment Notes bullets for those options, added after the template's own Overage Charges bullets. */
+  addOnNoteLines?: string[];
+  /** Line up the Important Payment Notes bullets with the first one (templates that mix two bullet lists). */
+  alignPaymentNotes?: boolean;
   /** Discount info for custom line items to show as a separate discount row */
   customLineItemsDiscount?: {
     percentage: number;
@@ -450,7 +461,8 @@ export class DocxTemplateProcessor {
   private injectCustomLineItemRows(
     documentXml: string,
     items: CustomLineItemInput[],
-    discount?: { percentage: number; amount: number } | null
+    discount?: { percentage: number; amount: number } | null,
+    afterJobs?: string[]
   ): string {
     if ((!items || items.length === 0) && !discount) return documentXml;
 
@@ -531,6 +543,16 @@ export class DocxTemplateProcessor {
       // before the discount (and before Total Price). If there's no Discount row in this table,
       // fall back to inserting before the Total Price row; otherwise append at the end of the
       // table (which sits just above a separate Discount/Total table).
+      // Rows quoted alongside the main agreement sit right under its last own row.
+      const jobs = (afterJobs || []).map((j) => j.toLowerCase());
+      const firstCell = (r: string) => plain((r.match(/<w:tc\b[\s\S]*?<\/w:tc>/i) || [''])[0]).toLowerCase();
+      const mainRows = jobs.length > 0 ? rows.filter((r) => jobs.includes(firstCell(r))) : [];
+      if (mainRows.length > 0) {
+        const lastMain = mainRows[mainRows.length - 1];
+        const at = tbl.lastIndexOf(lastMain) + lastMain.length;
+        return tbl.slice(0, at) + newRows + tbl.slice(at);
+      }
+
       const discountRow = rows.find((r) => /discount/i.test(plain(r)));
       const totalPriceRow = rows.find((r) => /total\s*price/i.test(plain(r)));
       const anchorRow = discountRow || totalPriceRow;
@@ -544,6 +566,82 @@ export class DocxTemplateProcessor {
       console.log('⚠️ No anchor row found, appending at end of table');
       return tbl.replace(/<\/w:tbl>$/i, `${newRows}</w:tbl>`);
     });
+  }
+
+  /**
+   * Add bullets to Important Payment Notes, right before "Initial Service Term" so they follow the
+   * template's own Overage Charges bullets. Each copies the paragraph and run style of the last
+   * Overage Charges bullet (or of the Initial Service Term bullet), so it gets the same list marker,
+   * and is followed by a blank line like the template's bullets.
+   */
+  private injectNoteLines(documentXml: string, lines: string[]): string {
+    const texts = (lines || []).filter((l) => !!l && l.trim());
+    if (texts.length === 0) return documentXml;
+    const plain = (xml: string) => xml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    const paras = Array.from(documentXml.matchAll(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g));
+    const targetIdx = paras.findIndex((m) => /^initial service term/i.test(plain(m[0])));
+    if (targetIdx < 0) return documentXml;
+    const target = paras[targetIdx];
+    const before = paras.slice(0, targetIdx).reverse().find((m) => /^overage charge/i.test(plain(m[0])));
+    const source = (before || target)[0];
+    const pPr = (source.match(/<w:pPr\b[\s\S]*?<\/w:pPr>/i) || [''])[0];
+    const rPrMatch = source.match(/<w:r\b[^>]*>\s*(<w:rPr\b[\s\S]*?<\/w:rPr>)/i);
+    const rPr = rPrMatch ? rPrMatch[1] : '';
+    // The list style ignores spacing between its own bullets (contextualSpacing), so the template
+    // separates them with an empty, unnumbered paragraph; each added bullet gets one below it too.
+    const spacer = `<w:p>${pPr.replace(/<w:numPr\b[\s\S]*?<\/w:numPr>/i, '')}</w:p>`;
+    const added = texts
+      .map((t) => `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${this.escapeXmlText(t)}</w:t></w:r></w:p>${spacer}`)
+      .join('');
+    const at = target.index ?? documentXml.indexOf(target[0]);
+    return documentXml.slice(0, at) + added + documentXml.slice(at);
+  }
+
+  /**
+   * Line up every bullet in Important Payment Notes with the first one. The Multi-Combination
+   * template mixes two bullet lists there (an Arial "•" list and an indented Symbol list), so the
+   * later bullets sit further right. Each bullet takes the first bullet's paragraph properties;
+   * its runs, and so its bold text, are untouched. The empty spacer lines the indented list needed
+   * (it ignores spacing between its own bullets) are dropped, so the first bullet's spacing applies.
+   */
+  private alignPaymentNoteBullets(documentXml: string): string {
+    const plain = (xml: string) => xml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    const pPrOf = (p: string) => (p.match(/<w:pPr\b[\s\S]*?<\/w:pPr>/i) || [''])[0];
+    const numIdOf = (p: string) => (pPrOf(p).match(/<w:numId w:val="([^"]+)"/) || [])[1];
+    const paras = Array.from(documentXml.matchAll(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g));
+    const start = paras.findIndex((m) => /^important payment notes:?$/i.test(plain(m[0])));
+    if (start < 0) return documentXml;
+    // The notes end at the next banded section header (e.g. "SAAS SERVICE AGREEMENT:").
+    let end = paras.findIndex((m, i) => i > start && /<w:pBdr\b/.test(pPrOf(m[0])) && !!plain(m[0]));
+    if (end < 0) end = paras.length;
+    const block = paras.slice(start + 1, end);
+    const isEmpty = (p: string) => !plain(p) && !/<w:(drawing|pict|br)\b/.test(p);
+    const bullets = block.filter((m) => numIdOf(m[0]) && !isEmpty(m[0]));
+    if (bullets.length < 2) return documentXml;
+    const refPPr = pPrOf(bullets[0][0]);
+    const refNumId = numIdOf(bullets[0][0]);
+    if (bullets.every((m) => numIdOf(m[0]) === refNumId)) return documentXml;
+    const first = block.indexOf(bullets[0]);
+    const last = block.indexOf(bullets[bullets.length - 1]);
+
+    let out = documentXml;
+    // Rewrite from the end so earlier match positions stay valid.
+    for (let i = last; i > first; i--) {
+      const m = block[i];
+      const p = m[0];
+      const at = m.index ?? out.indexOf(p);
+      let next: string;
+      // Empty lines between bullets: spacers, and the paragraph a loop tag leaves behind (a stray bullet).
+      if (isEmpty(p)) {
+        next = '';
+      } else if (numIdOf(p) && numIdOf(p) !== refNumId) {
+        next = p.replace(pPrOf(p), refPPr);
+      } else {
+        continue;
+      }
+      out = out.slice(0, at) + next + out.slice(at + p.length);
+    }
+    return out;
   }
 
   /**
@@ -1585,6 +1683,26 @@ export class DocxTemplateProcessor {
         }
       } catch (sigLineErr) {
         console.warn('⚠️ Could not patch signature blank lines in DOCX:', sigLineErr);
+      }
+
+      // Rows for Migrate options quoted alongside the main agreement, under its own rows.
+      try {
+        const addOnItems = options?.addOnLineItems || [];
+        if (addOnItems.length > 0) {
+          finalDocumentXml = this.injectCustomLineItemRows(finalDocumentXml, addOnItems, null, options?.addOnAfterJobs);
+        }
+      } catch (injectErr) {
+        console.warn('⚠️ Could not inject add-on rows:', injectErr);
+      }
+      try {
+        finalDocumentXml = this.injectNoteLines(finalDocumentXml, options?.addOnNoteLines || []);
+      } catch (injectErr) {
+        console.warn('⚠️ Could not add add-on payment notes:', injectErr);
+      }
+      try {
+        if (options?.alignPaymentNotes) finalDocumentXml = this.alignPaymentNoteBullets(finalDocumentXml);
+      } catch (alignErr) {
+        console.warn('⚠️ Could not align payment note bullets:', alignErr);
       }
 
       // Inject custom line-item rows into the pricing table (above "Total Price").

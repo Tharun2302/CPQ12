@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { PricingCalculation, ConfigurationData, Quote } from '../types/pricing';
 import { formatCurrency, getInstanceTypeCost, overagePerServerPerMonth, manageDataLineCost, manageUserLineCost, isMultiWithSprawl, migrateAddOnTotal, overageAddOnCost } from '../utils/pricing';
 import { migrateAddOnLineItems } from '../utils/migrateSelection';
+import { multiSprawlOverageNote } from '../utils/multiSprawl';
 import { buildSprawlAgreementData, sprawlPerDataCost, withDiscountRow } from '../utils/sprawlAgreement';
 import { withPairCombinations, exhibitCombinationKey, restrictExhibitsToCombination } from '../utils/exhibitCombination';
-import { mergeManageExhibits } from '../utils/manageExhibitMerge';
+import { manageExhibitTitles, mergeManageExhibits } from '../utils/manageExhibitMerge';
 import {
   FileText,
   Download,
@@ -53,6 +54,10 @@ import { DiscountLimitNotes } from './DiscountInputField';
 import { useDiscountPolicy } from '../hooks/useDiscountPolicy';
 import { discountPolicyErrorMessage } from '../services/discountPolicyService';
 import { SUPPRESS_PII } from '../analytics/privacy';
+
+// Job Requirement of the main agreement's own pricing rows (Multi-Combination, Data Sprawl).
+const MAIN_AGREEMENT_JOBS = ['CloudFuze Migrate', 'CloudFuze Data Sprawl'];
+
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -823,6 +828,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         backendUrl: BACKEND_URL,
         templateValue,
         selectedIds,
+        titles: manageExhibitTitles(configuration, templateValue),
       });
       if (failed.length > 0) {
         alert(`Warning: These exhibits could not be attached to the agreement:\n- ${failed.join('\n- ')}\n\nThe rest of the agreement was generated.`);
@@ -2411,11 +2417,13 @@ Quote ID: ${quoteData.id}
           templateFileForEmail as File,
           templateData,
           {
-            // Data Sprawl and Overage rows go first so they sit with the priced rows, above any custom items.
-            customLineItems: [
-              ...migrateAddOnLineItems(configuration),
-              ...customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) }))
-            ],
+            customLineItems: customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) })),
+            // Data Sprawl and Overage rows sit right under the main agreement's own rows.
+            addOnLineItems: migrateAddOnLineItems(configuration),
+            addOnAfterJobs: MAIN_AGREEMENT_JOBS,
+            addOnNoteLines: [multiSprawlOverageNote(configuration)].filter((l): l is string => !!l),
+            // The Multi-Combination template mixes two bullet lists in Important Payment Notes.
+            alignPaymentNotes: configuration?.migrationType === 'Multi combination',
             customLineItemsDiscount: customLineItemsDiscount > 0 ? { percentage: customLineItemsDiscount, amount: customLineItemsDiscountAmount } : null
           }
         );
@@ -8818,11 +8826,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           templateFileForAgreement,
           templateData,
           {
-            // Data Sprawl and Overage rows go first so they sit with the priced rows, above any custom items.
-            customLineItems: [
-              ...migrateAddOnLineItems(configuration),
-              ...customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) }))
-            ],
+            customLineItems: customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) })),
+            // Data Sprawl and Overage rows sit right under the main agreement's own rows.
+            addOnLineItems: migrateAddOnLineItems(configuration),
+            addOnAfterJobs: MAIN_AGREEMENT_JOBS,
+            addOnNoteLines: [multiSprawlOverageNote(configuration)].filter((l): l is string => !!l),
+            // The Multi-Combination template mixes two bullet lists in Important Payment Notes.
+            alignPaymentNotes: configuration?.migrationType === 'Multi combination',
             customLineItemsDiscount: customLineItemsDiscount > 0 ? { percentage: customLineItemsDiscount, amount: customLineItemsDiscountAmount } : null
           }
         );
