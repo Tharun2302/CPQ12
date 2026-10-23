@@ -118,8 +118,73 @@ function buildSigninStatus({ claims, allowList, tenantId, enforced, name, email,
   return status;
 }
 
+// Only the signed-in step route may decide the Technical step. The generic create and update
+// routes take whole workflowSteps arrays, so without these a body could carry an approval.
+const TECHNICAL_DECISION_FIELDS = ['actedBy', 'timestamp'];
+const TECH_NOT_APPROVED_ERROR = 'The Technical step has not been approved yet.';
+
+const isTechnicalStep = (step) => Boolean(step) && typeof step === 'object' && step.role === TECHNICAL_ROLE;
+
+function pendingTechnicalStep(step) {
+  const reset = { ...step, status: 'pending', comments: '' };
+  TECHNICAL_DECISION_FIELDS.forEach((field) => delete reset[field]);
+  return reset;
+}
+
+// A new workflow always starts with the Technical step undecided.
+function withPendingTechnicalStep(steps) {
+  if (!Array.isArray(steps)) return steps;
+  return steps.map((step) => (isTechnicalStep(step) ? pendingTechnicalStep(step) : step));
+}
+
+const stepOrder = (step) => {
+  const n = Number(step && step.step);
+  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+};
+
+// Generic update: the Technical step keeps what is stored, a dotted path into the steps is dropped,
+// and the workflow cannot be marked approved while the Technical step is not.
+function protectTechnicalStep(workflow, updates) {
+  const out = { ...(updates || {}) };
+  const dropped = [];
+  Object.keys(out).forEach((key) => {
+    if (key.startsWith('workflowSteps.')) {
+      dropped.push(key);
+      delete out[key];
+    }
+  });
+
+  const storedSteps = Array.isArray(workflow && workflow.workflowSteps) ? workflow.workflowSteps : [];
+  const stored = storedSteps.find(isTechnicalStep);
+  let kept = dropped.length > 0;
+  if (Array.isArray(out.workflowSteps)) {
+    const incoming = out.workflowSteps;
+    let next = incoming.map((step) => {
+      if (!isTechnicalStep(step)) return step;
+      const safe = stored || pendingTechnicalStep(step);
+      if (JSON.stringify(step) !== JSON.stringify(safe)) kept = true;
+      return safe;
+    });
+    // Dropping the step would leave the workflow with no Technical approval to wait for.
+    if (stored && !incoming.some(isTechnicalStep)) {
+      next = [...next, stored].sort((a, b) => stepOrder(a) - stepOrder(b));
+      kept = true;
+    }
+    out.workflowSteps = next;
+  }
+
+  const technical = (Array.isArray(out.workflowSteps) ? out.workflowSteps : storedSteps).find(isTechnicalStep);
+  if (out.status === 'approved' && technical && technical.status !== 'approved') {
+    return { ok: false, httpStatus: 409, code: 'TECH_NOT_APPROVED', error: TECH_NOT_APPROVED_ERROR, dropped };
+  }
+  return { ok: true, updates: out, kept, dropped };
+}
+
 module.exports = {
   TECHNICAL_ROLE,
+  TECH_NOT_APPROVED_ERROR,
+  withPendingTechnicalStep,
+  protectTechnicalStep,
   VERIFIED_SIGNIN_MAX_AGE_MS,
   SIGNIN_REQUIRED_ERROR,
   NOT_AUTHORIZED_ERROR,

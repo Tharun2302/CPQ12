@@ -249,3 +249,62 @@ describe('buildSigninStatus', () => {
     expect(status).toEqual({ success: true, signedIn: false, verified: false, allowed: true, enforced: false });
   });
 });
+
+describe('generic create/update cannot decide the Technical step', () => {
+  const steps = (techStatus: string, extra: Record<string, unknown> = {}) => [
+    { step: 1, role: 'Team Approval', email: 'lead@cloudfuze.com', status: 'approved' },
+    { step: 2, role: 'Technical Team', email: 'tech@cloudfuze.com', status: techStatus, comments: '', ...extra },
+    { step: 3, role: 'Legal Team', email: 'legal@cloudfuze.com', status: 'pending' },
+  ];
+  const approvedByTech = { actedBy: { name: 'Jane', email: 'jane.doe@cloudfuze.com' }, timestamp: '2026-10-22T10:00:00.000Z' };
+
+  it('a new workflow always starts with the Technical step pending', () => {
+    const created = guard.withPendingTechnicalStep(steps('approved', { ...approvedByTech, comments: 'ok' }));
+    expect(created[1]).toEqual({ step: 2, role: 'Technical Team', email: 'tech@cloudfuze.com', status: 'pending', comments: '' });
+    expect(created[0].status).toBe('approved');
+    expect(guard.withPendingTechnicalStep(undefined)).toBeUndefined();
+  });
+
+  it('an update that approves the Technical step keeps it as stored', () => {
+    const workflow = { workflowSteps: steps('pending') };
+    const result = guard.protectTechnicalStep(workflow, { workflowSteps: steps('approved', approvedByTech) });
+    expect(result.ok).toBe(true);
+    expect(result.kept).toBe(true);
+    expect(result.updates.workflowSteps[1]).toEqual(workflow.workflowSteps[1]);
+  });
+
+  it('an update that drops the Technical step puts it back', () => {
+    const workflow = { workflowSteps: steps('pending') };
+    const without = steps('pending').filter((s) => s.role !== 'Technical Team');
+    const result = guard.protectTechnicalStep(workflow, { workflowSteps: without });
+    expect(result.updates.workflowSteps.map((s: { role: string }) => s.role)).toEqual(['Team Approval', 'Technical Team', 'Legal Team']);
+  });
+
+  it('a dotted path into the steps is dropped', () => {
+    const result = guard.protectTechnicalStep({ workflowSteps: steps('pending') }, { 'workflowSteps.1.status': 'approved', notes: 'x' });
+    expect(result.updates).toEqual({ notes: 'x' });
+    expect(result.dropped).toEqual(['workflowSteps.1.status']);
+  });
+
+  it('the workflow cannot be marked approved while the Technical step is not', () => {
+    const blocked = guard.protectTechnicalStep({ workflowSteps: steps('pending') }, { status: 'approved' });
+    expect(blocked).toMatchObject({ ok: false, httpStatus: 409, code: 'TECH_NOT_APPROVED' });
+    expect(guard.protectTechnicalStep({ workflowSteps: steps('approved', approvedByTech) }, { status: 'approved', currentStep: 4 }).ok).toBe(true);
+  });
+
+  it('other updates pass through untouched: denial, extra steps, the Technical step unchanged', () => {
+    const workflow = { workflowSteps: steps('approved', approvedByTech) };
+    expect(guard.protectTechnicalStep(workflow, { status: 'denied' })).toMatchObject({ ok: true, kept: false, updates: { status: 'denied' } });
+    const appended = [...workflow.workflowSteps, { step: 5, role: 'Infrateam', status: 'approved' }];
+    const result = guard.protectTechnicalStep(workflow, { workflowSteps: appended, currentStep: 5, status: 'in_progress' });
+    expect(result.ok).toBe(true);
+    expect(result.kept).toBe(false);
+    expect(result.updates.workflowSteps).toEqual(appended);
+  });
+
+  it('a workflow without a Technical step cannot gain an approved one', () => {
+    const workflow = { workflowSteps: [{ step: 1, role: 'Legal Team', status: 'pending' }] };
+    const result = guard.protectTechnicalStep(workflow, { workflowSteps: [...workflow.workflowSteps, { step: 2, role: 'Technical Team', status: 'approved' }] });
+    expect(result.updates.workflowSteps[1].status).toBe('pending');
+  });
+});

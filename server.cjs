@@ -12015,6 +12015,10 @@ app.post('/api/approval-workflows', async (req, res) => {
 
     // Server-owned fields (id, status, redline history) are never taken from the body
     const { updates: workflowData } = stripLockedWorkflowFields(req.body, { allow: ['documentId'] });
+    // Only the signed-in step route decides the Technical step, so a new workflow cannot arrive with it approved.
+    if (technicalApproverGuard.isSigninEnforced(process.env) && Array.isArray(workflowData.workflowSteps)) {
+      workflowData.workflowSteps = technicalApproverGuard.withPendingTechnicalStep(workflowData.workflowSteps);
+    }
     if (hasNestedDiscountKey(workflowData, 'discountPercent')) {
       return res.status(400).json({ success: false, error: 'Invalid discount field', code: 'INVALID_DISCOUNT' });
     }
@@ -12370,9 +12374,33 @@ app.put('/api/approval-workflows/:id', async (req, res) => {
     }
 
     const { id } = req.params;
-    const { updates, stripped } = stripLockedWorkflowFields(req.body);
+    const { updates: unlocked, stripped } = stripLockedWorkflowFields(req.body);
     if (stripped.length) {
       console.warn('⛔ Ignored locked fields on workflow update:', JSON.stringify(id), stripped);
+    }
+
+    // The Technical step is decided only on the signed-in step route; this route keeps it as stored.
+    let updates = unlocked;
+    let technicalFilter = {};
+    if (technicalApproverGuard.isSigninEnforced(process.env)) {
+      const existing = await db.collection('approval_workflows').findOne({ id }, { projection: { workflowSteps: 1 } });
+      if (!existing) {
+        return res.status(404).json({ success: false, error: 'Workflow not found' });
+      }
+      const guarded = technicalApproverGuard.protectTechnicalStep(existing, unlocked);
+      if (!guarded.ok) {
+        logger.warn('Generic workflow update blocked', { source: 'technical-approver', workflowId: id, code: guarded.code });
+        return res.status(guarded.httpStatus).json({ success: false, code: guarded.code, error: guarded.error });
+      }
+      if (guarded.kept) {
+        logger.warn('Technical step kept as stored on generic workflow update', { source: 'technical-approver', workflowId: id, dropped: guarded.dropped });
+      }
+      updates = guarded.updates;
+      // Writing a stale steps array would undo a Technical decision made since the read above.
+      const storedTechnical = (existing.workflowSteps || []).find((s) => s && s.role === technicalApproverGuard.TECHNICAL_ROLE);
+      if (Array.isArray(updates.workflowSteps) && storedTechnical) {
+        technicalFilter = { workflowSteps: { $elemMatch: { role: technicalApproverGuard.TECHNICAL_ROLE, status: storedTechnical.status } } };
+      }
     }
 
     if (hasNestedDiscountKey(updates, 'discountPercent')) {
@@ -12391,17 +12419,20 @@ app.put('/api/approval-workflows/:id', async (req, res) => {
     updates.updatedAt = new Date().toISOString();
     
     const result = await db.collection('approval_workflows').updateOne(
-      { id: id },
+      { id: id, ...technicalFilter },
       { $set: updates }
     );
-    
+
     if (result.matchedCount === 0) {
+      if (Object.keys(technicalFilter).length > 0) {
+        return res.status(409).json({ success: false, code: 'CONFLICT', error: 'Someone else just updated this document. Please refresh and try again.' });
+      }
       return res.status(404).json({
         success: false,
         error: 'Workflow not found'
       });
     }
-    
+
     console.log('✅ Approval workflow updated');
     res.json({
       success: true,
