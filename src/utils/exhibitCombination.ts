@@ -27,7 +27,8 @@ export function isOverageAgreement(config?: ExhibitCombinationConfig | null): bo
  *
  * Overage Agreement is excluded even though it runs as Migrate: it has no scope to attach, so
  * the picker is a step with nothing to do in it and puts a wrong exhibit one click away on a
- * document that should carry none. Everything else with a chosen combination keeps it.
+ * document that should carry none. Everything else with a chosen combination keeps it, DIY
+ * included: it draws from the same catalogue as Multi combination.
  */
 export function showExhibitSelector(config?: ExhibitCombinationConfig | null): boolean {
   if (!config || !config.combination) return false;
@@ -40,6 +41,8 @@ export const DEFAULT_EXHIBIT_COMBINATION = 'multi-combination';
 export function exhibitCombinationKey(config?: ExhibitCombinationConfig | null): string {
   if (!config) return '';
   if (config.servicePlan === 'Manage') return String(config.migrationType || '');
+  // DIY owns no exhibits; it hand-picks from the catalogue exactly like Multi combination.
+  if (config.migrationType === 'DIY') return DEFAULT_EXHIBIT_COMBINATION;
   return String(config.combination || DEFAULT_EXHIBIT_COMBINATION);
 }
 

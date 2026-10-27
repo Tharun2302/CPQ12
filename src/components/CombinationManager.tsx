@@ -40,7 +40,7 @@ interface Combination {
 // Map old migration types to new service plan structure
 const SERVICE_PLANS = ['Migrate', 'Manage', 'Bundle'] as const;
 const COMBINATION_TYPES_BY_PLAN: Record<string, string[]> = {
-  'Migrate': ['Combination', 'Overage'],
+  'Migrate': ['Combination', 'Overage', 'DIY'],
   'Manage': ['Manage'],
   'Bundle': ['Bundle']
 };
@@ -49,6 +49,7 @@ const COMBINATION_TYPES_BY_PLAN: Record<string, string[]> = {
 const MIGRATION_TYPE_MAP: Record<string, string> = {
   'Migrate-Combination': 'Multi combination',
   'Migrate-Overage': 'Overage Agreement',
+  'Migrate-DIY': 'DIY',
   'Manage-Manage': 'Manage',
   'Bundle-Bundle': 'Bundle'
 };
@@ -148,7 +149,7 @@ const CombinationManager: React.FC = () => {
 
   const getServicePlanMigrationTypes = (servicePlan: string): string[] => {
     // Map service plan to migration types
-    if (servicePlan === 'Migrate') return ['Multi combination', 'Overage Agreement'];
+    if (servicePlan === 'Migrate') return ['Multi combination', 'Overage Agreement', 'DIY'];
     if (servicePlan === 'Manage') return ['Manage'];
     if (servicePlan === 'Bundle') return ['Bundle'];
     return []; // For legacy types, return empty (will match nothing)

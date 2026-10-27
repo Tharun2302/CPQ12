@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import type { MigrateKind } from '../utils/migrateSelection';
+import { toggleMigrateOption, type MigrateKind } from '../utils/migrateSelection';
 
 export interface MigrateOption {
   value: string;
@@ -14,7 +14,8 @@ interface MigrateOptionPickerProps {
   onChange: (values: string[]) => void;
 }
 
-// Tick any mix of the Migrate options; only one option per kind can be on at a time.
+// Tick any mix of the Migrate options; only one option per kind can be on at a time,
+// and a standalone option (DIY) is always on by itself.
 function MigrateOptionPicker({ options, selected, onChange }: MigrateOptionPickerProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -33,14 +34,7 @@ function MigrateOptionPicker({ options, selected, onChange }: MigrateOptionPicke
     };
   }, [open]);
 
-  const toggle = (option: MigrateOption) => {
-    if (selected.includes(option.value)) {
-      onChange(selected.filter(v => v !== option.value));
-      return;
-    }
-    const sameKind = new Set(options.filter(o => o.kind === option.kind).map(o => o.value));
-    onChange([...selected.filter(v => !sameKind.has(v)), option.value]);
-  };
+  const toggle = (option: MigrateOption) => onChange(toggleMigrateOption(options, selected, option));
 
   const labels = options.filter(o => selected.includes(o.value)).map(o => o.label);
 

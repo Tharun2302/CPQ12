@@ -1,4 +1,4 @@
-import { PricingTier, ConfigurationData, PricingCalculation, SprawlType, SprawlLine, ManageSprawlConfig } from '../types/pricing';
+import { PricingTier, ConfigurationData, PricingCalculation, SprawlType, SprawlLine, ManageSprawlConfig, DiyWorkload, DiyPricing } from '../types/pricing';
 import { parseSprawlName } from './sprawlName';
 import { getEffectiveDurationMonths } from './configDuration';
 
@@ -621,6 +621,59 @@ export function calculateManageSaasPricing(users: unknown): ManageSaasPricing {
   };
 }
 
+// Migrate DIY: one licence per user, with every chosen workload bundled into that user's
+// rate. Each later workload costs less ($20, then +$15, then +$10). Billed for 12 months.
+export type { DiyWorkload, DiyPricing };
+export const DIY_WORKLOADS: readonly DiyWorkload[] = ['Mailbox', 'Content', 'Messages'];
+export const DIY_RATE_BY_WORKLOAD_COUNT: Record<1 | 2 | 3, number> = { 1: 20, 2: 35, 3: 45 };
+export const DIY_MIN_LICENSES = 50;
+export const DIY_VALIDITY_MONTHS = 12;
+// Mailbox and Content each allow 50 GB per licence; Messages has no data cap.
+export const DIY_GB_PER_LICENSE_PER_WORKLOAD = 50;
+const DIY_CAPPED_WORKLOADS: readonly DiyWorkload[] = ['Mailbox', 'Content'];
+
+export function isDiyConfig(config: ConfigurationData | undefined | null): boolean {
+  return config?.migrationType === 'DIY' && config?.servicePlan !== 'Manage';
+}
+
+// The DIY screen collects no data size, so a dataSizeGB left over from another agreement
+// must not add data-overage licences.
+export function diyPricingFromConfig(config: ConfigurationData | undefined | null): DiyPricing {
+  return calculateDiyPricing({ users: config?.numberOfUsers, workloads: config?.diyWorkloads || [] });
+}
+
+export function calculateDiyPricing(input: { users: unknown; workloads: readonly DiyWorkload[]; dataGB?: unknown }): DiyPricing {
+  const whole = (value: unknown, round: (n: number) => number): number => {
+    const n = round(Number(value));
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  const users = whole(input.users, Math.floor);
+  const dataGB = whole(input.dataGB, Math.ceil);
+  const workloads = DIY_WORKLOADS.filter(w => input.workloads.includes(w));
+  const ratePerLicense = workloads.length ? DIY_RATE_BY_WORKLOAD_COUNT[workloads.length as 1 | 2 | 3] : 0;
+  const gbPerLicense = workloads.filter(w => DIY_CAPPED_WORKLOADS.includes(w)).length * DIY_GB_PER_LICENSE_PER_WORKLOAD;
+
+  if (!users || !workloads.length) {
+    return { workloads, users, dataGB, ratePerLicense, gbPerLicense, licenses: 0, minimumTopUp: 0, dataOverageLicenses: 0, belowMinimum: false, totalCost: 0 };
+  }
+
+  const baseLicenses = Math.max(users, DIY_MIN_LICENSES);
+  const neededForData = gbPerLicense ? Math.ceil(dataGB / gbPerLicense) : 0;
+  const licenses = Math.max(baseLicenses, neededForData);
+  return {
+    workloads,
+    users,
+    dataGB,
+    ratePerLicense,
+    gbPerLicense,
+    licenses,
+    minimumTopUp: baseLicenses - users,
+    dataOverageLicenses: licenses - baseLicenses,
+    belowMinimum: users < DIY_MIN_LICENSES,
+    totalCost: licenses * ratePerLicense
+  };
+}
+
 // Manage Standalone — fixed per-GB rate.
 // Excel's K13 formula reads B56 (Migrate data input, typically in the 501–2,500
 // GB range), which always lands on the AB20 tier of $0.13/GB. To produce the
@@ -1210,6 +1263,22 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
   // MANAGE STANDALONE: independent of migrationType — uses K12 slab + K13 data rate
   if (config.servicePlan === 'Manage') {
     return calculateManagePricing(config, tier);
+  }
+
+  // MIGRATE DIY: tier-agnostic licences at list price; no region multiplier or instances.
+  if (isDiyConfig(config)) {
+    const diy = diyPricingFromConfig(config);
+    const diyResult: PricingCalculation = {
+      userCost: diy.totalCost,
+      dataCost: 0,
+      migrationCost: 0,
+      instanceCost: 0,
+      totalCost: diy.totalCost,
+      tier,
+      diy
+    };
+    assertPricingInvariant(diyResult.userCost, diyResult.dataCost, diyResult.migrationCost, diyResult.instanceCost, diyResult.totalCost);
+    return diyResult;
   }
 
   // Bundle plan reuses the Migrate flow (migrationType is selected from the same dropdown);

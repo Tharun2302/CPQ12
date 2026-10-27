@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CheckCircle } from 'lucide-react';
 import { PricingCalculation, ConfigurationData, PricingTier } from '../types/pricing';
-import { formatCurrency, formatUnitRate, PRICING_TIERS, calculateCombinationPricing, getManageDataRatePerGB, resolveSprawlLines, sprawlDisplayTotal, manageAgreementCard, isManageSaasConfig, MANAGE_SAAS_PRICE_PER_USER_MONTHLY, multiSprawlLines, multiSprawlTotal, migrateAddOnTotal } from '../utils/pricing';
+import { formatCurrency, formatUnitRate, PRICING_TIERS, calculateCombinationPricing, getManageDataRatePerGB, resolveSprawlLines, sprawlDisplayTotal, manageAgreementCard, isManageSaasConfig, MANAGE_SAAS_PRICE_PER_USER_MONTHLY, multiSprawlLines, multiSprawlTotal, migrateAddOnTotal, isDiyConfig, DIY_MIN_LICENSES, DIY_VALIDITY_MONTHS } from '../utils/pricing';
 import { overageLineItem } from '../utils/migrateSelection';
 import { calculateDiscount, normalizeDiscountPercent } from '../utils/discount';
 import { useDiscountPolicy } from '../hooks/useDiscountPolicy';
@@ -320,8 +320,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
       return calc === calculations[0];
     }
 
-    // Manage Standalone: tier-agnostic, show only ONE plan card
-    if (configuration?.servicePlan === 'Manage') {
+    // Manage Standalone and Migrate DIY: tier-agnostic, show only ONE plan card
+    if (configuration?.servicePlan === 'Manage' || isDiyConfig(configuration)) {
       return calc === calculations[0];
     }
 
@@ -413,6 +413,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
         <h2 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-indigo-900 bg-clip-text text-transparent mb-3">
           {(configuration?.combination === 'overage-agreement' || configuration?.migrationType === 'Overage Agreement')
             ? 'Overage Agreement Pricing'
+            : isDiyConfig(configuration)
+            ? 'DIY Migration Pricing'
             : configuration?.servicePlan === 'Manage'
             ? 'Your Manage Plan'
             : 'Choose Your Perfect Plan'}
@@ -420,6 +422,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
         <p className="text-gray-600 text-lg">
           {(configuration?.combination === 'overage-agreement' || configuration?.migrationType === 'Overage Agreement')
             ? 'Instance costs only - no user or data costs apply'
+            : isDiyConfig(configuration)
+            ? `Per-user licenses, valid for ${DIY_VALIDITY_MONTHS} months`
             : configuration?.servicePlan === 'Manage'
             ? 'Review your Manage plan summary and total cost'
             : 'Compare our pricing tiers and find the best fit for your project'}
@@ -500,6 +504,10 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                 {(configuration?.combination === 'overage-agreement' || configuration?.migrationType === 'Overage Agreement') ? (
                   <h3 className={`text-2xl font-bold mb-3 ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
                     Overage Agreement
+                  </h3>
+                ) : isDiyConfig(configuration) ? (
+                  <h3 className={`text-2xl font-bold mb-3 ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
+                    DIY Migration
                   </h3>
                 ) : configuration?.servicePlan === 'Manage' ? (
                   <h3 className={`text-2xl font-bold mb-3 ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
@@ -874,6 +882,37 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       <span className="font-bold text-2xl text-purple-700">{formatCurrency(calc.instanceCost)}</span>
                     </div>
                   </>
+                ) : isDiyConfig(configuration) && calc.diy ? (
+                  <>
+                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                      <span className="text-gray-700 font-medium">Workloads:</span>
+                      <span className="font-bold text-gray-900 text-right">{calc.diy.workloads.join(', ')}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                      <span className="text-gray-700 font-medium">Number of Users:</span>
+                      <span className="font-bold text-gray-900">{calc.diy.users.toLocaleString()}</span>
+                    </div>
+                    {calc.diy.gbPerLicense > 0 && (
+                      <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                        <span className="text-gray-700 font-medium">Data Size:</span>
+                        <span className="font-bold text-gray-900">{calc.diy.dataGB.toLocaleString()} GB</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                      <span className="text-gray-700 font-medium">Licenses × Rate:</span>
+                      <span className="font-bold text-gray-900">{calc.diy.licenses.toLocaleString()} × {formatCurrency(calc.diy.ratePerLicense)}</span>
+                    </div>
+                    {calc.diy.belowMinimum && (
+                      <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                        Minimum purchase is {DIY_MIN_LICENSES} licenses.
+                      </p>
+                    )}
+                    {calc.diy.dataOverageLicenses > 0 && (
+                      <p className="text-sm text-gray-700 bg-white/60 rounded-lg p-3">
+                        Includes {calc.diy.dataOverageLicenses} extra license{calc.diy.dataOverageLicenses === 1 ? '' : 's'} for data over the allowance.
+                      </p>
+                    )}
+                  </>
                 ) : calc.sprawlType ? (
                   <>
                     {/* MANAGE + Sprawl: license (user cost) + Data Sprawl cost.
@@ -999,6 +1038,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     ? 'Custom — Contact Sales'
                     : (configuration?.combination === 'overage-agreement' || configuration?.migrationType === 'Overage Agreement')
                     ? 'Select Overage Agreement'
+                    : isDiyConfig(configuration)
+                    ? 'Select DIY Migration'
                     : configuration?.servicePlan === 'Manage'
                     ? 'Select Manage'
                     : `Select ${calc.tier.name}`}

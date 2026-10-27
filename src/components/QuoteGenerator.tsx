@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { PricingCalculation, ConfigurationData, Quote } from '../types/pricing';
-import { formatCurrency, getInstanceTypeCost, overagePerServerPerMonth, manageDataLineCost, manageUserLineCost, isMultiWithSprawl, migrateAddOnTotal, overageAddOnCost } from '../utils/pricing';
+import { formatCurrency, getInstanceTypeCost, overagePerServerPerMonth, manageDataLineCost, manageUserLineCost, isMultiWithSprawl, migrateAddOnTotal, overageAddOnCost, isDiyConfig } from '../utils/pricing';
 import { migrateAddOnLineItems } from '../utils/migrateSelection';
 import { multiSprawlOverageNote } from '../utils/multiSprawl';
 import { buildSprawlAgreementData, sprawlPerDataCost, withDiscountRow } from '../utils/sprawlAgreement';
@@ -42,6 +42,7 @@ import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL, API_ENDPOINTS } from '../config/api';
 import { useNavigate } from 'react-router-dom';
 import { trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from '../analytics/clarity';
+import { diyTemplateTokens } from '../utils/diyAgreement';
 import { getEffectiveDurationMonths, formatMonths } from '../utils/configDuration';
 import { serviceTermTokens } from '../utils/serviceTerm';
 import { getCurrentUser } from '../utils/authUtils';
@@ -2360,6 +2361,7 @@ Quote ID: ${quoteData.id}
         templateData['{{user_data_description}}'] = emailCombinedDescription;
         templateData['{{userDataDescription}}'] = emailCombinedDescription;
         templateData['{{description}}'] = emailCombinedDescription;
+        Object.assign(templateData, diyTemplateTokens(configuration));
 
         // Custom line items: add their total on top of the (already discounted) total tokens.
         if (customLineItems.length > 0 && customLineItemsTotal > 0) {
@@ -2430,11 +2432,11 @@ Quote ID: ${quoteData.id}
         if (result.success && result.processedDocx) {
           agreementBlob = result.processedDocx;
           
-          // Merge selected exhibits ONLY for Multi combination migration type
+          // Merge selected exhibits for Multi combination and DIY (which reuses its exhibit catalogue)
           const uniqueSelectedExhibitsForMerge = Array.from(
             new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean))
           );
-          if (uniqueSelectedExhibitsForMerge.length > 0 && configuration.migrationType === 'Multi combination') {
+          if (uniqueSelectedExhibitsForMerge.length > 0 && (configuration.migrationType === 'Multi combination' || isDiyConfig(configuration))) {
             console.log('📎 Fetching and merging selected exhibits for Multi combination email...', {
               raw: selectedExhibits,
               unique: uniqueSelectedExhibitsForMerge
@@ -8373,6 +8375,7 @@ Total Price: {{total price}}`;
           templateData['{{cloudfuzeManageTotalBundled}}'] = formatCurrency(fallbackCfmUserTotal);
         }
         
+        Object.assign(templateData, diyTemplateTokens(finalConfiguration || quoteData.configuration || configuration));
         console.log('📋 Template data for DOCX processing:', templateData);
         
         // Debug: Check each token value individually
@@ -8846,7 +8849,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           console.log('📄 Processed DOCX size:', result.processedDocx.size, 'bytes');
           console.log('📄 Processed DOCX type:', result.processedDocx.type);
           
-          // Merge selected exhibits ONLY for Multi combination migration type
+          // Merge selected exhibits for Multi combination and DIY (which reuses its exhibit catalogue)
           // Use expanded exhibit IDs (includes both Include and Not Include variants based on plan selection).
           // Fall back to selectedExhibits so manually picked folders (e.g. Dropbox To Microsoft) are never lost.
           const uniqueSelectedExhibitsForMerge = expandedExhibitIdsForMerge.length > 0
@@ -8859,7 +8862,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             uniqueForMerge: uniqueSelectedExhibitsForMerge.length
           });
           
-          if (uniqueSelectedExhibitsForMerge.length > 0 && configuration.migrationType === 'Multi combination') {
+          if (uniqueSelectedExhibitsForMerge.length > 0 && (configuration.migrationType === 'Multi combination' || isDiyConfig(configuration))) {
             console.log('📎 Fetching and merging selected exhibits for Multi combination...', {
               raw: selectedExhibits,
               expanded: expandedExhibitIdsForMerge,

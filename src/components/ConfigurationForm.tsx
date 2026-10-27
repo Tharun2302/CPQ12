@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   exhibitCombinationKey,
   restrictExhibitsToCombination,
@@ -6,16 +6,18 @@ import {
   isOverageAgreement,
 } from '../utils/exhibitCombination';
 import { numberInputValue } from '../utils/numberInput';
-import { ConfigurationData, PricingTier } from '../types/pricing';
+import { ConfigurationData, PricingTier, type DiyWorkload } from '../types/pricing';
+import { diyWorkloadsForFamilies, syncDiyWorkloads } from '../utils/diyWorkloadSync';
 import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, MessageSquare, Search, X, Mail, ChevronDown, Plus } from 'lucide-react';
 import { trackConfiguration } from '../analytics/clarity';
 import ExhibitSelector from './ExhibitSelector';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
-import { PRICING_TIERS, calculateCombinationPricing, formatCurrency, calculateManageSaasPricing, normalizeSprawlTypes, withSprawlTypes, sprawlRowLabel, normalizeSprawlConfigs, hasSprawlConfigs, withSprawlConfigs, manageAgreementCard, isMultiWithSprawl, hasOverageAddOn, sharedMigrateDuration } from '../utils/pricing';
+import { PRICING_TIERS, calculateCombinationPricing, formatCurrency, calculateManageSaasPricing, normalizeSprawlTypes, withSprawlTypes, sprawlRowLabel, normalizeSprawlConfigs, hasSprawlConfigs, withSprawlConfigs, manageAgreementCard, isMultiWithSprawl, hasOverageAddOn, sharedMigrateDuration, isDiyConfig, diyPricingFromConfig, DIY_VALIDITY_MONTHS } from '../utils/pricing';
 import { multiSprawlIssue, withMultiSprawl, withoutMultiSprawl } from '../utils/multiSprawl';
 import MultiDataSprawlSection from './MultiDataSprawlSection';
 import MigrateOptionPicker, { type MigrateOption } from './MigrateOptionPicker';
 import OverageAddOnSection from './OverageAddOnSection';
+import DiyMigrateSection from './DiyMigrateSection';
 import {
   EMPTY_OVERAGE_ADD_ON,
   overageAddOnIssue,
@@ -279,6 +281,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       migrationType: (selectedCombo?.migrationType || '') as any,
       timelineProjection: '',
       overageAddOn: undefined,
+      diyWorkloads: undefined,
       ...NO_EXHIBIT_ROWS
     }, []);
   };
@@ -288,12 +291,16 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       .filter(c => c.migrationType === 'Multi combination' || c.migrationType === 'Overage Agreement')
       .sort((a, b) => ((a as any).displayOrder || 999) - ((b as any).displayOrder || 999))
       .map(c => ({ value: c.value, label: c.label, kind: (c.migrationType === 'Overage Agreement' ? 'overage' : 'multi') as MigrateKind })),
-    ...apiCombinations.filter(isDataSprawlOption).map(c => ({ value: c.value, label: c.label, kind: 'sprawl' as MigrateKind }))
+    ...apiCombinations.filter(isDataSprawlOption).map(c => ({ value: c.value, label: c.label, kind: 'sprawl' as MigrateKind })),
+    ...apiCombinations
+      .filter(c => c.migrationType === 'DIY')
+      .sort((a, b) => ((a as any).displayOrder || 999) - ((b as any).displayOrder || 999))
+      .map(c => ({ value: c.value, label: c.label, kind: 'diy' as MigrateKind }))
   ];
 
   const selectedMigrateValues = (): string[] => {
     const valueOf = (kind: MigrateKind): string | undefined => {
-      if (kind === 'multi') return config.combination;
+      if (kind === 'multi' || kind === 'diy') return config.combination;
       if (kind === 'sprawl') return isMultiWithSprawl(config) ? config.dataSprawlCombination : config.migrationType;
       return isOverageAgreement(config) ? config.combination : migrateOptions.find(o => o.kind === 'overage')?.value;
     };
@@ -306,7 +313,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     const multi = picked('multi');
     const sprawl = picked('sprawl');
     const overage = picked('overage');
-    const newPrimary = primaryMigrateKind([multi && 'multi', sprawl && 'sprawl', overage && 'overage'].filter(Boolean) as MigrateKind[]);
+    const diy = picked('diy');
+    const newPrimary = primaryMigrateKind([multi && 'multi', sprawl && 'sprawl', overage && 'overage', diy && 'diy'].filter(Boolean) as MigrateKind[]);
     const oldKinds = selectedMigrateKinds(config);
     const oldPrimary = primaryMigrateKind(oldKinds);
 
@@ -323,7 +331,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     // The quote has one Duration; it moves to wherever the new main agreement keeps it.
     const carriedDuration = durationToCarry(config, oldPrimary);
 
-    const primaryValue = newPrimary === 'multi' ? multi!.value
+    const primaryValue = newPrimary === 'diy' ? diy!.value
+      : newPrimary === 'multi' ? multi!.value
       : newPrimary === 'sprawl' ? sprawl!.value
       : newPrimary === 'overage' ? overage!.value
       : '';
@@ -341,6 +350,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           exhibits = keptSprawl.ids;
         }
         if (isValidServiceTermMonths(carriedDuration)) next = { ...next, serviceTermMonths: carriedDuration };
+      } else if (newPrimary === 'diy') {
+        // Licences run a fixed term; users and data carry over, everything else starts clean.
+        next = { ...buildMigrateOptionConfig(primaryValue, config), duration: DIY_VALIDITY_MONTHS, diyWorkloads: [] };
       } else {
         next = buildMigrateOptionConfig(primaryValue, config);
         if (newPrimary === 'overage' && config.overageAddOn) {
@@ -857,6 +869,47 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
     fetchExhibitsAndCategorize();
   }, [config.migrationType, selectedExhibits]);
+
+  // DIY: keep the workload checkboxes in step with the exhibits ticked above them.
+  const diyExhibitWorkloadsRef = useRef<DiyWorkload[]>([]);
+  useEffect(() => {
+    if (!isDiyConfig(config)) {
+      diyExhibitWorkloadsRef.current = [];
+      return;
+    }
+    let cancelled = false;
+    const apply = (after: DiyWorkload[]) => {
+      const before = diyExhibitWorkloadsRef.current;
+      diyExhibitWorkloadsRef.current = after;
+      setConfig(prev => {
+        const current = prev.diyWorkloads || [];
+        const diyWorkloads = syncDiyWorkloads(current, before, after);
+        if (diyWorkloads.join() === current.join()) return prev;
+        const next = { ...prev, diyWorkloads };
+        persistConfig(next);
+        return next;
+      });
+    };
+    const ids = new Set((selectedExhibits || []).map(id => String(id ?? '')).filter(Boolean));
+    if (ids.size === 0) {
+      apply([]);
+      return;
+    }
+    (async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/exhibits`);
+        if (!response.ok) return;
+        const data = await response.json();
+        const families = (data?.exhibits || [])
+          .filter((ex: any) => ids.has(String(ex?._id ?? '')))
+          .map(resolveExhibitCategory);
+        if (!cancelled) apply(diyWorkloadsForFamilies(families));
+      } catch (error) {
+        console.error('Error matching DIY workloads to exhibits:', error);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [config.migrationType, config.servicePlan, selectedExhibits]);
 
   // Propagate config changes to parent whenever config state changes
   useEffect(() => {
@@ -1952,6 +2005,40 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
     if (!config.migrationType) {
       alert('Please select a migration type');
+      return;
+    }
+
+    // DIY prices only on users and workloads; under 50 users is billed at the minimum, not blocked.
+    if (isDiyConfig(config)) {
+      if (!config.combination) {
+        alert('Please select a combination');
+        return;
+      }
+      if (!(config.diyWorkloads || []).length) {
+        alert('Please select at least one workload for the DIY migration');
+        return;
+      }
+      if (!(config.numberOfUsers > 0)) {
+        alert('Please enter the number of users for the DIY migration');
+        return;
+      }
+      const diy = diyPricingFromConfig(config);
+      trackConfiguration({
+        migrationType: config.migrationType,
+        numberOfUsers: config.numberOfUsers,
+        instanceType: config.instanceType,
+        numberOfInstances: 0,
+        duration: DIY_VALIDITY_MONTHS,
+        dataSizeGB: diy.dataGB,
+        messages: 0,
+        combination: config.combination,
+        hasDiscount: !!discountValue && parseFloat(discountValue) > 0,
+        discountValue: discountValue ? parseFloat(discountValue) : undefined
+      });
+      onSubmit();
+      setTimeout(() => {
+        document.getElementById('pricing-comparison')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
       return;
     }
 
@@ -4330,8 +4417,23 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
+          {/* MIGRATE DIY: licences with bundled workloads; no instances, duration or region */}
+          {migrationOrTimeline === 'migration' && isDiyConfig(config) && !!config.combination && (
+            <DiyMigrateSection
+              config={config}
+              discountField={renderDiscountField()}
+              onChange={(patch) => {
+                setConfig(prev => {
+                  const next = { ...prev, ...patch, duration: DIY_VALIDITY_MONTHS };
+                  persistConfig(next);
+                  return next;
+                });
+              }}
+            />
+          )}
+
           {/* OTHER MIGRATION TYPES: Standard single configuration (excluding Manage plan) */}
-          {config.migrationType && config.migrationType !== 'Multi combination' && config.servicePlan !== 'Manage' && !!config.combination && (
+          {config.migrationType && config.migrationType !== 'Multi combination' && !isDiyConfig(config) && config.servicePlan !== 'Manage' && !!config.combination && (
             <div data-section="project-configuration" className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 rounded-2xl shadow-2xl border border-blue-100/50 p-8 backdrop-blur-sm">
               <div className="text-center mb-8">
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Project Configuration</h3>

@@ -1,11 +1,13 @@
 import type { ConfigurationData } from '../types/pricing';
-import { acceptsOverageAddOn, formatCurrency, hasOverageAddOn, isMultiWithSprawl, overageAddOnCost, sharedMigrateDuration } from './pricing';
+import { acceptsOverageAddOn, formatCurrency, hasOverageAddOn, isDiyConfig, isMultiWithSprawl, overageAddOnCost, sharedMigrateDuration } from './pricing';
 import { isDataSprawlSelected } from './dataSprawlOption';
 import { isOverageAgreement } from './exhibitCombination';
 import { multiSprawlLineItems, type MultiSprawlLineItem } from './multiSprawl';
 
-// The Migrate list lets these three be ticked together; one option per kind.
-export type MigrateKind = 'multi' | 'overage' | 'sprawl';
+// The Migrate list lets multi, overage and sprawl be ticked together; one option per kind.
+// DIY is standalone: it is never ticked alongside anything else.
+export type MigrateKind = 'multi' | 'overage' | 'sprawl' | 'diy';
+export const STANDALONE_MIGRATE_KINDS: readonly MigrateKind[] = ['diy'];
 
 export type OverageAddOn = NonNullable<ConfigurationData['overageAddOn']>;
 
@@ -14,6 +16,7 @@ export const EMPTY_OVERAGE_ADD_ON: OverageAddOn = { instanceType: 'Small', numbe
 
 export function selectedMigrateKinds(config: ConfigurationData | undefined | null): MigrateKind[] {
   if (!config) return [];
+  if (isDiyConfig(config)) return ['diy'];
   const kinds: MigrateKind[] = [];
   if (config.migrationType === 'Multi combination' && config.servicePlan !== 'Manage') kinds.push('multi');
   if (isOverageAgreement(config) || hasOverageAddOn(config)) kinds.push('overage');
@@ -23,6 +26,7 @@ export function selectedMigrateKinds(config: ConfigurationData | undefined | nul
 
 // The agreement the quote is built on; the other ticked options are added into it.
 export function primaryMigrateKind(kinds: MigrateKind[]): MigrateKind | null {
+  if (kinds.includes('diy')) return 'diy';
   if (kinds.includes('multi')) return 'multi';
   if (kinds.includes('sprawl')) return 'sprawl';
   if (kinds.includes('overage')) return 'overage';
@@ -47,6 +51,17 @@ export function overageLineItem(config: ConfigurationData | undefined | null): M
   };
 }
 
+// Ticking a standalone option drops everything else; ticking anything else drops the standalone one.
+// Within the combinable kinds, ticking an option replaces any other option of its kind.
+export function toggleMigrateOption<T extends { value: string; kind: MigrateKind }>(options: T[], selected: string[], option: T): string[] {
+  if (selected.includes(option.value)) return selected.filter(v => v !== option.value);
+  if (STANDALONE_MIGRATE_KINDS.includes(option.kind)) return [option.value];
+  const dropped = new Set(options
+    .filter(o => o.kind === option.kind || STANDALONE_MIGRATE_KINDS.includes(o.kind))
+    .map(o => o.value));
+  return [...selected.filter(v => !dropped.has(v)), option.value];
+}
+
 // Rows injected into the main agreement's pricing table for everything ticked alongside it.
 export function migrateAddOnLineItems(config: ConfigurationData | undefined | null): MultiSprawlLineItem[] {
   const overage = overageLineItem(config);
@@ -66,6 +81,8 @@ export function withOverageAddOn(config: ConfigurationData, addOn: OverageAddOn 
 
 // The Duration to keep when the main agreement changes, read as the old main agreement holds it.
 export function durationToCarry(config: ConfigurationData, oldPrimary: MigrateKind | null): number {
+  // DIY's 12 months is a licence term, not a project Duration to hand on.
+  if (oldPrimary === 'diy') return 0;
   if (oldPrimary === 'overage') {
     const months = Math.floor(Number(config.duration));
     return Number.isFinite(months) && months > 0 ? months : 0;

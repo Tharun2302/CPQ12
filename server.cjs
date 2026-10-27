@@ -2792,7 +2792,7 @@ app.get('/api/combinations/:id/file', async (req, res) => {
   }
 });
 
-const ALLOWED_MIGRATION_TYPES = ['Messaging', 'Content', 'Email', 'Multi combination', 'Overage Agreement', 'Manage', 'Bundle'];
+const ALLOWED_MIGRATION_TYPES = ['Messaging', 'Content', 'Email', 'Multi combination', 'Overage Agreement', 'DIY', 'Manage', 'Bundle'];
 
 // Create combination (optional file upload - e.g. DOCX template for this combination)
 app.post('/api/combinations', upload.single('file'), async (req, res) => {
@@ -4449,6 +4449,8 @@ function preprocessDocxForLibreOffice(buffer) {
       // page so its heading never orphans at the bottom of the previous page.
       if (xmlPath === 'word/document.xml') {
         updated = injectPageBreakBeforeSection(updated, 'Important Payment Notes');
+        // The closing section must not leave its last line alone on a new page.
+        updated = keepSectionTogether(updated, 'MISCELLANEOUS');
       }
 
       if (updated !== original) {
@@ -4561,13 +4563,22 @@ function extractPositionH(anchorRun) {
  *  - Idempotent (skips paragraphs that already have <w:pageBreakBefore/>)
  *  - Only matches paragraphs whose visible text contains the heading
  *  - Returns the input unchanged if no matching paragraph is found
+ *  - Ignores text boxes: a heading drawn in a text box (DIY template) is not a
+ *    body paragraph, and a page break inside one makes LibreOffice emit a blank page
  */
 function injectPageBreakBeforeSection(xml, sectionHeading) {
   if (!sectionHeading) return xml;
   const paragraphRegex = /<w:p\b([^>]*)>([\s\S]*?)<\/w:p>/g;
   let matched = 0;
 
-  const result = xml.replace(paragraphRegex, (full, attrs, inner) => {
+  // Park text box contents so only top-level body paragraphs are matched.
+  const textBoxes = [];
+  const masked = xml.replace(/<w:txbxContent\b[\s\S]*?<\/w:txbxContent>/g, (box) => {
+    textBoxes.push(box);
+    return `<!--txbx${textBoxes.length - 1}-->`;
+  });
+
+  const result = masked.replace(paragraphRegex, (full, attrs, inner) => {
     // Extract visible text content of the paragraph (concatenate all <w:t>…</w:t>).
     const textParts = inner.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [];
     const text = textParts.map((t) => t.replace(/<[^>]+>/g, '')).join('');
@@ -4591,7 +4602,50 @@ function injectPageBreakBeforeSection(xml, sectionHeading) {
   if (matched > 0) {
     console.log(`📐   inserted <w:pageBreakBefore/> into ${matched} paragraph(s) matching "${sectionHeading}"`);
   }
-  return result;
+  return result.replace(/<!--txbx(\d+)-->/g, (_, i) => textBoxes[Number(i)]);
+}
+
+/**
+ * Add `<w:keepLines/>` to the first body paragraph after the given section heading
+ * (which may be drawn in a text box), so the section moves to the next page whole.
+ *
+ * Why: LibreOffice sets text a little looser than Word, so a closing section that
+ * just fits in Word can spill its last line onto a page of its own. The heading
+ * paragraphs already carry keepNext, so keeping the body together carries them too.
+ * A paragraph longer than a page still splits; LibreOffice ignores keepLines then.
+ */
+function keepSectionTogether(xml, sectionHeading) {
+  if (!sectionHeading || !xml.includes(`>${sectionHeading}<`)) return xml;
+
+  // Park text boxes so each top-level paragraph matches whole, heading host included.
+  const textBoxes = [];
+  const masked = xml.replace(/<w:txbxContent\b[\s\S]*?<\/w:txbxContent>/g, (box) => {
+    textBoxes.push(box);
+    return `<!--txbx${textBoxes.length - 1}-->`;
+  });
+  const visibleText = (s) => (s.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || []).map((t) => t.replace(/<[^>]+>/g, '')).join('');
+  const holdsHeading = (inner) => visibleText(inner).includes(sectionHeading)
+    || [...inner.matchAll(/<!--txbx(\d+)-->/g)].some(([, i]) => visibleText(textBoxes[Number(i)]).includes(sectionHeading));
+
+  let headingFound = false;
+  let done = false;
+  const result = masked.replace(/<w:p\b([^>]*)>([\s\S]*?)<\/w:p>/g, (full, attrs, inner) => {
+    if (done) return full;
+    if (!headingFound) {
+      headingFound = holdsHeading(inner);
+      return full;
+    }
+    if (!visibleText(inner).trim()) return full; // spacer between heading and body
+    done = true;
+    if (/<w:keepLines\b/.test(inner)) return full;
+    const existingPPr = inner.match(/<w:pPr\b[^>]*>([\s\S]*?)<\/w:pPr>/);
+    const newInner = existingPPr
+      ? inner.replace(existingPPr[0], '<w:pPr><w:keepLines/>' + existingPPr[1] + '</w:pPr>')
+      : '<w:pPr><w:keepLines/></w:pPr>' + inner;
+    console.log(`📐   kept the "${sectionHeading}" section together`);
+    return `<w:p${attrs}>${newInner}</w:p>`;
+  });
+  return result.replace(/<!--txbx(\d+)-->/g, (_, i) => textBoxes[Number(i)]);
 }
 
 /**

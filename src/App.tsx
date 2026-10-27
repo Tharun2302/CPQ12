@@ -1166,7 +1166,7 @@ function App() {
     }
   }, [templates.length]); // Trigger when templates array changes from empty to populated
 
-  // When Multi combination, Overage Agreement, or Manage (specific agreement) + no DB template:
+  // When Multi combination, Overage Agreement, DIY, or Manage (specific agreement) + no DB template:
   // use the combination-attached file from Combination Manager as the template.
   // For Manage plans, look up by migrationType (the agreement slug) since combination is always 'manage-standalone'.
   useEffect(() => {
@@ -1174,7 +1174,7 @@ function App() {
     const servicePlan = configuration?.servicePlan;
     const combination = (configuration?.combination || '').trim().toLowerCase();
     const isManage = servicePlan === 'Manage';
-    const isCombinationTemplateType = migrationType === 'Multi combination' || migrationType === 'Overage Agreement' || isManage;
+    const isCombinationTemplateType = migrationType === 'Multi combination' || migrationType === 'Overage Agreement' || migrationType === 'DIY' || isManage;
     if (!isCombinationTemplateType) return;
     // A combination template restored from localStorage carries no file bytes any more, so it must
     // be re-fetched; anything else already selected is left alone.

@@ -1,6 +1,26 @@
 // Data Sprawl types (COST ESTIMATOR E101). Content is priced per GB, Message/Email per user.
 export type SprawlType = 'Content' | 'Message' | 'Email';
 
+// Migrate DIY: self-serve licences, one per user, with the chosen workloads bundled in.
+export type DiyWorkload = 'Mailbox' | 'Content' | 'Messages';
+
+export interface DiyPricing {
+  workloads: DiyWorkload[];
+  users: number;
+  dataGB: number;
+  ratePerLicense: number;
+  // Data allowance one licence carries across the chosen capped workloads (0 = no cap).
+  gbPerLicense: number;
+  // Licences billed: the most of users, the 50 minimum, and what the data needs.
+  licenses: number;
+  // Licences added because the user count was under the minimum.
+  minimumTopUp: number;
+  // Licences added because the data exceeded the allowance (no per-GB billing).
+  dataOverageLicenses: number;
+  belowMinimum: boolean;
+  totalCost: number;
+}
+
 // One priced Data Sprawl line — one per selected type.
 export interface SprawlLine {
   type: SprawlType;
@@ -65,7 +85,7 @@ export interface ConfigurationData {
   instanceType: 'Small' | 'Standard' | 'Large' | 'Extra Large';
   numberOfInstances: number;
   duration: number;
-  migrationType: 'Multi combination' | 'Messaging' | 'Content' | 'Email' | 'Overage Agreement';
+  migrationType: 'Multi combination' | 'Messaging' | 'Content' | 'Email' | 'Overage Agreement' | 'DIY';
   dataSizeGB: number;
   messages?: number;
   startDate?: string;
@@ -165,6 +185,9 @@ export interface ConfigurationData {
     instanceType: 'Small' | 'Standard' | 'Large' | 'Extra Large';
     numberOfInstances: number;
   };
+  // Migrate DIY (migrationType 'DIY'): workloads bundled into each licence. Users reuse
+  // numberOfUsers; no data size is collected. The licence term is fixed, so duration stays 12.
+  diyWorkloads?: DiyWorkload[];
 }
 
 export interface PricingCalculation {
@@ -234,6 +257,8 @@ export interface PricingCalculation {
   // Sum of sprawlLines[].cost, full precision.
   sprawlCost?: number;
   sprawlStandalone?: { dataCost: number; totalCost: number };
+  // Migrate DIY breakdown; totalCost and userCost equal diy.totalCost.
+  diy?: DiyPricing;
   // Multi combination + Data Sprawl: priced on their own and included in totalCost.
   // Kept apart from sprawlLines, whose presence switches the Manage display paths on.
   multiSprawlLines?: SprawlLine[];
