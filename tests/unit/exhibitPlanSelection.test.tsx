@@ -31,9 +31,17 @@ const MICROSOFT = [
   exhibit({ _id: 'ms-basic-out', name: `${MS_NAME} Basic Plan - Basic Not Include`, combinations: ['multi-combination'], planType: 'basic', includeType: 'notincluded' }),
 ];
 
-// Correctly tagged pair with only a Standard tier: the existing Basic -> Standard fallback must keep working.
+// Pair with only a Standard tier: a Basic quote must not borrow it.
 const STANDARD_ONLY = [
   exhibit({ _id: 'bd-std-in', name: 'Box To Dropbox Standard Plan - Standard Include', combinations: ['box-to-dropbox'], planType: 'standard', includeType: 'included' }),
+];
+
+// Box -> Google (MyDrive&ShareDrive): Standard has an Include but no Not Include exhibit.
+const BOX_GOOGLE_NAME = 'Box to Google (MyDrive&ShareDrive)';
+const BOX_GOOGLE = [
+  exhibit({ _id: 'bg-basic-in', name: `${BOX_GOOGLE_NAME} Basic Plan - Basic Include`, combinations: ['multi-combination'], planType: 'basic', includeType: 'included' }),
+  exhibit({ _id: 'bg-basic-out', name: `${BOX_GOOGLE_NAME} Basic Plan - Basic Not Include`, combinations: ['multi-combination'], planType: 'basic', includeType: 'notincluded' }),
+  exhibit({ _id: 'bg-std-in', name: `${BOX_GOOGLE_NAME} Standard Plan - Standard Include`, combinations: ['multi-combination'], planType: 'standard', includeType: 'included' }),
 ];
 
 const json = (body: unknown) =>
@@ -85,9 +93,13 @@ describe('Plan-specific exhibit selection', () => {
     expect(ids).toHaveLength(2);
   });
 
-  it('still falls back to Standard for a pair that has no Basic exhibit at all', async () => {
+  it('does not borrow Standard exhibits for a pair that has no Basic exhibit', async () => {
     expect(await autoSelected('Basic', [...ONEDRIVE, ...STANDARD_ONLY])).toEqual(
-      ['bd-std-in', 'od-basic-in', 'od-basic-out'],
+      ['od-basic-in', 'od-basic-out'],
     );
+  });
+
+  it('Standard with no Standard Not Include does not pull in Basic Not Include', async () => {
+    expect(await autoSelected('Standard', BOX_GOOGLE)).toEqual(['bg-std-in']);
   });
 });

@@ -198,6 +198,25 @@ export function exhibitFolderKey(name: string): string {
 }
 
 /**
+ * Source-to-destination family of a combined exhibit, e.g. "dropbox to google" for
+ * "Dropbox to Google(MyDrive & ShareDrive)". A dedicated exhibit belongs to that family when
+ * its folder name starts with it ("Dropbox to Google MyDrive"). '' when the name has no
+ * "<source> to <destination>" before its bracket, so it is never compared with anything.
+ */
+export function combinedExhibitFamily(name: string): string {
+  const label = exhibitFolderLabel(name).toLowerCase().replace(/\s+/g, ' ').trim();
+  const bracket = label.indexOf('(');
+  const family = (bracket >= 0 ? label.slice(0, bracket) : label).trim();
+  return / to \S/.test(family) ? family : '';
+}
+
+export function inCombinedFamily(name: string, family: string): boolean {
+  if (!family) return false;
+  const label = exhibitFolderLabel(name).toLowerCase().replace(/\s+/g, ' ').trim();
+  return label === family || label.startsWith(`${family} `) || label.startsWith(`${family}(`);
+}
+
+/**
  * The migration pair an exhibit belongs to, recovered from its name, for exhibits wrongly
  * tagged with the Multi-Combination agreement slug. Returns '' when the name does not
  * describe a "<source> to <destination>" pair, so a genuinely generic exhibit is left alone.

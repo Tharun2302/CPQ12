@@ -269,6 +269,9 @@ export interface PricingCalculation {
   // UI should surface as a "Contact sales" CTA rather than a numeric quote.
   status?: 'custom';
   message?: string;
+  // Custom plan only: exhibit plan per combination (by combination name). A plan card leaves it
+  // unset, so every combination uses that card's plan.
+  exhibitPlans?: Record<string, string>;
 }
 
 export interface DealData {

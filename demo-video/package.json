@@ -1,0 +1,17 @@
+{
+  "name": "cpq-demo-video",
+  "private": true,
+  "type": "module",
+  "description": "Narrated onboarding walkthrough video for Zenop.ai CPQ (local demo data only)",
+  "scripts": {
+    "setup": "node setup-demo.mjs",
+    "setup:remove": "node setup-demo.mjs --remove",
+    "tts": "node tts.mjs",
+    "dry": "node record.mjs --dry",
+    "record": "node record.mjs",
+    "build": "node build-video.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.62.0"
+  }
+}

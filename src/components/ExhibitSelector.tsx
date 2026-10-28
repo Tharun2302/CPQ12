@@ -246,14 +246,6 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     }
   };
 
-  // Only Basic and Standard exist today, so each falls back to the other when a
-  // combination has no exhibit of its own tier. Advanced/Premium/Enterprise are left
-  // as-is (no sibling tier to fall back to) in case they're introduced later.
-  // Advanced falls back to Standard: some combinations are only ever authored at one tier
-  // (e.g. Gmail to Outlook has no Advanced exhibit), and without this they vanish from
-  // Advanced quotes entirely.
-  const FALLBACK_TIER: Record<string, string> = { basic: 'standard', standard: 'basic', advanced: 'standard' };
-
   // Resolve an exhibit's tier from its planType field, falling back to name-based
   // detection (legacy exhibits that predate the planType field).
   const getExhibitTier = (ex: Exhibit): string | null => {
@@ -277,34 +269,10 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     return 'ambiguous'; // Multiple tier keywords in the name - don't guess
   };
 
-  // For the selected tier, resolve which exhibit IDs count as "belonging" to it, per
-  // combination + include-type (Included/Not Included) pair. A combination only falls
-  // back to the sibling tier (Basic <-> Standard) for the specific include-type variant
-  // that's missing - it never overrides a variant the selected tier already has.
-  const resolveTierExhibitIds = (candidates: Exhibit[], tierName: string): Set<string> => {
-    const fallbackTier = FALLBACK_TIER[tierName];
-    const byGroup = new Map<string, Exhibit[]>();
-
-    candidates.forEach(ex => {
-      const tier = getExhibitTier(ex);
-      if (tier !== tierName && (!fallbackTier || tier !== fallbackTier)) return;
-      const comboKey = (ex.combinations && ex.combinations.length > 0) ? ex.combinations[0] : 'all';
-      const groupKey = `${comboKey}|${ex.includeType || 'generic'}`;
-      if (!byGroup.has(groupKey)) byGroup.set(groupKey, []);
-      byGroup.get(groupKey)!.push(ex);
-    });
-
-    const ids = new Set<string>();
-    byGroup.forEach(groupExhibits => {
-      const own = groupExhibits.filter(ex => getExhibitTier(ex) === tierName);
-      const chosen = own.length > 0
-        ? own
-        : (fallbackTier ? groupExhibits.filter(ex => getExhibitTier(ex) === fallbackTier) : []);
-      chosen.forEach(ex => ids.add(ex._id));
-    });
-
-    return ids;
-  };
+  // Never borrow another tier's exhibits: a missing Include/Not Include variant for the
+  // selected tier means that variant is intentionally absent from the agreement.
+  const resolveTierExhibitIds = (candidates: Exhibit[], tierName: string): Set<string> =>
+    new Set(candidates.filter(ex => getExhibitTier(ex) === tierName).map(ex => ex._id));
 
   // Filter exhibits based on selected tier (Basic/Standard/Advanced)
   const filteredExhibits = useMemo(() => {
@@ -316,8 +284,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     const tierName = selectedTier.tier.name.toLowerCase();
     const tierExhibitIds = resolveTierExhibitIds(exhibits, tierName);
 
-    // Show exhibits matching the selected tier (including any sibling-tier fallback for
-    // combinations missing that specific tier/include-type), plus fully generic exhibits.
+    // Show exhibits matching the selected tier, plus fully generic exhibits.
     return exhibits.filter(exhibit => {
       const tier = getExhibitTier(exhibit);
       if (tier === null) return true;
@@ -335,9 +302,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 
     const tierName = selectedTier.tier.name.toLowerCase();
 
-    // Find ALL exhibits that match the selected tier (both Include and Not Include variants),
-    // falling back to the sibling tier (Basic <-> Standard) for any combination/include-type
-    // pair that has no exhibit of its own tier.
+    // Find ALL exhibits that match the selected tier (both Include and Not Include variants).
     const matchingExhibitIds = Array.from(resolveTierExhibitIds(exhibits, tierName));
 
     // Always include required exhibits (they should always be selected)

@@ -5,6 +5,8 @@ import { formatCurrency, formatUnitRate, PRICING_TIERS, calculateCombinationPric
 import { overageLineItem } from '../utils/migrateSelection';
 import { calculateDiscount, normalizeDiscountPercent } from '../utils/discount';
 import { useDiscountPolicy } from '../hooks/useDiscountPolicy';
+import { BACKEND_URL } from '../config/api';
+import { configsMissingPlan, planSelectionBlockedMessage } from '../utils/exhibitPlan';
 
 interface PricingComparisonProps {
   calculations: PricingCalculation[];
@@ -51,6 +53,36 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
       console.warn('Could not save per-combination exhibit plans:', e);
     }
   }, [selectedTiersPerCombination]);
+
+  // Exhibit catalogue, to refuse a plan that a selected combination has no exhibits for.
+  // Stays empty when it cannot be loaded, which skips the check rather than blocking every plan.
+  const [exhibitCatalogue, setExhibitCatalogue] = useState<Array<{ _id?: string; name?: string; planType?: string }>>([]);
+  const configuredCombinations = useMemo(
+    () => [...(configuration?.messagingConfigs || []), ...(configuration?.contentConfigs || []), ...(configuration?.emailConfigs || [])],
+    [configuration],
+  );
+  const hasConfiguredCombinations = configuredCombinations.length > 0;
+  useEffect(() => {
+    if (!hasConfiguredCombinations) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/exhibits`);
+        const data = res.ok ? await res.json() : null;
+        if (!cancelled && Array.isArray(data?.exhibits)) setExhibitCatalogue(data.exhibits);
+      } catch (e) {
+        console.warn('Could not load exhibits to check plan availability:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [hasConfiguredCombinations]);
+
+  // True (after telling the user) when a selected combination has no exhibits for its plan.
+  const planMissingExhibits = (planFor: (combinationName: string) => string): boolean => {
+    const message = planSelectionBlockedMessage(configsMissingPlan(configuredCombinations, exhibitCatalogue, planFor));
+    if (message) alert(message);
+    return !!message;
+  };
 
   // PRICING plan per combination (key: combinationName, value: plan name). Mirrors the EXHIBIT
   // map above in every way — per combination, defaulting to Standard — but kept separate from it:
@@ -1018,6 +1050,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
               <button
                 onClick={() => {
                   if (calc.status === 'custom') return;
+                  if (planMissingExhibits(() => calc.tier.name)) return;
                   onSelectTier(calc);
                 }}
                 disabled={calc.status === 'custom'}
@@ -1239,6 +1272,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   // global pricing plan; per-combination exhibit plans only affect which exhibits
                   // are pulled (handled downstream).
                   if (!configuration) return;
+                  if (planMissingExhibits((name) => selectedTiersPerCombination[name] || 'Standard')) return;
 
                   const pricingTier = PRICING_TIERS.find(t => t.name === headlinePricingPlan) || PRICING_TIERS[1];
                   const tierFor = (combinationName: string) =>
@@ -1303,7 +1337,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
                   // Create custom calculation: each combination is priced at its own plan, so the
                   // tier stamped here is only the quote's headline plan (label + template pick).
-                  // Per-combination exhibit plans are read downstream (sessionStorage).
+                  // Per-combination exhibit plans travel with this calculation; a plan card sends none.
                   const customCalculation: PricingCalculation = {
                     userCost: combinedUserCost,
                     dataCost: combinedDataCost,
@@ -1317,7 +1351,10 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     emailCalculation: calculations[0]?.emailCalculation,
                     messagingCombinationBreakdowns: buildBreakdowns(configuration.messagingConfigs, 'messaging'),
                     contentCombinationBreakdowns: buildBreakdowns(configuration.contentConfigs, 'content'),
-                    emailCombinationBreakdowns: buildBreakdowns(configuration.emailConfigs, 'email')
+                    emailCombinationBreakdowns: buildBreakdowns(configuration.emailConfigs, 'email'),
+                    exhibitPlans: Object.fromEntries(
+                      configuredCombinations.map(c => [c.exhibitName, selectedTiersPerCombination[c.exhibitName] || 'Standard'])
+                    )
                   };
                   const sprawlLines = multiSprawlLines(configuration);
                   if (sprawlLines.length > 0) {

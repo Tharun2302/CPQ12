@@ -4,7 +4,8 @@ import { formatCurrency, getInstanceTypeCost, overagePerServerPerMonth, manageDa
 import { migrateAddOnLineItems } from '../utils/migrateSelection';
 import { multiSprawlOverageNote } from '../utils/multiSprawl';
 import { buildSprawlAgreementData, sprawlPerDataCost, withDiscountRow } from '../utils/sprawlAgreement';
-import { withPairCombinations, exhibitCombinationKey, restrictExhibitsToCombination } from '../utils/exhibitCombination';
+import { withPairCombinations, exhibitCombinationKey, restrictExhibitsToCombination, combinedExhibitFamily, inCombinedFamily } from '../utils/exhibitCombination';
+import { combinationsMissingPlan, dropOtherPlanExhibits, exhibitPlanResolver, missingPlanExhibitsMessage, type MissingPlanExhibits } from '../utils/exhibitPlan';
 import { manageExhibitTitles, mergeManageExhibits } from '../utils/manageExhibitMerge';
 import {
   FileText,
@@ -2520,7 +2521,22 @@ Quote ID: ${quoteData.id}
                 return base;
               };
 
-              // Expand merge list to include sibling Included/Not Included exhibits for the same base combo + plan.
+              // Picker ticks can be another plan's exhibits (ticked before the plan was chosen), so
+              // expand each ticked combination to the CHOSEN plan's Include + Not Include exhibits.
+              const emailComboKeyOf = (ex: any): string => {
+                const base = getNormalizedBaseCombination(ex);
+                return base ? `${(ex?.category || 'content').toString().toLowerCase()}|${base}` : '';
+              };
+              const emailCalc = calculation || safeCalculation;
+              const emailPlanLower = (emailCalc?.tier?.name ?? '').toString().toLowerCase();
+              const emailCfg = configuration as any;
+              const emailPlanFor = exhibitPlanResolver(
+                [...(emailCfg.messagingConfigs || []), ...(emailCfg.contentConfigs || []), ...(emailCfg.emailConfigs || [])],
+                configuration.migrationType === 'Multi combination' ? emailCalc?.exhibitPlans : undefined,
+                allExhibits,
+                emailPlanLower,
+              );
+
               const expandedForMerge = new Set<string>();
               for (const id of uniqueSelectedExhibitsForMerge) {
                 const ex = lookup.get(id);
@@ -2539,7 +2555,7 @@ Quote ID: ${quoteData.id}
                   if (!other?._id) continue;
                   const otherCat = (other?.category || 'content').toString().toLowerCase();
                   if (otherCat !== category) continue;
-                  if (getPlanLowerFromExhibit(other) !== planLower) continue;
+                  if (getPlanLowerFromExhibit(other) !== (emailPlanFor(other) || planLower)) continue;
                   if (getNormalizedBaseCombination(other) !== baseCombo) continue;
                   // Only consider the intended includeType variants
                   const it = (other?.includeType || '').toString();
@@ -2547,8 +2563,15 @@ Quote ID: ${quoteData.id}
                   expandedForMerge.add(other._id.toString());
                 }
               }
+              const selectedComboKeys = new Set(uniqueSelectedExhibitsForMerge.map((id) => emailComboKeyOf(lookup.get(id))).filter(Boolean));
+              const emailMissingPlan = emailPlanLower
+                ? combinationsMissingPlan(allExhibits.filter((ex) => selectedComboKeys.has(emailComboKeyOf(ex))), emailPlanFor, emailComboKeyOf)
+                : [];
+              if (emailMissingPlan.length > 0) alert(missingPlanExhibitsMessage(emailMissingPlan));
 
-              const expandedUniqueSelectedExhibitsForMerge = Array.from(expandedForMerge).filter(Boolean);
+              const expandedUniqueSelectedExhibitsForMerge = emailPlanLower
+                ? dropOtherPlanExhibits(Array.from(expandedForMerge).filter(Boolean), lookup, emailPlanFor)
+                : Array.from(expandedForMerge).filter(Boolean);
               if (expandedUniqueSelectedExhibitsForMerge.length !== uniqueSelectedExhibitsForMerge.length) {
                 console.log('📎 Expanded exhibit merge list (include both Included/Not Included variants):', {
                   before: uniqueSelectedExhibitsForMerge.length,
@@ -6261,7 +6284,10 @@ Total Price: {{total price}}`;
         
         // Store expanded exhibit IDs for use in document merging (includes both Include and Not Include variants)
         let expandedExhibitIdsForMerge: string[] = [];
-        
+        // Set once the plan is known; every merge list passes through it so no fallback can re-add another plan's exhibits.
+        let planForMergeExhibit: ((ex: any) => string) | null = null;
+        let missingPlanExhibits: MissingPlanExhibits[] = [];
+
         // Initialize totalUserCountFromExhibits outside try block so it's accessible everywhere
         let totalUserCountFromExhibits = userCount || 1; // Default to single migration userCount
         
@@ -6364,35 +6390,21 @@ Total Price: {{total price}}`;
               // (category|baseCombination) -> plan map so the exhibit filter below honors the
               // plan chosen for EACH combination. A single plan still covers BOTH in-scope and
               // out-scope variants because scope (includeType) is a separate dimension.
-              const perCombinationPlanByKey = new Map<string, string>();
-              try {
-                const rawPerCombo = typeof sessionStorage !== 'undefined'
-                  ? sessionStorage.getItem('cpq_selected_tiers_per_combination')
-                  : null;
-                if (rawPerCombo && isMultiCombination) {
-                  const perCombo = JSON.parse(rawPerCombo) as Record<string, string>;
-                  const allCfgs = [
-                    ...((cfgAny.messagingConfigs as any[]) || []),
-                    ...((cfgAny.contentConfigs as any[]) || []),
-                    ...((cfgAny.emailConfigs as any[]) || []),
-                  ];
-                  for (const cfg of allCfgs) {
-                    const chosen = perCombo[cfg?.exhibitName];
-                    if (!chosen) continue;
-                    const cfgExhibit = allExhibits.find(
-                      (e: any) => (e?._id?.toString?.() ?? '') === (cfg?.exhibitId?.toString?.() ?? '')
-                    );
-                    if (!cfgExhibit) continue;
-                    const cat = (cfgExhibit.category || 'content').toString().toLowerCase();
-                    const base = getBaseCombination(cfgExhibit);
-                    if (!base) continue;
-                    perCombinationPlanByKey.set(`${cat}|${base}`, chosen.toString().toLowerCase());
-                  }
-                  console.log('🔧 Per-combination plan overrides:', Object.fromEntries(perCombinationPlanByKey));
-                }
-              } catch (e) {
-                console.warn('Could not parse per-combination tier selections:', e);
-              }
+              const comboKeyOf = (ex: any): string => {
+                const base = getBaseCombination(ex);
+                return base ? `${(ex?.category || 'content').toString().toLowerCase()}|${base}` : '';
+              };
+              // Only the custom plan carries per-combination exhibit plans. A plan card must not
+              // pick up the Standard defaults the plan page saves for every combination on load.
+              const customExhibitPlans = isMultiCombination ? (calculation || safeCalculation)?.exhibitPlans : undefined;
+              if (customExhibitPlans) console.log('🔧 Per-combination exhibit plans:', customExhibitPlans);
+              const planForExhibit = exhibitPlanResolver(
+                [...(cfgAny.messagingConfigs || []), ...(cfgAny.contentConfigs || []), ...(cfgAny.emailConfigs || [])],
+                customExhibitPlans,
+                allExhibits,
+                selectedPlanLower,
+              );
+              if (selectedPlanLower) planForMergeExhibit = planForExhibit;
 
               console.log('🔍 Exhibit expansion debug:', {
                 selectedPlanName,
@@ -6659,34 +6671,7 @@ Total Price: {{total price}}`;
                 const expandedIds = new Set<string>();
                 const matchedExhibits: Array<{ id: string; name: string; plan: string; combo: string }> = [];
                 const skippedExhibits: Array<{ name: string; reason: string }> = [];
-
-                // Only Basic and Standard exist today, so each falls back to the other when a
-                // combination/include-type has no exhibit of its own plan. Advanced/Premium/
-                // Enterprise are left as-is (no defined sibling to fall back to).
-                const FALLBACK_PLAN: Record<string, string> = { basic: 'standard', standard: 'basic', advanced: 'standard' };
-                const getIncludeTypeLower = (ex: any): string =>
-                  (ex?.includeType || (String(ex?.name || '').toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
-
-                // Precompute which plans actually exist per (category|baseCombo|includeType) group,
-                // so a combination missing the desired plan can fall back to its sibling plan
-                // instead of silently dropping that combination from the agreement.
-                const planAvailabilityByGroup = new Map<string, Set<string>>();
-                for (const ex of allExhibits) {
-                  const category = (ex.category || 'content').toLowerCase();
-                  const baseCombo = getBaseCombination(ex);
-                  if (!baseCombo) continue;
-                  const plan = getPlanFromExhibit(ex).toLowerCase();
-                  if (!plan) continue; // generic exhibits don't count toward plan availability
-                  const groupKey = `${category}|${baseCombo}|${getIncludeTypeLower(ex)}`;
-                  if (!planAvailabilityByGroup.has(groupKey)) planAvailabilityByGroup.set(groupKey, new Set());
-                  planAvailabilityByGroup.get(groupKey)!.add(plan);
-                }
-                const resolveEffectivePlan = (category: string, baseCombo: string, includeType: string, desiredPlan: string): string => {
-                  const available = planAvailabilityByGroup.get(`${category}|${baseCombo}|${includeType}`);
-                  if (!available || available.has(desiredPlan)) return desiredPlan;
-                  const fallback = FALLBACK_PLAN[desiredPlan];
-                  return (fallback && available.has(fallback)) ? fallback : desiredPlan;
-                };
+                const selectedComboExhibits: any[] = [];
 
                 for (const ex of allExhibits) {
                   const category = (ex.category || 'content').toLowerCase();
@@ -6728,20 +6713,16 @@ Total Price: {{total price}}`;
                     continue;
                   }
 
+                  selectedComboExhibits.push(ex);
                   const exhibitPlan = getPlanFromExhibit(ex);
                   // IMPORTANT: Allow exhibits without plan types (generic exhibits) to be included
                   // These are combination-specific but not plan-specific (e.g., "Google Chat to Google Chat")
                   const isGenericExhibit = !exhibitPlan || exhibitPlan === '';
                   // Honor a per-combination plan override for this exhibit's combination;
-                  // otherwise fall back to the single global plan. Then resolve to the
-                  // sibling plan (Basic <-> Standard) if this combo/include-type has none
-                  // of the desired plan at all.
-                  const desiredPlanLower = perCombinationPlanByKey.get(`${category}|${baseCombo}`) || selectedPlanLower;
-                  const effectivePlanLower = isGenericExhibit
-                    ? desiredPlanLower
-                    : resolveEffectivePlan(category, baseCombo, getIncludeTypeLower(ex), desiredPlanLower);
-                  if (!isGenericExhibit && exhibitPlan.toLowerCase() !== effectivePlanLower) {
-                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `plan mismatch: ${exhibitPlan} !== ${effectivePlanLower}` });
+                  // otherwise use the single global plan. Never borrow another plan's exhibits.
+                  const desiredPlanLower = planForExhibit(ex);
+                  if (!isGenericExhibit && exhibitPlan.toLowerCase() !== desiredPlanLower) {
+                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `plan mismatch: ${exhibitPlan} !== ${desiredPlanLower}` });
                     continue; // Skip if plan doesn't match (only for plan-specific exhibits)
                   }
                   expandedIds.add(ex._id?.toString?.() ?? '');
@@ -6754,7 +6735,8 @@ Total Price: {{total price}}`;
                   skippedCount: skippedExhibits.length,
                   skippedSample: skippedExhibits.slice(0, 5)
                 });
-                
+                missingPlanExhibits = combinationsMissingPlan(selectedComboExhibits, planForExhibit, comboKeyOf);
+
                 exhibitIds = Array.from(expandedIds);
                 // Store expanded IDs for document merging (includes both Include and Not Include)
                 expandedExhibitIdsForMerge = Array.from(expandedIds);
@@ -6808,7 +6790,7 @@ Total Price: {{total price}}`;
                       configDetails.push({ configName, exhibitId: primaryId, found: true, matched: 1 });
                       continue;
                     }
-                    const planLower = (selectedPlanName || getPlanFromExhibit(primaryEx) || '').toLowerCase();
+                    const planLower = (planForExhibit(primaryEx) || getPlanFromExhibit(primaryEx) || '').toLowerCase();
                     const matchedIds: string[] = [];
                     let matchedCount = 0;
                     
@@ -9150,29 +9132,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               //   B. COMBINATIONS-BASED (fallback if name-based finds nothing) — strict
               //      combination check (no distinct siblings).
               try {
-                // Only Basic and Standard exist today, so each falls back to the other when a
-                // combination/include-type has no exhibit of its own plan in this override pass.
-                const FALLBACK_PLAN_HERE: Record<string, string> = { basic: 'standard', standard: 'basic', advanced: 'standard' };
-                const getIncludeTypeLowerHere = (ex: any): string =>
-                  (ex?.includeType || (String(ex?.name || '').toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
-                const planAvailabilityByGroupHere = new Map<string, Set<string>>();
-                for (const ex of allExhibits) {
-                  const category = (ex?.category || 'content').toString().toLowerCase();
-                  const baseCombo = getNormalizedBaseCombination(ex);
-                  if (!baseCombo) continue;
-                  const plan = getPlanLowerFromExhibit(ex);
-                  if (!plan) continue;
-                  const groupKey = `${category}|${baseCombo}|${getIncludeTypeLowerHere(ex)}`;
-                  if (!planAvailabilityByGroupHere.has(groupKey)) planAvailabilityByGroupHere.set(groupKey, new Set());
-                  planAvailabilityByGroupHere.get(groupKey)!.add(plan);
-                }
-                const resolveEffectivePlanHere = (category: string, baseCombo: string, includeType: string, desiredPlan: string): string => {
-                  const available = planAvailabilityByGroupHere.get(`${category}|${baseCombo}|${includeType}`);
-                  if (!available || available.has(desiredPlan)) return desiredPlan;
-                  const fallback = FALLBACK_PLAN_HERE[desiredPlan];
-                  return (fallback && available.has(fallback)) ? fallback : desiredPlan;
-                };
-
                 // Extract a normalized name base (strip plan/include suffix, collapse drive
                 // variants so "MyDrive" / "My Drive" / "Mydrive" compare equal).
                 const extractNameBase = (rawName: string): string => {
@@ -9199,6 +9158,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   }
                 }
                 const selectedPlanLowerForFilter = ((calculation || safeCalculation)?.tier?.name ?? '').toString().toLowerCase();
+                // The headline tier is not every combination's exhibit plan on a custom plan.
+                const wantedPlanOf = (ex: any): string => (planForMergeExhibit ? planForMergeExhibit(ex) : selectedPlanLowerForFilter);
                 let nameFilterApplied = false;
                 if (canonicalNames.size > 0 && allExhibits.length > 0) {
                   console.log('🎯 Canonical name bases (from selectedExhibits):', Array.from(canonicalNames));
@@ -9222,15 +9183,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     // with undefined planType but "Standard"/"Basic" in their name are NOT
                     // treated as generic and included for every plan.
                     const exPlan = getPlanLowerFromExhibit(ex);
-                    if (selectedPlanLowerForFilter) {
-                      const isGenericPlan = !exPlan;
-                      const exBaseCombo = getNormalizedBaseCombination(ex);
-                      const exCategory = (ex?.category || 'content').toString().toLowerCase();
-                      const effectivePlanForEx = exBaseCombo
-                        ? resolveEffectivePlanHere(exCategory, exBaseCombo, getIncludeTypeLowerHere(ex), selectedPlanLowerForFilter)
-                        : selectedPlanLowerForFilter;
-                      if (!isGenericPlan && exPlan !== effectivePlanForEx) continue;
-                    }
+                    const wantedPlan = wantedPlanOf(ex);
+                    if (wantedPlan && exPlan && exPlan !== wantedPlan) continue;
                     const inferredInclude = (ex?.includeType || (String(ex?.name || '').toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
                     candidates.push({ id: (ex?._id ?? '').toString(), ex, ts: tsOf(ex), includeType: inferredInclude, plan: exPlan });
                   }
@@ -9312,20 +9266,14 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     );
                     return allCompatible;
                   };
-                  const selectedPlanLowerForFilter = ((calculation || safeCalculation)?.tier?.name ?? '').toString().toLowerCase();
                   const strictIds: string[] = [];
                   for (const ex of allExhibits) {
                     if (!isExactMatch(ex)) continue;
                     // Match plan too (skip generic-plan exhibits only if a plan is selected)
-                    if (selectedPlanLowerForFilter) {
+                    const wantedPlan = wantedPlanOf(ex);
+                    if (wantedPlan) {
                       const exPlan = (ex?.planType || '').toString().toLowerCase();
-                      const isGenericPlan = !exPlan;
-                      const exBaseCombo = getNormalizedBaseCombination(ex);
-                      const exCategory = (ex?.category || 'content').toString().toLowerCase();
-                      const effectivePlanForEx = exBaseCombo
-                        ? resolveEffectivePlanHere(exCategory, exBaseCombo, getIncludeTypeLowerHere(ex), selectedPlanLowerForFilter)
-                        : selectedPlanLowerForFilter;
-                      if (!isGenericPlan && exPlan !== effectivePlanForEx) continue;
+                      if (exPlan && exPlan !== wantedPlan) continue;
                     }
                     strictIds.push((ex?._id ?? '').toString());
                   }
@@ -9348,6 +9296,21 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 } else {
                   console.warn('⚠️ Authoritative override skipped due to error:', overrideErr);
                 }
+              }
+
+              // The steps above fall back to the raw picker selection when nothing matches the plan,
+              // which is how a Standard exhibit ticked on Configure reached a Basic agreement.
+              if (planForMergeExhibit) {
+                const planGuarded = dropOtherPlanExhibits(expandedUniqueSelectedExhibitsForMerge, lookup, planForMergeExhibit);
+                if (planGuarded.length !== expandedUniqueSelectedExhibitsForMerge.length) {
+                  console.warn('⚠️ Dropped exhibits of another plan from the merge list:', {
+                    dropped: expandedUniqueSelectedExhibitsForMerge.filter((id) => !planGuarded.includes(id)).map((id) => lookup.get(id)?.name || id),
+                  });
+                }
+                expandedUniqueSelectedExhibitsForMerge = planGuarded;
+              }
+              if (missingPlanExhibits.length > 0) {
+                alert(missingPlanExhibitsMessage(missingPlanExhibits));
               }
 
               const isNotIncludedExhibit = (ex: any): boolean => {
@@ -9495,17 +9458,23 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 }
               }
               const dropCombinedIds = new Set<string>();
+              // Both rules compare a combined exhibit only with exhibits of its own source-to-destination
+              // family: "Box to OneDrive" is no alternative to "Box to Microsoft(OneDrive&SharePointOnline)".
+              const nameOfId = (cid: string) => lookup.get(cid)?.name || '';
               for (const groupKey of Object.keys(groupByKey)) {
                 const g = groupByKey[groupKey];
                 for (const id of g.combined) {
                   const ex = lookup.get(id);
                   if (!ex) continue;
+                  const family = combinedExhibitFamily(ex.name || '');
+                  if (!family) continue;
                   const variantsInThisCombined = driveVariantsInName(ex.name || '');
+                  const alternatives = g.dedicated.filter((did) => inCombinedFamily(nameOfId(did), family));
                   // Rule A: dedicated alternative present in same plan/includeType group → drop combined.
                   // This is the safe case — we have a better option, drop the combined to avoid duplicates.
-                  if (g.dedicated.length > 0) {
+                  if (alternatives.length > 0) {
                     dropCombinedIds.add(id);
-                    console.warn('⚠️ Dropping combined exhibit (dedicated alternative present)', { id, name: ex?.name, groupKey, keptDedicated: g.dedicated });
+                    console.warn('⚠️ Dropping combined exhibit (dedicated alternative present)', { id, name: ex?.name, groupKey, keptDedicated: alternatives });
                     continue;
                   }
                   // Rule B: combined exhibit covers a drive variant the user did not select.
@@ -9517,7 +9486,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   if (variantsInThisCombined.length >= 2) {
                     const userSelectedAll = variantsInThisCombined.every((v) => dedicatedVariantsSelected.has(v));
                     if (!userSelectedAll) {
-                      const remainingCombined = g.combined.filter((cid) => cid !== id && !dropCombinedIds.has(cid));
+                      const remainingCombined = g.combined.filter(
+                        (cid) => cid !== id && !dropCombinedIds.has(cid) && combinedExhibitFamily(nameOfId(cid)) === family,
+                      );
                       if (remainingCombined.length > 0) {
                         dropCombinedIds.add(id);
                         console.warn('⚠️ Dropping combined exhibit (covers unselected drive variant)', {
