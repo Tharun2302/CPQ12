@@ -1942,7 +1942,7 @@ app.post('/api/auth/login', async (req, res) => {
     const { password: _, ...userWithoutPassword } = user;
     const dbExhibitEmails = await getExhibitAdminEmailsFromDb();
     const isExhibitAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || dbExhibitEmails.some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
-    const effectiveRole = user.role || (isExhibitAdmin ? 'exhibit_admin' : 'viewer');
+    const effectiveRole = isExhibitAdmin ? 'exhibit_admin' : (user.role || 'viewer');
     const isApprovalAdmin = await hasApprovalAdminAccess(user);
     const userResponse = { ...userWithoutPassword, role: effectiveRole, isApprovalAdmin };
 
@@ -2001,7 +2001,7 @@ app.get('/api/auth/me', async (req, res) => {
     // Return user without password (ensure role for frontend: from DB, .env, or settings list)
     const { password: _, ...userWithoutPassword } = user;
     const isAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || (await getExhibitAdminEmailsFromDb()).some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
-    const effectiveRole = user.role || (isAdmin ? 'exhibit_admin' : 'viewer');
+    const effectiveRole = isAdmin ? 'exhibit_admin' : (user.role || 'viewer');
     const isApprovalAdmin = await hasApprovalAdminAccess(user);
     const userResponse = { ...userWithoutPassword, role: effectiveRole, isApprovalAdmin };
 
@@ -2101,7 +2101,7 @@ app.post('/api/auth/microsoft', async (req, res) => {
     const { password: __, ...userWithoutPassword } = user;
     const dbEmails = await getExhibitAdminEmailsFromDb();
     const isAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || dbEmails.some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
-    const effectiveRole = user.role || (isAdmin ? 'exhibit_admin' : 'viewer');
+    const effectiveRole = isAdmin ? 'exhibit_admin' : (user.role || 'viewer');
     const isApprovalAdmin = await hasApprovalAdminAccess(user);
     const userResponse = { ...userWithoutPassword, role: effectiveRole, isApprovalAdmin };
 
