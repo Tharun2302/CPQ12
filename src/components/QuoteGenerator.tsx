@@ -43,7 +43,7 @@ import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL, API_ENDPOINTS } from '../config/api';
 import { useNavigate } from 'react-router-dom';
 import { trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from '../analytics/clarity';
-import { diyTemplateTokens } from '../utils/diyAgreement';
+import { diyAddOnTokens, diyTemplateTokens, isDiyToken } from '../utils/diyAgreement';
 import { getEffectiveDurationMonths, formatMonths } from '../utils/configDuration';
 import { serviceTermTokens } from '../utils/serviceTerm';
 import { getCurrentUser } from '../utils/authUtils';
@@ -2403,6 +2403,7 @@ Quote ID: ${quoteData.id}
             templateData['{{discount_row}}'] = totalDiscountAmount > 0 ? `<tr><td>Discount</td><td>-${formatCurrency(totalDiscountAmount)}</td></tr>` : '';
           }
         }
+        Object.assign(templateData, diyAddOnTokens(configuration, templateData['{{total_after_discount}}']));
 
         // Loop array for {{#sprawlRows}} — attached outside the string-typed literal,
         // the same way exhibits/servers are.
@@ -5781,6 +5782,8 @@ Total Price: {{total price}}`;
           '{{discount_percent_with_parentheses}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? `(${localDiscountPercent}%)` : '',
           '{{discount_display}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${localDiscountPercent}%)` : '',
           '{{discount_full_line}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${localDiscountPercent}%) - ${formatCurrency(localDiscountAmount)}` : '',
+          // Wraps an optional discount row: {{#show_discount}}…{{/show_discount}}
+          '{{show_discount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? 'true' : '',
           // Quote validity line tokens (long ordinal format: "20th of May, 2026")
           '{{quote_expiry_date_long}}': clientInfo.quoteExpiryDate ? formatDateLongOrdinal(clientInfo.quoteExpiryDate) : formatDateLongOrdinal(getDefaultQuoteExpiryDate()),
           '{{quoteExpiryDateLong}}': clientInfo.quoteExpiryDate ? formatDateLongOrdinal(clientInfo.quoteExpiryDate) : formatDateLongOrdinal(getDefaultQuoteExpiryDate()),
@@ -8358,6 +8361,8 @@ Total Price: {{total price}}`;
         }
         
         Object.assign(templateData, diyTemplateTokens(finalConfiguration || quoteData.configuration || configuration));
+        // Set before the template diagnostic runs; refreshed after custom line items change the total.
+        Object.assign(templateData, diyAddOnTokens(finalConfiguration || quoteData.configuration || configuration, templateData['{{total_after_discount}}']));
         console.log('📋 Template data for DOCX processing:', templateData);
         
         // Debug: Check each token value individually
@@ -8408,6 +8413,7 @@ Total Price: {{total price}}`;
             if (lower.includes('discount') || lower.includes('show_discount') || lower.includes('hide_discount')) {
               return false; // Don't flag discount tokens as undefined
             }
+            if (isDiyToken(key)) return false;
             return true;
           }
           return false;
@@ -8787,6 +8793,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             updatedDiscount: templateData['{{discount_amount}}'],
           });
         }
+        Object.assign(templateData, diyAddOnTokens(finalConfiguration || quoteData.configuration || configuration, templateData['{{total_after_discount}}']));
 
         // CRITICAL: Log the exact templateData being sent to DOCX processor
         console.log('🎯 SENDING TO DOCX PROCESSOR:');

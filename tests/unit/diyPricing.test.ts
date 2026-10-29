@@ -3,7 +3,7 @@ import { calculateAllTiers, calculateDiyPricing, formatCurrency, isDiyConfig, ty
 import type { ConfigurationData } from '../../src/types/pricing';
 import { durationToCarry, primaryMigrateKind, selectedMigrateKinds, toggleMigrateOption, type MigrateKind } from '../../src/utils/migrateSelection';
 import { exhibitCombinationKey, showExhibitSelector } from '../../src/utils/exhibitCombination';
-import { diyTemplateTokens } from '../../src/utils/diyAgreement';
+import { diyAddOnTokens, diyTemplateTokens } from '../../src/utils/diyAgreement';
 import { diyWorkloadsForFamilies, syncDiyWorkloads } from '../../src/utils/diyWorkloadSync';
 
 const price = (users: unknown, workloads: DiyWorkload[], dataGB?: unknown) =>
@@ -83,6 +83,30 @@ describe('Migrate DIY data overage', () => {
   });
 });
 
+describe('Migrate DIY consulting hours', () => {
+  const withHours = (hours: unknown, users: unknown = 60, workloads: DiyWorkload[] = ['Mailbox']) =>
+    calculateDiyPricing({ users, workloads, consultingHours: hours });
+
+  it('bills whole hours at $100 and keeps licences separate', () => {
+    const p = withHours(10);
+    expect(p.licenseCost).toBe(1200);
+    expect(p.consultingCost).toBe(1000);
+    expect(p.totalCost).toBe(2200);
+  });
+
+  it('treats blank, negative or invalid hours as none', () => {
+    expect(withHours(undefined).consultingCost).toBe(0);
+    expect(withHours(-3).consultingCost).toBe(0);
+    expect(withHours('abc').consultingCost).toBe(0);
+    expect(withHours(2.7).consultingHours).toBe(2);
+  });
+
+  it('charges no hours until the licences are priced', () => {
+    expect(withHours(10, 0).totalCost).toBe(0);
+    expect(withHours(10, 60, []).consultingCost).toBe(0);
+  });
+});
+
 describe('Migrate DIY empty or invalid input', () => {
   it('prices nothing without users or workloads', () => {
     expect(price(0, ['Mailbox']).totalCost).toBe(0);
@@ -117,6 +141,15 @@ describe('Migrate DIY in the pricing engine', () => {
       expect(t.instanceCost).toBe(0);
       expect(t.diy?.licenses).toBe(60);
     }
+  });
+
+  it('adds consulting hours at $100/hour on top of the licences', () => {
+    // Matches the sample agreement: 490 licences x $35 + 40 hours x $100.
+    const [t] = calculateAllTiers(diyConfig({ numberOfUsers: 490, diyConsultingHours: 40 }));
+    expect(t.userCost).toBe(17150);
+    expect(t.migrationCost).toBe(4000);
+    expect(t.totalCost).toBe(21150);
+    expect(t.diy?.consultingCost).toBe(4000);
   });
 
   it('is not DIY under the Manage plan or another migration type', () => {
@@ -156,9 +189,66 @@ describe('Migrate DIY is standalone in the Migrate list', () => {
     expect(durationToCarry(diyConfig(), 'diy')).toBe(0);
   });
 
-  it('offers the exhibit step, like Multi combination', () => {
-    expect(showExhibitSelector(diyConfig())).toBe(true);
+  it('skips the exhibit step', () => {
+    expect(showExhibitSelector(diyConfig())).toBe(false);
     expect(exhibitCombinationKey(diyConfig())).toBe('multi-combination');
+  });
+});
+
+describe('Migrate DIY optional add-on table', () => {
+  it('offers Messages at $10 on top of Content + Email, like the Backyard Symphony quote', () => {
+    const t = diyAddOnTokens(diyConfig({ numberOfUsers: 490, diyConsultingHours: 40 }), formatCurrency(21150));
+    expect(t['{{diy_has_addon}}']).toBe('true');
+    expect(t['{{diy_addon_description}}']).toBe('Messages Workload Add-On');
+    expect(t['{{diy_addon_upgrade_text}}']).toBe('upgrades plan to 3 workloads ($45 per license)');
+    expect(t['{{diy_addon_licenses}}']).toBe('490');
+    expect(t['{{diy_addon_rate}}']).toBe(formatCurrency(10));
+    expect(t['{{diy_addon_price}}']).toBe(formatCurrency(4900));
+    expect(t['{{diy_total_with_addon_breakdown}}']).toBe(`(${formatCurrency(21150)} + ${formatCurrency(4900)})`);
+    expect(t['{{diy_total_with_addon}}']).toBe(formatCurrency(26050));
+  });
+
+  it('words the recommended-upgrade box like the Backyard Symphony quote', () => {
+    const t = { ...diyTemplateTokens(diyConfig({ numberOfUsers: 490 })), ...diyAddOnTokens(diyConfig({ numberOfUsers: 490 }), formatCurrency(21150)) };
+    expect(t['{{diy_upgrade_heading}}']).toBe('RECOMMENDED UPGRADE: ADD THE MESSAGES WORKLOAD');
+    expect(t['{{diy_addon_names}}']).toBe('Messages');
+    expect(t['{{diy_addon_rate_whole}}']).toBe('$10');
+    expect(t['{{diy_addon_price_whole}}']).toBe('$4,900');
+    expect(t['{{diy_addon_benefit}}']).toBe('channels, DMs, group chats and file attachments');
+    expect(t['{{diy_current_names}}']).toBe('content and email');
+    expect(t['{{diy_tier3_total}}']).toBe('$22,050');
+    expect(t['{{diy_tier3_saved}}']).toBe('$7,350');
+    expect(t['{{diy_current_effective_rate}}']).toBe(formatCurrency(17.5));
+  });
+
+  it('words the box for two missing workloads', () => {
+    const t = diyAddOnTokens(diyConfig({ numberOfUsers: 100, diyWorkloads: ['Content'] }), formatCurrency(2000));
+    expect(t['{{diy_upgrade_heading}}']).toBe('RECOMMENDED UPGRADE: ADD THE EMAIL + MESSAGES WORKLOADS');
+    expect(t['{{diy_addon_benefit}}']).toBe('mailboxes, calendars and contacts plus channels, DMs, group chats and file attachments');
+    expect(t['{{diy_current_names}}']).toBe('content');
+    expect(t['{{diy_current_effective_rate}}']).toBe(formatCurrency(20));
+  });
+
+  it('bundles both missing workloads at $25 when one workload is licensed', () => {
+    const t = diyAddOnTokens(diyConfig({ numberOfUsers: 100, diyWorkloads: ['Content'] }), formatCurrency(2000));
+    expect(t['{{diy_addon_description}}']).toBe('Email + Messages Workload Add-On');
+    expect(t['{{diy_addon_rate}}']).toBe(formatCurrency(25));
+    expect(t['{{diy_total_with_addon}}']).toBe(formatCurrency(4500));
+  });
+
+  it('adds the add-on to the discounted Total Price it is given', () => {
+    const t = diyAddOnTokens(diyConfig({ numberOfUsers: 490 }), formatCurrency(15435));
+    expect(t['{{diy_total_with_addon}}']).toBe(formatCurrency(20335));
+  });
+
+  it('hides the table once all three workloads are licensed', () => {
+    const t = diyAddOnTokens(diyConfig({ diyWorkloads: ['Mailbox', 'Content', 'Messages'] }), formatCurrency(2700));
+    expect(t['{{diy_has_addon}}']).toBe('');
+    expect(t['{{diy_total_with_addon}}']).toBe('');
+  });
+
+  it('adds nothing for other agreements', () => {
+    expect(diyAddOnTokens(diyConfig({ migrationType: 'Multi combination' }), '$100.00')).toEqual({});
   });
 });
 
@@ -184,6 +274,85 @@ describe('Migrate DIY agreement tokens', () => {
 
   it('leaves the minimum note empty at or above 50 users', () => {
     expect(diyTemplateTokens(diyConfig())['{{diy_minimum_note}}']).toBe('');
+  });
+
+  it('fills the Migration Consulting Services row like the sample agreement', () => {
+    const t = diyTemplateTokens(diyConfig({ numberOfUsers: 490, diyConsultingHours: 40 }));
+    expect(t['{{diy_license_cost}}']).toBe(formatCurrency(17150));
+    expect(t['{{diy_consulting_hours}}']).toBe('40 hours');
+    expect(t['{{diy_consulting_hours_title}}']).toBe('40 Hours');
+    expect(t['{{diy_has_consulting}}']).toBe('true');
+    expect(t['{{diy_consulting_rate}}']).toBe(`${formatCurrency(100)} per hour`);
+    expect(t['{{diy_consulting_cost}}']).toBe(formatCurrency(4000));
+    expect(t['{{diy_total}}']).toBe(formatCurrency(21150));
+  });
+
+  it('leaves the consulting row blank without hours', () => {
+    const t = diyTemplateTokens(diyConfig());
+    expect(t['{{diy_has_consulting}}']).toBe('');
+    expect(t['{{diy_consulting_hours}}']).toBe('');
+    expect(t['{{diy_consulting_cost}}']).toBe('');
+  });
+
+  it('marks the unticked workloads as $15 add-ons when only Content is licensed', () => {
+    const t = diyTemplateTokens(diyConfig({ diyWorkloads: ['Content'] }));
+    expect(t['{{diy_content_included}}']).toBe('true');
+    expect(t['{{diy_content_status}}']).toBe('INCLUDED');
+    expect(t['{{diy_content_allowance}}']).toBe('50 GB per user');
+    for (const key of ['email', 'messages']) {
+      expect(t[`{{diy_${key}_included}}`]).toBe('');
+      expect(t[`{{diy_${key}_status}}`]).toBe('OPTIONAL ADD-ON');
+      expect(t[`{{diy_${key}_allowance}}`]).toBe('Add for $15 per user');
+    }
+  });
+
+  it('prices the Messages add-on at $10 on top of Content + Email, like the sample', () => {
+    const t = diyTemplateTokens(diyConfig({ diyWorkloads: ['Mailbox', 'Content'] }));
+    expect(t['{{diy_email_status}}']).toBe('INCLUDED');
+    expect(t['{{diy_messages_allowance}}']).toBe('Add for $10 per user');
+  });
+
+  it('lists every workload as included with no add-ons at three workloads', () => {
+    const t = diyTemplateTokens(diyConfig({ diyWorkloads: ['Mailbox', 'Content', 'Messages'] }));
+    expect(t['{{diy_messages_included}}']).toBe('true');
+    expect(t['{{diy_messages_allowance}}']).toBe('No data cap');
+  });
+
+  it.each([
+    [['Mailbox', 'Content'], 'Up to 50 GB per user for Content and up to 50 GB per user for Email (Mailbox)'],
+    [['Content'], 'Up to 50 GB per user for Content'],
+    [['Mailbox'], 'Up to 50 GB per user for Email (Mailbox)'],
+    [['Content', 'Messages'], 'Up to 50 GB per user for Content; no data cap for Messages'],
+    [['Messages'], 'No data cap for Messages']
+  ] as [DiyWorkload[], string][])('words the License Terms data allowance for %j', (diyWorkloads, text) => {
+    expect(diyTemplateTokens(diyConfig({ diyWorkloads }))['{{diy_data_allowance_text}}']).toBe(text);
+  });
+
+  it('splits the license row details and shows the tiered rate steps', () => {
+    const two = diyTemplateTokens(diyConfig());
+    expect(two['{{diy_workload_count_text}}']).toBe('Two Workloads');
+    expect(two['{{diy_workload_names}}']).toBe('Content + Email');
+    expect(two['{{diy_rate_breakdown}}']).toBe('($20 + $15)');
+    const three = diyTemplateTokens(diyConfig({ diyWorkloads: ['Mailbox', 'Content', 'Messages'] }));
+    expect(three['{{diy_workload_names}}']).toBe('Content + Email + Chat');
+    expect(three['{{diy_rate_breakdown}}']).toBe('($20 + $15 + $10)');
+    expect(diyTemplateTokens(diyConfig({ diyWorkloads: ['Content'] }))['{{diy_rate_breakdown}}']).toBe('');
+  });
+
+  it('fills the savings table like the Backyard Symphony quote (490 licences, 2 workloads)', () => {
+    const t = diyTemplateTokens(diyConfig({ numberOfUsers: 490 }));
+    expect(t['{{diy_tier_licenses}}']).toBe('490');
+    expect([t['{{diy_tier1_total}}'], t['{{diy_tier1_separate}}'], t['{{diy_tier1_save}}']]).toEqual(['$9,800', '$9,800', '–']);
+    expect([t['{{diy_tier2_total}}'], t['{{diy_tier2_separate}}'], t['{{diy_tier2_save}}']]).toEqual(['$17,150', '$19,600', '$2,450 (12.5%)']);
+    expect([t['{{diy_tier3_total}}'], t['{{diy_tier3_separate}}'], t['{{diy_tier3_save}}']]).toEqual(['$22,050', '$29,400', '$7,350 (25%)']);
+    expect([t['{{diy_tier1_current}}'], t['{{diy_tier2_current}}'], t['{{diy_tier3_current}}']]).toEqual(['', '(current plan)', '']);
+  });
+
+  it('prices the savings table on billed licences, so the 50 minimum applies', () => {
+    const t = diyTemplateTokens(diyConfig({ numberOfUsers: 30, diyWorkloads: ['Content'] }));
+    expect(t['{{diy_tier_licenses}}']).toBe('50');
+    expect(t['{{diy_tier1_total}}']).toBe('$1,000');
+    expect(t['{{diy_tier1_current}}']).toBe('(current plan)');
   });
 
   it('adds nothing for other agreements', () => {

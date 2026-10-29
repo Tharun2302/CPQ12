@@ -352,7 +352,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         if (isValidServiceTermMonths(carriedDuration)) next = { ...next, serviceTermMonths: carriedDuration };
       } else if (newPrimary === 'diy') {
         // Licences run a fixed term; users and data carry over, everything else starts clean.
-        next = { ...buildMigrateOptionConfig(primaryValue, config), duration: DIY_VALIDITY_MONTHS, diyWorkloads: [] };
+        next = { ...buildMigrateOptionConfig(primaryValue, config), duration: DIY_VALIDITY_MONTHS, diyWorkloads: [], diyConsultingHours: 0 };
       } else {
         next = buildMigrateOptionConfig(primaryValue, config);
         if (newPrimary === 'overage' && config.overageAddOn) {

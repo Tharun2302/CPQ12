@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
-import { Clock, Layers, Users } from 'lucide-react';
+import { Clock, Hourglass, Layers, Users } from 'lucide-react';
 import type { ConfigurationData, DiyWorkload } from '../types/pricing';
 import {
+  DIY_CONSULTING_RATE_PER_HOUR,
   DIY_GB_PER_LICENSE_PER_WORKLOAD,
   DIY_MIN_LICENSES,
   DIY_RATE_BY_WORKLOAD_COUNT,
@@ -13,7 +14,7 @@ import {
 
 interface DiyMigrateSectionProps {
   config: ConfigurationData;
-  onChange: (patch: Partial<Pick<ConfigurationData, 'numberOfUsers' | 'diyWorkloads'>>) => void;
+  onChange: (patch: Partial<Pick<ConfigurationData, 'numberOfUsers' | 'diyWorkloads' | 'diyConsultingHours'>>) => void;
   discountField?: ReactNode;
 }
 
@@ -47,7 +48,7 @@ function DiyMigrateSection({ config, onChange, discountField }: DiyMigrateSectio
       <fieldset className="mb-6">
         <legend className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-3">
           <Layers className="w-4 h-4 text-blue-600" aria-hidden="true" />
-          Workloads
+          Number of Workloads
         </legend>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {DIY_WORKLOADS.map(w => (
@@ -73,13 +74,13 @@ function DiyMigrateSection({ config, onChange, discountField }: DiyMigrateSectio
         </p>
       </fieldset>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div>
           <label htmlFor="diy-users" className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
             <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
               <Users className="w-4 h-4 text-white" aria-hidden="true" />
             </div>
-            Number of Users
+            Number of Licenses
           </label>
           <input
             id="diy-users"
@@ -89,7 +90,7 @@ function DiyMigrateSection({ config, onChange, discountField }: DiyMigrateSectio
             value={config.numberOfUsers || ''}
             onChange={(e) => onChange({ numberOfUsers: parseCount(e.target.value) })}
             className={INPUT_CLASS}
-            placeholder="Enter number of users"
+            placeholder="Enter number of licenses"
             autoComplete="off"
           />
           {pricing.belowMinimum && (
@@ -97,6 +98,28 @@ function DiyMigrateSection({ config, onChange, discountField }: DiyMigrateSectio
               Minimum purchase is {DIY_MIN_LICENSES} licenses. {pricing.minimumTopUp} more will be billed.
             </p>
           )}
+        </div>
+        <div>
+          <label htmlFor="diy-consulting-hours" className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+            <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg flex items-center justify-center">
+              <Hourglass className="w-4 h-4 text-white" aria-hidden="true" />
+            </div>
+            Additional Hours
+          </label>
+          <input
+            id="diy-consulting-hours"
+            type="number"
+            min="0"
+            step="1"
+            value={config.diyConsultingHours || ''}
+            onChange={(e) => onChange({ diyConsultingHours: parseCount(e.target.value) })}
+            className={INPUT_CLASS}
+            placeholder="Enter consulting hours"
+            autoComplete="off"
+          />
+          <p className="mt-2 text-xs text-gray-500">
+            Migration Consulting Services at {formatCurrency(DIY_CONSULTING_RATE_PER_HOUR)} per hour.
+          </p>
         </div>
         {discountField && <div>{discountField}</div>}
       </div>
@@ -110,12 +133,18 @@ function DiyMigrateSection({ config, onChange, discountField }: DiyMigrateSectio
         <dl data-testid="diy-summary" className="mt-6 rounded-lg bg-blue-50 p-4 text-sm space-y-1">
           <div className="flex justify-between">
             <dt className="text-gray-700">{pricing.licenses} licenses × {formatCurrency(pricing.ratePerLicense)}</dt>
-            <dd className="text-gray-900">{formatCurrency(pricing.totalCost)}</dd>
+            <dd className="text-gray-900">{formatCurrency(pricing.licenseCost)}</dd>
           </div>
           {pricing.dataOverageLicenses > 0 && (
             <div className="flex justify-between text-gray-600">
               <dt>includes extra licenses for data</dt>
               <dd>{pricing.dataOverageLicenses}</dd>
+            </div>
+          )}
+          {pricing.consultingHours > 0 && (
+            <div className="flex justify-between">
+              <dt className="text-gray-700">{pricing.consultingHours} hours × {formatCurrency(pricing.consultingRatePerHour)}</dt>
+              <dd data-testid="diy-consulting-cost" className="text-gray-900">{formatCurrency(pricing.consultingCost)}</dd>
             </div>
           )}
           <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-blue-100">

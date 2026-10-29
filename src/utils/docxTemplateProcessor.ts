@@ -3,6 +3,7 @@ import PizZip from 'pizzip';
 import { saveAs } from 'file-saver';
 import { formatCurrency } from './pricing';
 import { removeExistingValidityLines } from './docxValidityLine';
+import { isDiyToken } from './diyAgreement';
 
 export interface DocxTemplateData {
   // Exact tokens from your template
@@ -3057,6 +3058,10 @@ export class DocxTemplateProcessor {
           // Never force-fill discount-related tokens; keep them empty so rows can be removed
           const lower = key.toLowerCase();
           if (lower.includes('discount') || lower.includes('show_discount') || lower.includes('hide_discount') || lower.includes('if_discount')) {
+            processedData[key] = '';
+            return;
+          }
+          if (isDiyToken(key)) {
             processedData[key] = '';
             return;
           }

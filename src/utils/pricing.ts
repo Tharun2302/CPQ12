@@ -631,6 +631,7 @@ export const DIY_VALIDITY_MONTHS = 12;
 // Mailbox and Content each allow 50 GB per licence; Messages has no data cap.
 export const DIY_GB_PER_LICENSE_PER_WORKLOAD = 50;
 const DIY_CAPPED_WORKLOADS: readonly DiyWorkload[] = ['Mailbox', 'Content'];
+export const DIY_CONSULTING_RATE_PER_HOUR = 100;
 
 export function isDiyConfig(config: ConfigurationData | undefined | null): boolean {
   return config?.migrationType === 'DIY' && config?.servicePlan !== 'Manage';
@@ -639,10 +640,10 @@ export function isDiyConfig(config: ConfigurationData | undefined | null): boole
 // The DIY screen collects no data size, so a dataSizeGB left over from another agreement
 // must not add data-overage licences.
 export function diyPricingFromConfig(config: ConfigurationData | undefined | null): DiyPricing {
-  return calculateDiyPricing({ users: config?.numberOfUsers, workloads: config?.diyWorkloads || [] });
+  return calculateDiyPricing({ users: config?.numberOfUsers, workloads: config?.diyWorkloads || [], consultingHours: config?.diyConsultingHours });
 }
 
-export function calculateDiyPricing(input: { users: unknown; workloads: readonly DiyWorkload[]; dataGB?: unknown }): DiyPricing {
+export function calculateDiyPricing(input: { users: unknown; workloads: readonly DiyWorkload[]; dataGB?: unknown; consultingHours?: unknown }): DiyPricing {
   const whole = (value: unknown, round: (n: number) => number): number => {
     const n = round(Number(value));
     return Number.isFinite(n) && n > 0 ? n : 0;
@@ -652,14 +653,22 @@ export function calculateDiyPricing(input: { users: unknown; workloads: readonly
   const workloads = DIY_WORKLOADS.filter(w => input.workloads.includes(w));
   const ratePerLicense = workloads.length ? DIY_RATE_BY_WORKLOAD_COUNT[workloads.length as 1 | 2 | 3] : 0;
   const gbPerLicense = workloads.filter(w => DIY_CAPPED_WORKLOADS.includes(w)).length * DIY_GB_PER_LICENSE_PER_WORKLOAD;
+  // Consulting is only sold alongside licences, so it is dropped while the licence side is incomplete.
+  const consultingHours = users && workloads.length ? whole(input.consultingHours, Math.floor) : 0;
+  const consulting = {
+    consultingHours,
+    consultingRatePerHour: DIY_CONSULTING_RATE_PER_HOUR,
+    consultingCost: consultingHours * DIY_CONSULTING_RATE_PER_HOUR
+  };
 
   if (!users || !workloads.length) {
-    return { workloads, users, dataGB, ratePerLicense, gbPerLicense, licenses: 0, minimumTopUp: 0, dataOverageLicenses: 0, belowMinimum: false, totalCost: 0 };
+    return { workloads, users, dataGB, ratePerLicense, gbPerLicense, licenses: 0, minimumTopUp: 0, dataOverageLicenses: 0, belowMinimum: false, licenseCost: 0, ...consulting, totalCost: 0 };
   }
 
   const baseLicenses = Math.max(users, DIY_MIN_LICENSES);
   const neededForData = gbPerLicense ? Math.ceil(dataGB / gbPerLicense) : 0;
   const licenses = Math.max(baseLicenses, neededForData);
+  const licenseCost = licenses * ratePerLicense;
   return {
     workloads,
     users,
@@ -670,7 +679,9 @@ export function calculateDiyPricing(input: { users: unknown; workloads: readonly
     minimumTopUp: baseLicenses - users,
     dataOverageLicenses: licenses - baseLicenses,
     belowMinimum: users < DIY_MIN_LICENSES,
-    totalCost: licenses * ratePerLicense
+    licenseCost,
+    ...consulting,
+    totalCost: licenseCost + consulting.consultingCost
   };
 }
 
@@ -1266,12 +1277,13 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
   }
 
   // MIGRATE DIY: tier-agnostic licences at list price; no region multiplier or instances.
+  // Consulting hours ride in migrationCost so the discount on totalCost covers them too.
   if (isDiyConfig(config)) {
     const diy = diyPricingFromConfig(config);
     const diyResult: PricingCalculation = {
-      userCost: diy.totalCost,
+      userCost: diy.licenseCost,
       dataCost: 0,
-      migrationCost: 0,
+      migrationCost: diy.consultingCost,
       instanceCost: 0,
       totalCost: diy.totalCost,
       tier,

@@ -168,14 +168,14 @@ export class TemplateDiagnostic {
       // in nested data tokens, not as a top-level array
       const conditionalBlockTokens = new Set<string>();
       templateTokens.forEach(token => {
-        if (token.startsWith('#') && token !== '#exhibits' && token !== '#servers') {
-          // This is a conditional block, extract the token name (remove #)
+        // {{^token}} is the inverted block: it renders when the value is empty.
+        if ((token.startsWith('#') || token.startsWith('^')) && token !== '#exhibits' && token !== '#servers') {
           const conditionalToken = token.substring(1);
           conditionalBlockTokens.add(conditionalToken);
-          // Add both the conditional token and the # version to optional tokens
-          // since conditional blocks are optional (they only render if the value is truthy)
+          // Conditional blocks are optional (they only render depending on the value).
           optionalLoopItemTokens.add(conditionalToken);
           optionalLoopItemTokens.add('#' + conditionalToken);
+          optionalLoopItemTokens.add('^' + conditionalToken);
         }
       });
       
@@ -422,8 +422,8 @@ export class TemplateDiagnostic {
       // Handle loop control tokens - these are not data tokens
       // Loop start tokens: #exhibits, #servers, etc.
       // Loop end tokens: /exhibits, /servers, etc.
-      if (templateToken.startsWith('#') || templateToken.startsWith('/')) {
-        const tokenName = templateToken.replace(/^#|\//, ''); // Remove # or / prefix
+      if (templateToken.startsWith('#') || templateToken.startsWith('^') || templateToken.startsWith('/')) {
+        const tokenName = templateToken.replace(/^[#^/]/, '');
         
         // For known loop arrays (exhibits, servers), check if the array exists
         if (tokenName === 'exhibits' || tokenName === 'servers') {

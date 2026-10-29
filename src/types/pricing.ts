@@ -18,6 +18,13 @@ export interface DiyPricing {
   // Licences added because the data exceeded the allowance (no per-GB billing).
   dataOverageLicenses: number;
   belowMinimum: boolean;
+  // licenses × ratePerLicense.
+  licenseCost: number;
+  // Migration Consulting Services billed by the hour on top of the licences.
+  consultingHours: number;
+  consultingRatePerHour: number;
+  consultingCost: number;
+  // licenseCost + consultingCost, before discount.
   totalCost: number;
 }
 
@@ -188,6 +195,8 @@ export interface ConfigurationData {
   // Migrate DIY (migrationType 'DIY'): workloads bundled into each licence. Users reuse
   // numberOfUsers; no data size is collected. The licence term is fixed, so duration stays 12.
   diyWorkloads?: DiyWorkload[];
+  // Migrate DIY: Migration Consulting Services hours, billed per hour.
+  diyConsultingHours?: number;
 }
 
 export interface PricingCalculation {
@@ -257,7 +266,7 @@ export interface PricingCalculation {
   // Sum of sprawlLines[].cost, full precision.
   sprawlCost?: number;
   sprawlStandalone?: { dataCost: number; totalCost: number };
-  // Migrate DIY breakdown; totalCost and userCost equal diy.totalCost.
+  // Migrate DIY breakdown; userCost = diy.licenseCost, migrationCost = diy.consultingCost.
   diy?: DiyPricing;
   // Multi combination + Data Sprawl: priced on their own and included in totalCost.
   // Kept apart from sprawlLines, whose presence switches the Manage display paths on.

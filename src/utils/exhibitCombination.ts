@@ -27,12 +27,13 @@ export function isOverageAgreement(config?: ExhibitCombinationConfig | null): bo
  *
  * Overage Agreement is excluded even though it runs as Migrate: it has no scope to attach, so
  * the picker is a step with nothing to do in it and puts a wrong exhibit one click away on a
- * document that should carry none. Everything else with a chosen combination keeps it, DIY
- * included: it draws from the same catalogue as Multi combination.
+ * document that should carry none. DIY is excluded for the same reason: its scope is the
+ * workloads ticked on the licence, not exhibits.
  */
 export function showExhibitSelector(config?: ExhibitCombinationConfig | null): boolean {
   if (!config || !config.combination) return false;
   if (config.servicePlan !== 'Migrate' && config.servicePlan !== 'Manage') return false;
+  if (config.servicePlan === 'Migrate' && config.migrationType === 'DIY') return false;
   return !isOverageAgreement(config);
 }
 
