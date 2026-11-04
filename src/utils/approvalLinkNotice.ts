@@ -11,6 +11,12 @@ const ROLE_LABELS: Record<string, string> = { 'Team Approval': 'Team Lead' };
 
 const labelFor = (role: string) => ROLE_LABELS[role] ?? role;
 
+// actedBy is recorded only from a verified sign-in, so older steps and shared mailboxes name just the team
+function byWhom(step: ApprovalStep): string {
+  const actor = step.actedBy?.name || step.actedBy?.email;
+  return `the ${labelFor(step.role)}${actor ? ` (${actor})` : ''}`;
+}
+
 // Approvers only deny through their own step, so a denied workflow with no denied step was cancelled by the requester
 export const APPROVAL_CANCELLED_MESSAGE = 'This approval was cancelled by the requester.';
 
@@ -37,15 +43,15 @@ export function getApprovalLinkNotice(
 
   const ownStep = steps.find(step => step.role === role);
   if (ownStep?.status === 'approved') {
-    return { tone: 'approved', message: `This document is already approved by the ${labelFor(role)}${onDate(ownStep.timestamp)}.` };
+    return { tone: 'approved', message: `This document is already approved by ${byWhom(ownStep)}${onDate(ownStep.timestamp)}.` };
   }
   if (ownStep?.status === 'denied') {
-    return { tone: 'denied', message: `This document was already denied by the ${labelFor(role)}${onDate(ownStep.timestamp)}.` };
+    return { tone: 'denied', message: `This document was already denied by ${byWhom(ownStep)}${onDate(ownStep.timestamp)}.` };
   }
   if (workflow.status === 'denied') {
     const deniedStep = steps.find(step => step.status === 'denied');
     const message = deniedStep
-      ? `This document was denied by the ${labelFor(deniedStep.role)}${onDate(deniedStep.timestamp)}.`
+      ? `This document was denied by ${byWhom(deniedStep)}${onDate(deniedStep.timestamp)}.`
       : APPROVAL_CANCELLED_MESSAGE;
     return { tone: 'denied', message };
   }

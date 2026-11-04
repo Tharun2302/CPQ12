@@ -855,13 +855,13 @@ function isEsignTokenExpired(recipient) {
   if (!recipient || !recipient.token_expires_at) return false;
   return new Date(recipient.token_expires_at).getTime() < Date.now();
 }
+// Each link gets its own record so a reminder or "Copy approval link" does not break links already emailed.
 async function createApprovalAccessToken(db, workflowId, role) {
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + APPROVAL_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
-  await db.collection('approval_access_tokens').updateOne(
-    { workflowId, role },
-    { $set: { workflowId, role, token, expiresAt, updatedAt: new Date().toISOString() } },
-    { upsert: true }
+  const now = new Date().toISOString();
+  await db.collection('approval_access_tokens').insertOne(
+    { workflowId, role, token, expiresAt, createdAt: now, updatedAt: now }
   );
   return token;
 }

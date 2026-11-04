@@ -42,6 +42,30 @@ describe('getApprovalLinkNotice', () => {
     expect(plain(notice?.message)).toBe('This document is already approved by the Technical Team on Sep 28, 2026, 9:05 AM.');
   });
 
+  it('a. names the signed-in approver when the step recorded actedBy', () => {
+    const steps = quoteSteps('approved', 'approved', 'pending', ACTED_AT);
+    steps[1].actedBy = { name: 'Ada Lovelace', email: 'ada@cpq12.test' };
+    const notice = getApprovalLinkNotice(workflow('in_progress', steps), 'Technical Team');
+
+    expect(plain(notice?.message)).toBe('This document is already approved by the Technical Team (Ada Lovelace) on Sep 28, 2026, 9:05 AM.');
+  });
+
+  it('a. falls back to the approver email when actedBy has no name', () => {
+    const steps = quoteSteps('approved', 'approved', 'pending', ACTED_AT);
+    steps[1].actedBy = { email: 'ada@cpq12.test' };
+    const notice = getApprovalLinkNotice(workflow('in_progress', steps), 'Technical Team');
+
+    expect(plain(notice?.message)).toBe('This document is already approved by the Technical Team (ada@cpq12.test) on Sep 28, 2026, 9:05 AM.');
+  });
+
+  it('c. names the approver who denied it for another team', () => {
+    const steps = quoteSteps('approved', 'denied', 'pending', ACTED_AT);
+    steps[1].actedBy = { name: 'Ada Lovelace', email: 'ada@cpq12.test' };
+    const notice = getApprovalLinkNotice(workflow('denied', steps), 'Legal Team');
+
+    expect(plain(notice?.message)).toBe('This document was denied by the Technical Team (Ada Lovelace) on Sep 28, 2026, 9:05 AM.');
+  });
+
   it('a. labels the Team Approval step as the Team Lead', () => {
     const notice = getApprovalLinkNotice(workflow('in_progress', quoteSteps('approved', 'pending', 'pending', ACTED_AT)), 'Team Approval');
 
