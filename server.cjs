@@ -224,7 +224,8 @@ async function actorCanEditSourceDocumentDates(doc, actorEmail) {
 //   ALLOWED_ORIGINS=https://cpq.cftools.live,https://zenop.ai,https://www.zenop.ai
 function isAllowedOrigin(origin) {
   if (!origin) return false;
-  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  // Local dev origins are trusted only outside production, so a localhost page cannot get credentialed CORS to prod.
+  if (process.env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
   const extraOrigins = (process.env.ALLOWED_ORIGINS || '')
     .split(',')
     .map(o => o.trim().replace(/\/$/, ''))
@@ -824,6 +825,7 @@ const EMAIL_PASS = process.env.EMAIL_PASS;
 const EMAIL_HOST = process.env.EMAIL_HOST || 'smtp.gmail.com';
 const EMAIL_PORT = process.env.EMAIL_PORT || 587;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+// Every jwt.verify below pins algorithms so a token's own header can never choose how it is checked.
 const GOTENBERG_URL = process.env.GOTENBERG_URL || '';
 const LIBREOFFICE_SERVICE_URL = process.env.LIBREOFFICE_SERVICE_URL || 'http://localhost:3002';
 
@@ -1988,7 +1990,7 @@ app.get('/api/auth/me', async (req, res) => {
         message: 'Invalid token format'
       });
     }
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     const user = await db.collection('users').findOne({ id: decoded.userId });
     
     if (!user) {
@@ -3170,7 +3172,7 @@ async function getExhibitAdminUser(req, res) {
     return null;
   }
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     const user = await db.collection('users').findOne({ id: decoded.userId });
     if (!user) {
       res.status(401).json({ success: false, error: 'User not found' });
@@ -3276,7 +3278,7 @@ async function getOptionalAuthenticatedUser(req) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token || token.split('.').length !== 3) return null;
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     return await db.collection('users').findOne({ id: decoded.userId });
   } catch (e) {
     return null;
@@ -3298,7 +3300,7 @@ async function getAuthenticatedUser(req, res) {
     return null;
   }
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     const user = await db.collection('users').findOne({ id: decoded.userId });
     if (!user) {
       res.status(401).json({ success: false, error: 'User not found' });
@@ -3322,7 +3324,7 @@ async function getApprovalAdminUser(req, res, forbiddenMessage = 'Only approval 
     return null;
   }
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     const user = await db.collection('users').findOne({ id: decoded.userId });
     if (!user) {
       res.status(401).json({ success: false, error: 'User not found' });
@@ -5569,7 +5571,7 @@ function verifyOnlyOfficeCallback(req) {
   }
   if (!token) throw new Error('missing OnlyOffice JWT on callback');
   // OnlyOffice nests the real payload under `payload` when the token comes from the Authorization header.
-  const decoded = jwt.verify(token, ONLYOFFICE_JWT_SECRET);
+  const decoded = jwt.verify(token, ONLYOFFICE_JWT_SECRET, { algorithms: ['HS256'] });
   return decoded && decoded.payload ? decoded.payload : decoded;
 }
 
@@ -6540,7 +6542,7 @@ function resolveClientLogUserId(req) {
   const token = auth.slice(7);
   if (!token || token.split('.').length !== 3) return 'anonymous';
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     return (decoded && decoded.userId) || 'anonymous';
   } catch (e) {
     return 'anonymous';
@@ -12278,7 +12280,7 @@ function readTechnicalApproverIdentity(req) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token || token.split('.').length !== 3) return null;
   try {
-    const claims = jwt.verify(token, JWT_SECRET);
+    const claims = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     return { claims, name: typeof claims.msName === 'string' ? claims.msName : '', email: claims.email };
   } catch {
     return null;

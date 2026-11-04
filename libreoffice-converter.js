@@ -1,6 +1,5 @@
 const express = require('express');
 const multer = require('multer');
-const cors = require('cors');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -8,7 +7,7 @@ const fs = require('fs');
 const app = express();
 const port = 3000;
 
-app.use(cors());
+// Server-to-server converter: no browser origin should call it, so no CORS headers are sent.
 app.use(express.json());
 
 // Configure multer for file uploads

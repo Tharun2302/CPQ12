@@ -25,6 +25,8 @@ services:
       BOLDSIGN_BASE_URL: ${BOLDSIGN_BASE_URL}
       BOLDSIGN_APP_URL: ${BOLDSIGN_APP_URL}
       APP_BASE_URL: ${APP_BASE_URL}
+      # Extra comma-separated CORS origins; with NODE_ENV=production localhost is no longer trusted implicitly.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       BASE_URL: ${BASE_URL}
       SOFFICE_PATH: /usr/bin/libreoffice
       # --- OnlyOffice (Word-style Edit feature) ---

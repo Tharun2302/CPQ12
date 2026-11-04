@@ -67,6 +67,12 @@ BASE_URL=http://localhost:5173
 # Production: https://zenop.ai
 APP_BASE_URL=http://localhost:3001
 
+# Extra CORS origins (comma-separated). When NODE_ENV=production, localhost origins are NOT
+# trusted automatically: list them here if you reach a production-mode server from a
+# localhost page (e.g. SSH tunnel to :3001 or a local preview pointed at a remote backend).
+# Example: ALLOWED_ORIGINS=https://zenop.ai,https://www.zenop.ai,http://localhost:3001
+ALLOWED_ORIGINS=
+
 # JWT Secret for authentication tokens (CHANGE IN PRODUCTION!)
 JWT_SECRET=your-super-secret-jwt-key-change-in-production
 
