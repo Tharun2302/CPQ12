@@ -39,7 +39,7 @@ function workloadRowTokens(workloads: DiyWorkload[]): Record<string, string> {
   const tokens: Record<string, string> = {};
   for (const [w, key] of WORKLOAD_TOKEN_KEYS) {
     const included = workloads.includes(w);
-    const allowance = w === 'Messages' ? 'No data cap' : `${DIY_GB_PER_LICENSE_PER_WORKLOAD} GB per user`;
+    const allowance = w === 'Messages' ? 'Not applicable' : `${DIY_GB_PER_LICENSE_PER_WORKLOAD} GB per user`;
     tokens[`{{diy_${key}_included}}`] = included ? 'true' : '';
     tokens[`{{diy_${key}_status}}`] = included ? 'INCLUDED' : 'OPTIONAL ADD-ON';
     tokens[`{{diy_${key}_allowance}}`] = included ? allowance : addOnRate ? `Add for ${wholeDollars(addOnRate)} per user` : '';

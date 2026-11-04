@@ -315,7 +315,7 @@ describe('Migrate DIY agreement tokens', () => {
   it('lists every workload as included with no add-ons at three workloads', () => {
     const t = diyTemplateTokens(diyConfig({ diyWorkloads: ['Mailbox', 'Content', 'Messages'] }));
     expect(t['{{diy_messages_included}}']).toBe('true');
-    expect(t['{{diy_messages_allowance}}']).toBe('No data cap');
+    expect(t['{{diy_messages_allowance}}']).toBe('Not applicable');
   });
 
   it.each([

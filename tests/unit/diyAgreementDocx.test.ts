@@ -117,7 +117,7 @@ describe('DIY agreement template show/hide blocks', () => {
 
   it('drops the add-on section entirely once every workload is licensed', () => {
     const text = renderText(tokensFor(config({ diyWorkloads: ['Mailbox', 'Content', 'Messages'] })));
-    expect(text).toContain('|Messages|INCLUDED|No data cap|');
+    expect(text).toContain('|Messages|INCLUDED|Not applicable|');
     expect(text).not.toContain('RECOMMENDED UPGRADE');
     expect(text).not.toContain('Add-On');
   });
