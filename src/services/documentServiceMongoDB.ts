@@ -3,6 +3,7 @@
  * Saves PDFs to MongoDB via API endpoints
  */
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from '../utils/authUtils';
 
 export type DealDocumentsApprovalFilter = 'all' | 'in_workflow' | 'no_workflow';
 
@@ -101,7 +102,7 @@ class DocumentServiceMongoDB {
       }
       const url = `${this.apiUrl}?${params.toString()}`;
 
-      const response = await fetch(url, { signal: controller.signal });
+      const response = await fetch(url, { signal: controller.signal, headers: getAuthHeaders() });
       clearTimeout(timeoutId);
 
       if (!response.ok) {
