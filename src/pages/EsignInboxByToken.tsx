@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { FileText, Loader2, PenLine, ShieldX, ArrowRight, User, BarChart3, CheckCircle, X, Eye, Check, XCircle, Clock } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { withEsignAccess } from '../utils/esignAccess';
 import { SUPPRESS_PII } from '../analytics/privacy';
 
 interface QueueItem {
@@ -362,7 +363,7 @@ const EsignInboxByToken: React.FC = () => {
             </div>
             <div className="flex-1 min-h-0 overflow-hidden bg-slate-100">
               <iframe
-                src={`${BACKEND_URL}/api/esign/documents/${selectedQueueItem.documentId}/file?inline=1`}
+                src={withEsignAccess(`${BACKEND_URL}/api/esign/documents/${selectedQueueItem.documentId}/file?inline=1`, { signingToken: selectedQueueItem.signing_token || token })}
                 className="w-full h-full min-h-[60vh] border-0"
                 title="Document preview"
               />

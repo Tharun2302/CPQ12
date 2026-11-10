@@ -41,6 +41,7 @@ import { downloadAndSavePDF } from '../utils/pdfProcessor';
 import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL, API_ENDPOINTS } from '../config/api';
+import { esignFetch } from '../utils/esignAccess';
 import { useNavigate } from 'react-router-dom';
 import { trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from '../analytics/clarity';
 import { diyAddOnTokens, diyTemplateTokens, isDiyToken } from '../utils/diyAgreement';
@@ -3685,7 +3686,7 @@ Total Price: {{total price}}`;
         (w) => w.documentId === activeWorkflowDocumentId && w.status === 'approved'
       );
 
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/from-approval`, {
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/from-approval`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

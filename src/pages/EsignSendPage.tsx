@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Mail, Loader2, ListChecks } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { esignFetch } from '../utils/esignAccess';
 import { SUPPRESS_PII } from '../analytics/privacy';
 import {
   formatSendForSignatureSuccessMessage,
@@ -29,7 +30,7 @@ const EsignSendPage: React.FC = () => {
     if (!documentId) return;
     (async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}`);
+        const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${documentId}`);
         const data = await res.json();
         if (data.success) setDoc(data.document);
         else navigate('/esign');
@@ -48,8 +49,8 @@ const EsignSendPage: React.FC = () => {
     setSendForSignatureResult(null);
     try {
       const [fieldsRes, recipientsRes] = await Promise.all([
-        fetch(`${BACKEND_URL}/api/esign/signature-fields/${documentId}`),
-        fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`),
+        esignFetch(`${BACKEND_URL}/api/esign/signature-fields/${documentId}`),
+        esignFetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`),
       ]);
       const fieldsData = await fieldsRes.json();
       const recipientsData = await recipientsRes.json();

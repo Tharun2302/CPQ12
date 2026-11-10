@@ -5,6 +5,7 @@ import { getApprovalLinkNotice, ApprovalLinkNotice, APPROVAL_DELETED_NOTICE } fr
 import ApprovalLinkNoticeBox from './ApprovalLinkNoticeBox';
 import type { ApprovalWorkflow } from '../types/approval';
 import { BACKEND_URL } from '../config/api';
+import { esignFetch } from '../utils/esignAccess';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import { FileText, X, Loader2, ThumbsUp, ThumbsDown, MessageCircle, User, BarChart3, Clock, CheckCircle, AlertCircle, Eye, PenLine } from 'lucide-react';
 import EsignPdfPageView from '../components/EsignPdfPageView';
@@ -304,9 +305,9 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
     try {
       if (esignId) {
         const [fileRes, fieldsRes, recipientsRes] = await Promise.all([
-          fetch(`${BACKEND_URL}/api/esign/documents/${esignId}/file`),
-          fetch(`${BACKEND_URL}/api/esign/signature-fields/${esignId}`),
-          fetch(`${BACKEND_URL}/api/esign/documents/${esignId}/recipients`),
+          esignFetch(`${BACKEND_URL}/api/esign/documents/${esignId}/file`),
+          esignFetch(`${BACKEND_URL}/api/esign/signature-fields/${esignId}`),
+          esignFetch(`${BACKEND_URL}/api/esign/documents/${esignId}/recipients`),
         ]);
         if (fileRes.ok) {
           const blob = await fileRes.blob();
@@ -381,9 +382,9 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
     try {
       if (esignId) {
         const [fileRes, fieldsRes, recipientsRes] = await Promise.all([
-          fetch(`${BACKEND_URL}/api/esign/documents/${esignId}/file`),
-          fetch(`${BACKEND_URL}/api/esign/signature-fields/${esignId}`),
-          fetch(`${BACKEND_URL}/api/esign/documents/${esignId}/recipients`),
+          esignFetch(`${BACKEND_URL}/api/esign/documents/${esignId}/file`),
+          esignFetch(`${BACKEND_URL}/api/esign/signature-fields/${esignId}`),
+          esignFetch(`${BACKEND_URL}/api/esign/documents/${esignId}/recipients`),
         ]);
         if (fileRes.ok) {
           const blob = await fileRes.blob();

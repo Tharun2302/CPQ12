@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { FileText, Loader2, Check, Clock, XCircle, Eye, PenLine, Download, MoreVertical, ThumbsUp, Calendar, Bell, CalendarClock, Send, MailCheck, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, Forward, ChevronRight, ChevronDown, Lock, Search, Upload, Copy, FileArchive, Users, Trash2 } from 'lucide-react';
 import { deleteEsignDocument } from '../services/esignDocumentService';
 import { BACKEND_URL } from '../config/api';
+import { esignFetch, downloadEsignFile } from '../utils/esignAccess';
 import { SUPPRESS_PII } from '../analytics/privacy';
 import { useAuth } from '../hooks/useAuth';
 import Navigation from './Navigation';
@@ -311,7 +312,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/agreement-status`);
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/agreement-status`);
       const contentType = res.headers.get('content-type') || '';
       const text = await res.text();
       if (!contentType.includes('application/json')) {
@@ -367,7 +368,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     setPreviewError(null);
     (async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/esign/documents/${previewDoc.id}/file?inline=1`, { credentials: 'include' });
+        const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${previewDoc.id}/file?inline=1`, { credentials: 'include' });
         if (!res.ok) throw new Error(`Request failed (${res.status})`);
         const blob = await res.blob();
         if (cancelled) return;
@@ -458,16 +459,13 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     rejected: dateFilteredAgreements.filter((ag) => ag.status === 'denied' || ag.status === 'voided').length
   };
 
-  const handleDownload = (id: string, fileName: string) => {
-    const url = `${BACKEND_URL}/api/esign/documents/${id}/file?attachment=1`;
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName || 'document.pdf';
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // A plain link cannot carry the login token the file route requires, so fetch it first.
+  const handleDownload = async (id: string, fileName: string) => {
+    try {
+      await downloadEsignFile(`${BACKEND_URL}/api/esign/documents/${id}/file?attachment=1`, fileName);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Download failed');
+    }
   };
 
   /** Selection is scoped to what is on screen, so filters/tabs can never widen a bulk download. */
@@ -509,7 +507,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     setBulkDownloading(true);
     setBulkNotice(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/bulk-download`, {
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/bulk-download`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ ids }),
@@ -548,9 +546,9 @@ const EsignAgreementStatusDashboard: React.FC = () => {
   /** Fetch doc + recipients + activity for a given agreement. Used by open + auto-poll. */
   const loadStatusModalData = useCallback(async (agreementId: string) => {
     const [docRes, recRes, actRes] = await Promise.all([
-      fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}`),
-      fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/recipients`),
-      fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/activity`),
+      esignFetch(`${BACKEND_URL}/api/esign/documents/${agreementId}`),
+      esignFetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/recipients`),
+      esignFetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/activity`),
     ]);
     const docData = await docRes.json();
     const recData = await recRes.json();
@@ -634,7 +632,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     }
     setCopyingId(agreementId);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/recipients`);
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/recipients`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) {
         alert(data.error || 'Could not fetch signing link.');
@@ -675,7 +673,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     }
     setCancelingId(agreementId);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/void`, {
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/void`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actor_email: user?.email || '', void_reason: `Signing cancelled: ${trimmed}` }),
@@ -699,7 +697,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     if (!window.confirm(`Send a reminder email to all pending recipients for ${docLabel}?`)) return;
     setRemindingId(agreementId);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/remind`, {
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/remind`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actor_email: user?.email || '' }),
@@ -731,7 +729,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     }
     setExtendingId(agreementId);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/extend-expiry`, {
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/extend-expiry`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actor_email: user?.email || '', days }),

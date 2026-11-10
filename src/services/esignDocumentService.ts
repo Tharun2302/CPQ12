@@ -100,8 +100,7 @@ export async function getZohoSignStatus(): Promise<ZohoSignStatus> {
 /**
  * Hand a prepared document to Zoho Sign.
  *
- * Unlike most /api/esign/* routes this one verifies a JWT and checks the caller is the document
- * creator, so the Bearer token is mandatory. Recipients and fields are read server-side, which
+ * Verifies a JWT and checks the caller is the document creator, so the Bearer token is mandatory. Recipients and fields are read server-side, which
  * is why nothing about them appears in the body.
  */
 export async function sendWithZohoSign(
@@ -128,9 +127,8 @@ export async function refreshZohoDocument(documentId: string, options: { force?:
 /**
  * The one place the provider choice turns into a request.
  *
- * The CPQ branch is deliberately byte-identical to the call the prepare pages made before the
- * picker existed — same URL, same empty body, no Authorization header — so an install with Zoho
- * off behaves exactly as it always has.
+ * Both branches send the Bearer token: the in-house send route is staff-only, like every
+ * other e-sign route that is not part of the signer's own link.
  */
 export async function sendDocumentForSignature(
   documentId: string,
@@ -141,7 +139,7 @@ export async function sendDocumentForSignature(
 
   const response = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/send-for-signature`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({}),
   });
   return response.json();

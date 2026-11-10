@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download, XCircle, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { withEsignAccess } from '../utils/esignAccess';
 import { SUPPRESS_PII } from '../analytics/privacy';
 import EsignPdfPageView from '../components/EsignPdfPageView';
 import { cssStackForEsignTextFont, normalizeEsignTextColor } from '../utils/esignTextFieldStyle';
@@ -517,7 +518,7 @@ const EsignSignPage: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`, { method: 'HEAD' });
+        const res = await fetch(withEsignAccess(`${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`, { signingToken }), { method: 'HEAD' });
         if (!cancelled && res.status === 404) {
           setFileMissing(true);
         }
@@ -688,7 +689,7 @@ const EsignSignPage: React.FC = () => {
     setDownloading(true);
     setError(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/file?attachment=1`, { credentials: 'include' });
+      const res = await fetch(withEsignAccess(`${BACKEND_URL}/api/esign/documents/${documentId}/file?attachment=1`, { signingToken }), { credentials: 'include' });
       if (!res.ok) {
         setError('Download failed');
         return;
@@ -1315,7 +1316,7 @@ const EsignSignPage: React.FC = () => {
   ) : null;
 
   if (recipientRole === 'reviewer') {
-    const fileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
+    const fileUrl = withEsignAccess(`${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`, { signingToken });
     return (
       <div className="h-screen overflow-hidden bg-slate-50 flex flex-col">
         {outOfTurnBanner}
@@ -1586,7 +1587,7 @@ const EsignSignPage: React.FC = () => {
     );
   }
 
-  const fileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
+  const fileUrl = withEsignAccess(`${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`, { signingToken });
 
   if (signDeniedSuccess) {
     return (
@@ -1645,7 +1646,7 @@ const EsignSignPage: React.FC = () => {
   }
 
   if (signerChoice === null && signingToken) {
-    const signerPreviewFileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
+    const signerPreviewFileUrl = withEsignAccess(`${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`, { signingToken });
     return (
       <div className="h-screen overflow-hidden bg-slate-100 flex flex-col">
 
@@ -1715,7 +1716,7 @@ const EsignSignPage: React.FC = () => {
                   older mobile browsers; signer can open the PDF in their device
                   viewer and still come back to this page to approve or decline. */}
               <a
-                href={`${BACKEND_URL}/api/esign/documents/${documentId}/file?attachment=1`}
+                href={withEsignAccess(`${BACKEND_URL}/api/esign/documents/${documentId}/file?attachment=1`, { signingToken })}
                 className="mt-2 mb-4 text-xs font-semibold text-indigo-700 underline decoration-dotted underline-offset-2 hover:text-indigo-900"
                 target="_blank"
                 rel="noopener noreferrer"

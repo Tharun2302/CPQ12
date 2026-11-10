@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate, Link } from 'react-router-dom';
 import { Upload, FileText, Loader2, PenLine, Download, Trash2, Check, Clock, XCircle, Eye, MoreVertical, BookOpen, Copy, Bell, X, Users } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { esignFetch, downloadEsignFile, fetchEsignFileObjectUrl } from '../utils/esignAccess';
 import { SUPPRESS_PII } from '../analytics/privacy';
 import { useAuth } from '../hooks/useAuth';
 import { shouldAutoStartLandingTour, startEsignLandingTour } from '../utils/esignTour';
@@ -187,7 +188,7 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
 
   const loadDocuments = useCallback(async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/agreement-status`);
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/agreement-status`);
       const data = await res.json();
       if (data.success && Array.isArray(data.agreements)) {
         const email = user?.email;
@@ -248,7 +249,7 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
       const formData = new FormData();
       formData.append('file', file);
       formData.append('uploaded_by', user?.email || uploadedBy || 'anonymous');
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/upload`, {
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -295,7 +296,7 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
     if (valid.length > 0 || signingOrderEnabled) {
       setSavingRecipients(true);
       try {
-        const res = await fetch(`${BACKEND_URL}/api/esign/documents/${uploadedDocumentId}/recipients`, {
+        const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${uploadedDocumentId}/recipients`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -388,7 +389,7 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
     }
     setVoidingId(docId);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}/void`, {
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${docId}/void`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actor_email: user?.email || '', void_reason: trimmed }),
@@ -411,7 +412,7 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
     if (remindingDocId) return;
     setRemindingDocId(docId);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}/remind`, {
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${docId}/remind`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actor_email: user?.email }),
@@ -452,7 +453,7 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
     }
     setCopyingDocId(docId);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}/recipients`);
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${docId}/recipients`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) {
         alert(data.error || 'Could not fetch signing link.');
@@ -500,8 +501,8 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
     setStatusModalLoading(true);
     try {
       const [docRes, recRes] = await Promise.all([
-        fetch(`${BACKEND_URL}/api/esign/documents/${docId}`),
-        fetch(`${BACKEND_URL}/api/esign/documents/${docId}/recipients`),
+        esignFetch(`${BACKEND_URL}/api/esign/documents/${docId}`),
+        esignFetch(`${BACKEND_URL}/api/esign/documents/${docId}/recipients`),
       ]);
       const docData = await docRes.json();
       const recData = await recRes.json();
@@ -566,23 +567,32 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
     if (!statusModalId || !statusModalDoc) return;
     setStatusModalDownloading(true);
     try {
-      const url = `${BACKEND_URL}/api/esign/documents/${statusModalId}/file?attachment=1`;
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = statusModalDoc.file_name || 'document.pdf';
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // A plain link cannot carry the login token the file route requires, so fetch it first.
+      await downloadEsignFile(
+        `${BACKEND_URL}/api/esign/documents/${statusModalId}/file?attachment=1`,
+        statusModalDoc.file_name || 'document.pdf'
+      );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Download failed');
     } finally {
       setStatusModalDownloading(false);
     }
   };
 
-  const handleStatusModalPreview = () => {
+  const handleStatusModalPreview = async () => {
     if (!statusModalId) return;
-    window.open(`${BACKEND_URL}/api/esign/documents/${statusModalId}/file?inline=1`, '_blank', 'noopener,noreferrer');
+    // Open the tab synchronously (popup blockers drop window.open after an await), then point
+    // it at the fetched PDF once it arrives.
+    const tab = window.open('', '_blank');
+    try {
+      const objectUrl = await fetchEsignFileObjectUrl(`${BACKEND_URL}/api/esign/documents/${statusModalId}/file?inline=1`);
+      if (tab) tab.location.href = objectUrl;
+      else window.open(objectUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 5 * 60_000);
+    } catch (err) {
+      tab?.close();
+      alert(err instanceof Error ? err.message : 'Could not open the document');
+    }
   };
 
   const statusLabel = (status: string) => {
@@ -1126,10 +1136,16 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
                 {showDownload && (
                   <a
                     href={`${BACKEND_URL}/api/esign/documents/${openDoc.id}/file?attachment=1`}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     download
-                    onClick={closeActionsMenu}
+                    onClick={(e) => {
+                      // The file route needs the login token, which a plain link cannot send.
+                      e.preventDefault();
+                      closeActionsMenu();
+                      downloadEsignFile(
+                        `${BACKEND_URL}/api/esign/documents/${openDoc.id}/file?attachment=1`,
+                        openDoc.file_name || 'document.pdf'
+                      ).catch((err) => alert(err instanceof Error ? err.message : 'Download failed'));
+                    }}
                     className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
                   >
                     <Download className="h-4 w-4 shrink-0" />

@@ -207,7 +207,7 @@ const EditDatesModal: React.FC<EditDatesModalProps> = ({ documentId, actorEmail,
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${endpointBase}/edit-context`);
+      const res = await fetch(`${endpointBase}/edit-context`, { headers: getAuthHeaders() });
       const contentType = res.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
         // Server returned HTML (Express default 404) instead of JSON — the

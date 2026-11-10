@@ -22,6 +22,7 @@ const {
   checkStepUpdateAllowed
 } = require('./approval-step-guard.cjs');
 const technicalApproverGuard = require('./technical-approver-guard.cjs');
+const esignAccess = require('./esign-access.cjs');
 const {
   DISCOUNT_POLICY_SETTINGS_ID,
   INVALID_MAX_DISCOUNT_ERROR,
@@ -3242,6 +3243,75 @@ async function getAuthenticatedUser(req, res) {
   } catch (e) {
     res.status(401).json({ success: false, error: 'Invalid token' });
     return null;
+  }
+}
+
+// ---- E-sign access ---------------------------------------------------------------------------
+// Rules live in esign-access.cjs. Staff-only e-sign routes call getAuthenticatedUser and take
+// the actor's email from the verified token. The read routes (document, file, fields,
+// recipients) also serve people with no CPQ login, so they accept, in order:
+//   1. a staff Bearer token,
+//   2. ?signing_token=  — the recipient's signing link token (signer and reviewer pages),
+//   3. ?approval_token= — the approval-portal link token (Team Lead / Technical / Legal portals).
+// Tokens travel as query parameters because these pages already carry them in their own URL,
+// and because PDFs are loaded by <iframe>/<a href>, which cannot send headers.
+const ESIGN_READ_DENIED = 'Sign in to CPQ, or open this document from the link in your email.';
+
+async function resolveEsignReadAccess(req, doc) {
+  const user = await getOptionalAuthenticatedUser(req);
+  if (user) return { kind: 'staff', user };
+
+  const docId = doc._id;
+  const docIdStr = docId.toString();
+
+  const signingToken = esignAccess.coerceToken(req.query?.signing_token);
+  if (signingToken) {
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: signingToken });
+    if (recipient) {
+      const sameDoc = String(recipient.document_id) === docIdStr;
+      const docRecipientEmails = sameDoc ? [] : (await db.collection('esign_recipients')
+        .find({ $or: [{ document_id: docId }, { document_id: docIdStr }] }, { projection: { email: 1 } })
+        .toArray()).map((r) => r.email);
+      if (esignAccess.signerCanReadDocument({ recipient, docId: docIdStr, docRecipientEmails })) {
+        return { kind: 'signer', recipient };
+      }
+    }
+  }
+
+  const approvalToken = esignAccess.coerceToken(req.query?.approval_token);
+  if (approvalToken) {
+    const record = await db.collection('approval_access_tokens').findOne({ token: approvalToken });
+    if (record) {
+      const workflow = await db.collection('approval_workflows').findOne(
+        { id: String(record.workflowId) },
+        { projection: { id: 1, esignDocumentId: 1 } }
+      );
+      if (esignAccess.portalCanReadDocument({ record, workflow, docId: docIdStr })) {
+        return { kind: 'portal', record };
+      }
+    }
+  }
+  return null;
+}
+
+/** resolveEsignReadAccess, answering 401 itself when nobody qualifies. */
+async function requireEsignReadAccess(req, res, doc) {
+  const access = await resolveEsignReadAccess(req, doc);
+  if (!access) res.status(401).json({ success: false, error: ESIGN_READ_DENIED });
+  return access;
+}
+
+/** Route middleware form of getAuthenticatedUser, for routes where a body parser (multer)
+ *  would otherwise accept and store an upload before the handler gets to check the caller. */
+async function requireStaffLogin(req, res, next) {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const user = await getAuthenticatedUser(req, res);
+    if (!user) return; // 401 already sent
+    req.authUser = user;
+    next();
+  } catch (err) {
+    next(err);
   }
 }
 
@@ -7826,7 +7896,7 @@ async function getEsignDocumentForRecipient(recipient) {
 }
 
 // POST /api/esign/documents/upload - Upload document to disk (converts DOCX to PDF), save metadata
-app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), async (req, res) => {
+app.post('/api/esign/documents/upload', requireStaffLogin, esignDocumentUpload.single('file'), async (req, res) => {
   let filePath = null;
   let dbInserted = false;
   try {
@@ -7961,6 +8031,8 @@ app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), asyn
 app.post('/api/esign/documents/from-approval', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const esignActor = await getAuthenticatedUser(req, res);
+    if (!esignActor) return; // 401 already sent
     const {
       documentId,
       uploaded_by: uploadedBy,
@@ -8069,8 +8141,12 @@ app.get('/api/esign/documents/:id', async (req, res) => {
       doc = null;
     }
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
-    if (req.query.audit === 'open' && doc.status !== 'voided') {
-      await logAudit(doc._id.toString(), 'opened', req.query.signer_email || null, req.ip || req.connection?.remoteAddress);
+    const access = await requireEsignReadAccess(req, res, doc);
+    if (!access) return;
+    // Only a recipient opening their own link counts as "opened", and the audit trail records
+    // the email bound to that link — never a ?signer_email= the caller chose.
+    if (req.query.audit === 'open' && doc.status !== 'voided' && access.kind === 'signer') {
+      await logAudit(doc._id.toString(), 'opened', access.recipient.email || null, req.ip || req.connection?.remoteAddress);
     }
     res.json({
       success: true,
@@ -8114,6 +8190,7 @@ app.get('/api/esign/documents/:id/file', async (req, res) => {
       doc = null;
     }
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (!(await requireEsignReadAccess(req, res, doc))) return;
 
     const attachment = req.query.attachment === '1' || req.query.download === '1';
     const safeFileName = (doc.file_name || 'document.pdf').replace(/["\r\n\\]/g, '').trim() || 'document.pdf';
@@ -8294,6 +8371,8 @@ const {
 app.post('/api/esign/documents/bulk-download', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const esignActor = await getAuthenticatedUser(req, res);
+    if (!esignActor) return; // 401 already sent
     const admin = await getExhibitAdminUser(req, res);
     if (!admin) return; // getExhibitAdminUser already responded
 
@@ -8372,34 +8451,11 @@ app.post('/api/esign/documents/bulk-download', async (req, res) => {
   }
 });
 
-// POST /api/esign/documents/:id/send - Mark as sent (no email sending from this page)
-app.post('/api/esign/documents/:id/send', async (req, res) => {
-  try {
-    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const docId = new ObjectId(req.params.id);
-    const { signer_email } = req.body || {};
-
-    const doc = await db.collection('esign_documents').findOne({ _id: docId });
-    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
-
-    const signingUrl = `${process.env.APP_BASE_URL || 'http://localhost:5173'}/sign/${docId}`;
-
-    await db.collection('esign_documents').updateOne(
-      { _id: docId },
-      { $set: { status: 'sent', sent_at: new Date(), signer_email: signer_email || null } }
-    );
-
-    await logAudit(docId, 'sent', req.body.uploaded_by || 'system', req.ip || req.connection?.remoteAddress);
-
-    res.json({
-      success: true,
-      signing_url: signingUrl,
-      message: 'Document marked as sent'
-    });
-  } catch (error) {
-    console.error('❌ E-sign send document error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
+// POST /api/esign/documents/:id/send - Retired. It emailed a /sign/<documentId> link with no signing
+// token, which let anyone holding a document id sign every field. Sending goes through
+// /api/esign/documents/:id/send-for-signature, which issues one token per recipient.
+app.post('/api/esign/documents/:id/send', (req, res) => {
+  res.status(410).json({ success: false, error: "This send method has been retired. Use Send for Signature." });
 });
 
 // DELETE /api/esign/documents/:id - Delete document, its fields, audit logs, and files
@@ -8457,13 +8513,16 @@ app.delete('/api/esign/documents/:id', async (req, res) => {
 app.post('/api/esign/documents/:id/void', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const esignActor = await getAuthenticatedUser(req, res);
+    if (!esignActor) return; // 401 already sent
     let docId;
     try { docId = new ObjectId(req.params.id); } catch {
       return res.status(400).json({ success: false, error: 'Invalid document ID' });
     }
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
-    const actorEmail = req.body?.actor_email || req.body?.user_email || '';
+    // Identity comes from the verified login token; a body-supplied email is spoofable.
+    const actorEmail = esignActor.email || '';
     if (!esignActorIsDocumentCreator(doc, actorEmail)) {
       return res.status(403).json({ success: false, error: 'Only the document creator can void this document' });
     }
@@ -8507,7 +8566,7 @@ app.post('/api/esign/documents/:id/void', async (req, res) => {
       $or: [{ document_id: docId }, { document_id: docId.toString() }],
     });
     try {
-      await logAudit(docId.toString(), 'voided', actorEmail || req.body?.voided_by || req.ip || null, req.ip || req.connection?.remoteAddress, { void_reason: voidReason });
+      await logAudit(docId.toString(), 'voided', actorEmail || null, req.ip || req.connection?.remoteAddress, { void_reason: voidReason });
     } catch (auditErr) { /* non-fatal */ }
     console.log('E-sign VOID: document voided', req.params.id, doc.file_name, '|', actorEmail, '|', voidReason);
     res.json({ success: true, message: 'Document voided. Signing links no longer work.', void_reason: voidReason });
@@ -8521,13 +8580,16 @@ app.post('/api/esign/documents/:id/void', async (req, res) => {
 app.post('/api/esign/documents/:id/remind', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const esignActor = await getAuthenticatedUser(req, res);
+    if (!esignActor) return; // 401 already sent
     let docId;
     try { docId = new ObjectId(req.params.id); } catch {
       return res.status(400).json({ success: false, error: 'Invalid document ID' });
     }
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
-    const actorEmail = req.body?.actor_email || req.body?.user_email || '';
+    // Identity comes from the verified login token; a body-supplied email is spoofable.
+    const actorEmail = esignActor.email || '';
     if (!esignActorIsDocumentCreator(doc, actorEmail)) {
       return res.status(403).json({ success: false, error: 'Only the document creator can send reminders for this document' });
     }
@@ -8618,7 +8680,7 @@ app.post('/api/esign/documents/:id/remind', async (req, res) => {
     }
 
     try {
-      await logAudit(docId.toString(), 'manual_reminder_sent', req.body?.actor_email || req.ip || 'system', req.ip || null);
+      await logAudit(docId.toString(), 'manual_reminder_sent', esignActor.email || 'system', req.ip || null);
     } catch (_) { /* non-fatal */ }
 
     if (sentCount === 0) {
@@ -8642,6 +8704,8 @@ app.post('/api/esign/documents/:id/remind', async (req, res) => {
 app.post('/api/approval-workflows/:workflowId/reset-esign', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const esignActor = await getAuthenticatedUser(req, res);
+    if (!esignActor) return; // 401 already sent
     const workflowId = req.params.workflowId;
     if (!workflowId) return res.status(400).json({ success: false, error: 'Invalid workflow ID' });
 
@@ -8699,6 +8763,8 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
     try { docId = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const access = await requireEsignReadAccess(req, res, doc);
+    if (!access) return;
     const docIdStr = docId.toString();
     const recipients = await db.collection('esign_recipients')
       .find({ $or: [{ document_id: docId }, { document_id: docIdStr }] })
@@ -8706,7 +8772,8 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
       .toArray();
     res.json({
       success: true,
-      recipients: recipients.map((r) => ({
+      // Signing tokens are stripped for anyone but staff (redactRecipientForViewer).
+      recipients: recipients.map((r) => esignAccess.redactRecipientForViewer({
         id: r._id.toString(),
         name: r.name || r.email || 'Recipient',
         email: r.email,
@@ -8730,7 +8797,7 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
         forward_count: r.forward_count || 0,
         forwarded_from_email: r.forwarded_from_email || null,
         forwarded_from_name: r.forwarded_from_name || null,
-      })),
+      }, access.kind)),
     });
   } catch (error) {
     console.error('❌ E-sign get recipients error:', error);
@@ -8742,6 +8809,8 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
 app.get('/api/esign/documents/:id/activity', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const esignActor = await getAuthenticatedUser(req, res);
+    if (!esignActor) return; // 401 already sent
     let docId;
     try { docId = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
     const docIdStr = docId.toString();
@@ -8769,6 +8838,8 @@ app.get('/api/esign/documents/:id/activity', async (req, res) => {
 app.post('/api/esign/documents/:id/recipients', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const esignActor = await getAuthenticatedUser(req, res);
+    if (!esignActor) return; // 401 already sent
     let docId;
     try { docId = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
@@ -9054,6 +9125,8 @@ async function advanceEsignSequentialSigning(docId, actorEmail) {
 app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const esignActor = await getAuthenticatedUser(req, res);
+    if (!esignActor) return; // 401 already sent
     const result = await sendDocumentForSignatureInternal(req.params.id, {
       uploadedBy: req.body.uploaded_by || 'system',
       ...(Object.prototype.hasOwnProperty.call(req.body || {}, 'signing_order_enforced')
@@ -9449,6 +9522,8 @@ app.post('/api/zoho-sign/documents/:id/send', zohoSignSendLimiter, async (req, r
 app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const esignActor = await getAuthenticatedUser(req, res);
+    if (!esignActor) return; // 401 already sent
     if (!process.env.SENDGRID_API_KEY) {
       return res.status(400).json({ success: false, error: 'Email delivery is not configured. Configure SENDGRID_API_KEY before extending expiry.' });
     }
@@ -9461,7 +9536,8 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
 
-    const actorEmail = (req.body?.actor_email || req.body?.user_email || '').toString().trim();
+    // Identity comes from the verified login token; a body-supplied email is spoofable.
+    const actorEmail = String(esignActor.email || '').trim();
     if (!esignActorIsDocumentCreator(doc, actorEmail)) {
       return res.status(403).json({ success: false, error: 'Only the document creator can extend expiry for this document' });
     }
@@ -9775,6 +9851,8 @@ app.patch('/api/documents/:id/dates', async (req, res) => {
 app.get('/api/esign/documents/:id/edit-context', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const esignActor = await getAuthenticatedUser(req, res);
+    if (!esignActor) return; // 401 already sent
     let docId;
     try {
       docId = new ObjectId(req.params.id);
@@ -10020,6 +10098,8 @@ app.patch('/api/esign/documents/:id/dates', async (req, res) => {
 app.get('/api/esign/fixed-role-recipients', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const esignActor = await getAuthenticatedUser(req, res);
+    if (!esignActor) return; // 401 already sent
     const teamParam = (req.query.team || '').toString().trim().toUpperCase();
     const settingsCollection = db.collection('team_approval_settings');
     const settings = await settingsCollection.findOne({ _id: 'main' });
@@ -10043,40 +10123,11 @@ app.get('/api/esign/fixed-role-recipients', async (req, res) => {
   }
 });
 
-// GET /api/esign/pending-for-email - List documents pending signature for an email (for E-Sign Portal / Team Lead Dashboard)
-app.get('/api/esign/pending-for-email', async (req, res) => {
-  try {
-    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const email = (req.query.email || '').toString().trim().toLowerCase();
-    if (!email) return res.status(400).json({ success: false, error: 'email query required' });
-    // Case-insensitive email match so dashboard finds items regardless of how email was stored
-    const emailRegex = new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
-    const recipients = await db.collection('esign_recipients')
-      .find({ email: emailRegex, status: { $in: ['pending', 'viewed'] }, signing_token: { $exists: true, $ne: '' } })
-      .toArray();
-    const docIds = [...new Set(recipients.map((r) => r.document_id).filter(Boolean))];
-    const docs = await db.collection('esign_documents')
-      .find({ _id: { $in: docIds }, status: 'sent' })
-      .toArray();
-    const docMap = new Map(docs.map((d) => [d._id.toString(), d]));
-    const items = recipients
-      .map((r) => {
-        const docId = r.document_id && (r.document_id.toString ? r.document_id.toString() : String(r.document_id));
-        const doc = docMap.get(docId);
-        if (!doc || !r.signing_token) return null;
-        return {
-          documentId: docId,
-          file_name: doc.file_name || 'Document',
-          signing_token: r.signing_token,
-          role: r.role || 'signer',
-        };
-      })
-      .filter(Boolean);
-    res.json({ success: true, items });
-  } catch (error) {
-    console.error('❌ E-sign pending-for-email error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
+// GET /api/esign/pending-for-email - Retired. It returned the signing tokens of any email address
+// passed in, which is enough to sign as that person. Nothing calls it; the e-sign inbox uses
+// /api/esign/inbox-by-token, which needs a valid signing link to begin with.
+app.get('/api/esign/pending-for-email', (req, res) => {
+  res.status(410).json({ success: false, error: "This endpoint has been retired." });
 });
 
 // GET /api/esign/inbox-by-token - Open dashboard by link from email (no login). Token = signing_token.
@@ -10650,6 +10701,8 @@ app.post('/api/esign/deny-signing', async (req, res) => {
 app.post('/api/esign/signature-fields', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const esignActor = await getAuthenticatedUser(req, res);
+    if (!esignActor) return; // 401 already sent
     const { document_id, fields } = req.body;
     if (!document_id || !Array.isArray(fields)) {
       return res.status(400).json({ success: false, error: 'document_id and fields array required' });
@@ -10712,6 +10765,9 @@ app.get('/api/esign/signature-fields/:documentId', async (req, res) => {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
     let docId;
     try { docId = new ObjectId(req.params.documentId); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId }, { projection: { _id: 1 } });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (!(await requireEsignReadAccess(req, res, doc))) return;
     const fields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).toArray();
     res.json({ success: true, fields });
   } catch (error) {
@@ -10774,34 +10830,11 @@ app.post('/api/esign/signatures/clear-stored', async (req, res) => {
   }
 });
 
-// POST /api/esign/signatures/save - Save signature image and link to document
-app.post('/api/esign/signatures/save', async (req, res) => {
-  try {
-    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const { document_id, field_id, signature_data, signer_email } = req.body;
-    if (!document_id || !signature_data) return res.status(400).json({ success: false, error: 'document_id and signature_data required' });
-
-    const docId = new ObjectId(document_id);
-    const doc = await db.collection('esign_documents').findOne({ _id: docId });
-    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
-
-    const buf = Buffer.from(signature_data.replace(/^data:image\/\w+;base64,/, ''), 'base64');
-    const sigFilename = `sig-${Date.now()}-${Math.random().toString(36).slice(2)}.png`;
-    const sigPath = path.join(signaturesDir, sigFilename);
-    fs.writeFileSync(sigPath, buf);
-
-    await db.collection('esign_documents').updateOne(
-      { _id: docId },
-      { $set: { signature_path: sigPath, signer_email: signer_email || null, signed_at: new Date() } }
-    );
-
-    await logAudit(docId, 'signed', signer_email, req.ip || req.connection?.remoteAddress);
-
-    res.json({ success: true, signature_path: sigPath });
-  } catch (error) {
-    console.error('❌ E-sign save signature error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
+// POST /api/esign/signatures/save - Retired. It marked any document signed by any email with no
+// login and no signing token. Signing goes through /api/esign/documents/generate-signed, which
+// requires the recipient's signing token.
+app.post('/api/esign/signatures/save', (req, res) => {
+  res.status(410).json({ success: false, error: "This endpoint has been retired. Sign from the link in your email." });
 });
 
 /** Parse #RRGGBB for pdf-lib rgb(); invalid → default red. */
@@ -11046,8 +11079,16 @@ async function esignRegenerateReviewMergedPdf(db, docId) {
 app.post('/api/esign/documents/generate-signed', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const { document_id, signature_data, field_coords, field_values, signer_email, signing_token } = req.body;
+    const { document_id, signature_data, field_values } = req.body || {};
     if (!document_id) return res.status(400).json({ success: false, error: 'document_id required' });
+    // Signing always requires the recipient's own signing token. The fields stamped and the
+    // signer recorded both come from that token's recipient — never from caller-supplied
+    // field_coords or signer_email, which let anyone sign a document knowing only its id.
+    const signing_token = esignAccess.coerceToken(req.body?.signing_token);
+    if (!signing_token) {
+      return res.status(401).json({ success: false, error: 'Open this document from the signing link in your email to sign it.' });
+    }
+    let signer_email = null;
 
     let docId;
     try {
@@ -11081,9 +11122,7 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
     let recipient = null;
     let fields;
     const carriedValues = {};
-    if (field_coords && field_coords.length) {
-      fields = field_coords;
-    } else if (signing_token) {
+    { // Resolve the signing recipient; only that recipient's fields are stamped.
       recipient = await db.collection('esign_recipients').findOne({ signing_token });
       if (!recipient) {
         return res.status(404).json({ success: false, error: 'Invalid or expired signing link' });
@@ -11102,6 +11141,7 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       }
       const signRefusal = await esignOutOfTurnRefusal(doc, recipient);
       if (signRefusal) return res.status(403).json({ success: false, error: signRefusal, out_of_turn: true });
+      signer_email = recipient.email || null;
       fields = await getEsignFieldsForRecipient(db, docId, recipient._id.toString());
       // A field assigned to a reviewer is invisible to this signer, so its filled value would never
       // be drawn and the reviewer's entries would vanish from the signed PDF. Append those fields.
@@ -11114,11 +11154,9 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
         const fid = field._id?.toString();
         if (fid) carriedValues[fid] = value;
       }
-    } else {
-      fields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
     }
 
-    const values = { ...(field_values && typeof field_values === 'object' && !Array.isArray(field_values) ? field_values : {}), ...carriedValues };
+    const values ={ ...(field_values && typeof field_values === 'object' && !Array.isArray(field_values) ? field_values : {}), ...carriedValues };
     if (signature_data && !Object.keys(values).length && fields.length) {
       values['0'] = signature_data;
     }
@@ -11378,6 +11416,8 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
 app.get('/api/esign/documents', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const esignActor = await getAuthenticatedUser(req, res);
+    if (!esignActor) return; // 401 already sent
     // Exclude inline PDF blobs (file_data / signed_file_data can be MBs each) — list view doesn't need them.
     const docs = await db.collection('esign_documents')
       .find({}, { projection: { file_data: 0, signed_file_data: 0 } })
@@ -11403,6 +11443,8 @@ app.get('/api/esign/documents', async (req, res) => {
 app.get('/api/esign/agreement-status', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const esignActor = await getAuthenticatedUser(req, res);
+    if (!esignActor) return; // 401 already sent
     // Exclude inline PDF blobs (file_data / signed_file_data can be MBs each) — dashboard reads metadata only.
     const docs = await db.collection('esign_documents')
       .find({}, { projection: { file_data: 0, signed_file_data: 0 } })

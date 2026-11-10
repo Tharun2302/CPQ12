@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Loader2, Check, Clock, Download, Eye, XCircle, CalendarClock } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { esignFetch } from '../utils/esignAccess';
 import { useAuth } from '../hooks/useAuth';
 import EditDatesModal from '../components/EditDatesModal';
 import { SUPPRESS_PII } from '../analytics/privacy';
@@ -87,8 +88,8 @@ const EsignTrackingPage: React.FC = () => {
     if (!documentId) return;
     try {
       const [docRes, recRes] = await Promise.all([
-        fetch(`${BACKEND_URL}/api/esign/documents/${documentId}`),
-        fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`),
+        esignFetch(`${BACKEND_URL}/api/esign/documents/${documentId}`),
+        esignFetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`),
       ]);
       const docData = await docRes.json();
       const recData = await recRes.json();
@@ -132,7 +133,7 @@ const EsignTrackingPage: React.FC = () => {
     if (!documentId || !doc) return;
     setDownloading(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/file?attachment=1`, { credentials: 'include' });
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${documentId}/file?attachment=1`, { credentials: 'include' });
       if (!res.ok) {
         setError('Download failed');
         return;
@@ -154,18 +155,26 @@ const EsignTrackingPage: React.FC = () => {
   const handlePreview = async () => {
     if (!documentId) return;
     const fileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
-    // Pre-flight HEAD so we don't open a new tab that just shows raw JSON when
-    // the underlying PDF is missing from storage (FILE_MISSING case).
+    // The file route needs the login token, which a new tab cannot send, so fetch the PDF here
+    // and open it as an object URL. The tab is opened first, synchronously, because popup
+    // blockers drop window.open calls made after an await.
+    const tab = window.open('', '_blank');
     try {
-      const head = await fetch(fileUrl, { method: 'HEAD', credentials: 'include' });
-      if (head.status === 404) {
+      const res = await esignFetch(fileUrl);
+      if (res.status === 404) {
+        tab?.close();
         alert('This document could not be loaded. The PDF file is missing from storage. Please re-upload the document and resend for signature, or contact your administrator.');
         return;
       }
-    } catch {
-      // Network error — fall through and let the new tab attempt the load.
+      if (!res.ok) throw new Error(`Could not open the document (HTTP ${res.status})`);
+      const objectUrl = URL.createObjectURL(await res.blob());
+      if (tab) tab.location.href = objectUrl;
+      else window.open(objectUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 5 * 60_000);
+    } catch (err) {
+      tab?.close();
+      alert(err instanceof Error ? err.message : 'Could not open the document');
     }
-    window.open(fileUrl, '_blank', 'noopener,noreferrer');
   };
 
   const handleExtendExpiry = async () => {
@@ -183,7 +192,7 @@ const EsignTrackingPage: React.FC = () => {
     setExtendingExpiry(true);
     setExtendResult(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/extend-expiry`, {
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${documentId}/extend-expiry`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actor_email: user?.email || '', days }),

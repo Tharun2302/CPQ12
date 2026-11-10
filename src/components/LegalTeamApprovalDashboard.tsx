@@ -6,6 +6,7 @@ import { getApprovalLinkNotice, ApprovalLinkNotice, APPROVAL_DELETED_NOTICE } fr
 import ApprovalLinkNoticeBox from './ApprovalLinkNoticeBox';
 import type { ApprovalWorkflow } from '../types/approval';
 import { BACKEND_URL } from '../config/api';
+import { esignFetch } from '../utils/esignAccess';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import { track } from '../analytics/clarity';
 import EsignPdfPageView from './EsignPdfPageView';
@@ -470,8 +471,8 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
     try {
       if (esignId) {
         const [fileRes, fieldsRes] = await Promise.all([
-          fetch(`${BACKEND_URL}/api/esign/documents/${esignId}/file`),
-          fetch(`${BACKEND_URL}/api/esign/signature-fields/${esignId}`),
+          esignFetch(`${BACKEND_URL}/api/esign/documents/${esignId}/file`),
+          esignFetch(`${BACKEND_URL}/api/esign/signature-fields/${esignId}`),
         ]);
         if (fileRes.ok) {
           const blob = await fileRes.blob();

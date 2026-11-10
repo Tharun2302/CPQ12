@@ -23,6 +23,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import { esignFetch } from '../utils/esignAccess';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import { authAwareError, getAuthHeaders } from '../utils/authUtils';
 import { redlineSaveMessage } from '../utils/redlineSaveMessage';
@@ -454,7 +455,7 @@ const ApprovalDashboard: React.FC = () => {
   const handleProceedToEsign = async (workflow: any) => {
     setProcessingEsignId(workflow.id);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/from-approval`, {
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/from-approval`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -496,7 +497,7 @@ const ApprovalDashboard: React.FC = () => {
     }
     setProcessingEsignId(workflow.id);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${esignDocId}`);
+      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${esignDocId}`);
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success && data.document) {
         const docStatus: string = data.document.status || 'draft';
@@ -533,7 +534,7 @@ const ApprovalDashboard: React.FC = () => {
     if (!confirmed) return;
     setResettingEsignId(workflow.id);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/approval-workflows/${workflow.id}/reset-esign`, {
+      const res = await esignFetch(`${BACKEND_URL}/api/approval-workflows/${workflow.id}/reset-esign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actor_email: workflow.creatorEmail || '' }),
