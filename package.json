@@ -21,7 +21,7 @@
     "db:clear-esign-secrets": "node scripts/clear-esign-signature-secrets.cjs"
   },
   "dependencies": {
-    "@azure/msal-browser": "^4.22.1",
+    "@azure/msal-browser": "^4.30.0",
     "@azure/msal-react": "^3.0.19",
     "@react-pdf/renderer": "^4.3.0",
     "@sendgrid/mail": "^8.1.6",
