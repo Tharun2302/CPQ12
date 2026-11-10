@@ -49,7 +49,7 @@
     "jspdf": "^3.0.3",
     "libreoffice-convert": "^1.7.0",
     "lucide-react": "^0.344.0",
-    "mammoth": "^1.11.0",
+    "mammoth": "^1.13.0",
     "mongodb": "6.8.0",
     "mongoose": "^8.18.1",
     "multer": "^2.0.2",
