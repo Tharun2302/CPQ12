@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, AuthContextType, SignUpData, AuthProvider as AuthProviderType } from '../types/auth';
+import { User, AuthContextType, SignUpData } from '../types/auth';
 import { track, identify } from '../analytics/clarity';
 import { identifyHotjarUser } from '../analytics/hotjar';
 import { BACKEND_URL } from '../config/api';
@@ -10,24 +10,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
  
 // Microsoft authentication using custom OAuth implementation
 // This avoids MSAL library issues that cause white page problems
- 
-// Mock user database (in a real app, this would be API calls)
-const mockUsers: User[] = [
-  {
-    id: 'user_cpq',
-    name: 'CPQ Team',
-    email: 'cpq@zenop.ai',
-    provider: 'email',
-    createdAt: '2024-01-01T00:00:00Z'
-  }
-];
 
-// Mock passwords (in a real app, these would be hashed)
-// Note: Currently unused since we use fallback authentication
-// const mockPasswords: { [key: string]: string } = {
-//   'cpq@zenop.ai': 'CPQ@2025@TEAM'
-// };
- 
 interface AuthProviderComponentProps {
   children: ReactNode;
 }
@@ -52,34 +35,12 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
         const storedToken = localStorage.getItem('cpq_token');
        
         if (storedUser && storedToken) {
-          // Check if it's a HubSpot token
-          if (storedToken === 'hubspot_auth_token') {
-            // HubSpot user - use stored data directly
-            try {
-              const userData = JSON.parse(storedUser);
-              setUser(userData);
-              setIsAuthenticated(true);
-              
-              // Identify user in Clarity (for already logged-in users)
-              identify(userData.email, {
-                name: userData.name,
-                email: userData.email,
-                userId: userData.id
-              });
-              
-              console.log('✅ HubSpot user authenticated from localStorage:', userData);
-            } catch (error) {
-              console.error('Failed to parse HubSpot user data:', error);
-              localStorage.removeItem('cpq_user');
-              localStorage.removeItem('cpq_token');
-            }
+          // Only server-issued JWTs are trusted; fake tokens from older builds must sign in again
+          if (storedToken.split('.').length !== 3) {
+            localStorage.removeItem('cpq_user');
+            localStorage.removeItem('cpq_token');
           } else {
-            // Regular JWT token - verify with backend
-            const looksLikeJwt = (t: string) => t.split('.').length === 3;
             const backendUrl = BACKEND_URL;
-           
-            if (looksLikeJwt(storedToken)) {
-            // Verify token with backend
             try {
               const response = await fetch(`${backendUrl}/api/auth/me`, {
                 headers: {
@@ -112,37 +73,9 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                 localStorage.removeItem('cpq_token');
               }
             } catch (backendError) {
+              // Stored user data is unverified, so an unreachable server must not count as signed in
               console.error('Backend auth check failed:', backendError);
-              // Fallback to local storage if backend is down
-              const userData = JSON.parse(storedUser);
-              setUser(userData);
-              setIsAuthenticated(true);
-              
-              // Identify user in Clarity (for already logged-in users)
-              identify(userData.email, {
-                name: userData.name,
-                email: userData.email,
-                userId: userData.id
-              });
             }
-          } else {
-            // Token is not a JWT (likely local/mock/MS access token). Use local user only.
-            try {
-              const userData = JSON.parse(storedUser);
-              setUser(userData);
-              setIsAuthenticated(true);
-              
-              // Identify user in Clarity (for already logged-in users)
-              identify(userData.email, {
-                name: userData.name,
-                email: userData.email,
-                userId: userData.id
-              });
-            } catch (e) {
-              localStorage.removeItem('cpq_user');
-              localStorage.removeItem('cpq_token');
-            }
-          }
           }
         }
       } catch (error) {
@@ -206,72 +139,10 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
         }
       }
      
-      // Fallback to mock authentication if backend fails
-      if (email === 'cpq@zenop.ai' && password === 'CPQ@2025@TEAM') {
-        const user = mockUsers.find(u => u.email === email);
-        if (user) {
-          // Store user and mock token
-          localStorage.setItem('cpq_user', JSON.stringify(user));
-          localStorage.setItem('cpq_token', 'mock_token_' + Date.now());
-          
-          // Update state
-          setUser(user);
-          setIsAuthenticated(true);
-          
-          // Identify user in Clarity (so email appears in dashboard)
-          identify(user.email, {
-            name: user.name,
-            email: user.email,
-            userId: user.id
-          });
-          
-          // Track sign-in event
-          track('user.sign_in', {
-            method: 'email',
-            email: user.email,
-            fallback: true
-          });
-          
-          console.log('✅ Fallback authentication successful for cpq@zenop.ai');
-          return true;
-        }
-      }
-      
       return false;
     } catch (error) {
       console.error('Login error:', error);
-      
-      // Fallback to mock authentication if backend fails
-      if (email === 'cpq@zenop.ai' && password === 'CPQ@2025@TEAM') {
-        const user = mockUsers.find(u => u.email === email);
-        if (user) {
-          // Store user and mock token
-          localStorage.setItem('cpq_user', JSON.stringify(user));
-          localStorage.setItem('cpq_token', 'mock_token_' + Date.now());
-          
-          // Update state
-          setUser(user);
-          setIsAuthenticated(true);
-          
-          // Identify user in Clarity (so email appears in dashboard)
-          identify(user.email, {
-            name: user.name,
-            email: user.email,
-            userId: user.id
-          });
-          
-          // Track sign-in event
-          track('user.sign_in', {
-            method: 'email',
-            email: user.email,
-            fallback: true
-          });
-          
-          console.log('✅ Fallback authentication successful for cpq@zenop.ai');
-          return true;
-        }
-      }
-      
+
       return false;
     } finally {
       setLoading(false);
@@ -495,6 +366,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
             
             const backendUrl = BACKEND_URL;
            
+            let signedIn = false;
             try {
               const response = await fetch(`${backendUrl}/api/auth/microsoft`, {
                 method: 'POST',
@@ -533,81 +405,15 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                     method: 'microsoft',
                     email: data.user.email
                   });
+                  signedIn = true;
                 } else {
-                  // Backend may be disabled in Render free deploys; store MS access token locally and skip backend auth
-                  const user: User = {
-                    id: microsoftUser.id,
-                    name: microsoftUser.name,
-                    email: microsoftUser.email,
-                    provider: 'microsoft' as AuthProviderType,
-                    createdAt: new Date().toISOString(),
-                    role: (microsoftUser as any).role || 'viewer'
-                  };
-                  localStorage.setItem('cpq_user', JSON.stringify(user));
-                  localStorage.setItem('cpq_token', microsoftUser.accessToken);
-                  setUser(user);
-                  setIsAuthenticated(true);
-                  
-                  // Identify user in Clarity (so email appears in dashboard)
-                  identify(user.email, {
-                    name: user.name,
-                    email: user.email,
-                    userId: user.id
-                  });
-                  
-                  // Track Microsoft sign-in event (fallback)
-                  track('user.sign_in', {
-                    method: 'microsoft',
-                    email: user.email,
-                    fallback: true
-                  });
+                  console.error('Backend rejected Microsoft sign-in');
                 }
               } else {
-                // Same fallback as above if backend returns non-OK
-                const user: User = {
-                  id: microsoftUser.id,
-                  name: microsoftUser.name,
-                  email: microsoftUser.email,
-                  provider: 'microsoft' as AuthProviderType,
-                  createdAt: new Date().toISOString(),
-                  role: (microsoftUser as any).role || 'viewer'
-                };
-                localStorage.setItem('cpq_user', JSON.stringify(user));
-                localStorage.setItem('cpq_token', microsoftUser.accessToken);
-                setUser(user);
-                setIsAuthenticated(true);
-                
-                // Track Microsoft sign-in event (fallback)
-                track('user.sign_in', {
-                  method: 'microsoft',
-                  email: user.email,
-                  fallback: true
-                });
+                console.error('Backend Microsoft sign-in failed with status', response.status);
               }
             } catch (backendError) {
               console.error('Backend Microsoft auth error:', backendError);
-              // Fallback to local storage if backend fails
-              const user: User = {
-                id: microsoftUser.id,
-                name: microsoftUser.name,
-                email: microsoftUser.email,
-                provider: 'microsoft' as AuthProviderType,
-                createdAt: new Date().toISOString(),
-                role: (microsoftUser as any).role || 'viewer'
-              };
-             
-              localStorage.setItem('cpq_user', JSON.stringify(user));
-              localStorage.setItem('cpq_token', microsoftUser.accessToken);
-             
-              setUser(user);
-              setIsAuthenticated(true);
-              
-              // Track Microsoft sign-in event (fallback)
-              track('user.sign_in', {
-                method: 'microsoft',
-                email: user.email,
-                fallback: true
-              });
             }
            
             // Cleanup PKCE artifacts
@@ -616,7 +422,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
               localStorage.removeItem('msal_client_id');
             } catch (_) {}
            
-            resolve(true);
+            resolve(signedIn);
           } else if (event.data.type === 'MICROSOFT_AUTH_ERROR') {
             clearInterval(checkClosed);
             clearTimeout(timeout);

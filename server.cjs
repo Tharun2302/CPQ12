@@ -1818,77 +1818,9 @@ app.post('/api/boldsign/create-embedded-send', async (req, res) => {
 // Authentication endpoints
 
 // User registration
-app.post('/api/auth/register', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({ 
-        success: false,
-        error: 'Database not available',
-        message: 'Cannot register users without database connection'
-      });
-    }
-
-    const { name, email, password } = req.body;
-    
-    // Validate input
-    if (!name || !email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Name, email, and password are required'
-      });
-    }
-
-    // Check if user already exists
-    const existingUser = await db.collection('users').findOne({ email: email });
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: 'User with this email already exists'
-      });
-    }
-
-    // Hash password
-    const saltRounds = 12;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    // Create user (default role: viewer; set role to 'exhibit_admin' in DB for users who can manage exhibits)
-    const user = {
-      id: `user_${Date.now()}`,
-      name: name,
-      email: email,
-      password: hashedPassword,
-      provider: 'email',
-      role: 'viewer',
-      created_at: new Date(),
-      updated_at: new Date()
-    };
-
-    await db.collection('users').insertOne(user);
-
-    // Generate JWT token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    // Return user without password
-    const { password: _, ...userWithoutPassword } = user;
-
-    res.json({
-      success: true,
-      message: 'User registered successfully',
-      user: userWithoutPassword,
-      token: token
-    });
-  } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to register user',
-      error: error.message
-    });
-  }
+// Open self-registration let anyone mint an account and a token; accounts come from scripts/create-default-login.cjs
+app.post('/api/auth/register', (req, res) => {
+  res.status(403).json({ success: false, message: 'Registration is disabled' });
 });
 
 // User login
@@ -12884,8 +12816,12 @@ app.get('/api/documents', async (req, res) => {
       });
     }
 
+    // The list exposes every client's name, email and pricing, so it requires a signed-in user
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     console.log('📄 Fetching PDF documents from database...');
-    
+
     // Pagination: by default return ALL matches (heavy fields excluded). Pass limit=<positive int> to cap (e.g. limit=100).
     const skip = Math.max(0, parseInt(String(req.query.skip || 0), 10) || 0);
     const limitRaw = req.query.limit;
@@ -13348,7 +13284,6 @@ async function startServer() {
       console.log(`   - GET  /api/health`);
       console.log(`   - GET  /api/database/health`);
       console.log(`   - GET  /api/test-mongodb`);
-      console.log(`   - POST /api/auth/register`);
       console.log(`   - POST /api/auth/login`);
       console.log(`   - GET  /api/auth/me`);
       console.log(`   - POST /api/auth/microsoft`);
