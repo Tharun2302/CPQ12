@@ -60,8 +60,8 @@ describe('login-only backend calls send the saved login', () => {
   }
 });
 
-describe('calls that can run before login stay untouched', () => {
-  it('App-level GET /api/quotes does not send headers (runs on public pages)', () => {
-    expect(read('src/App.tsx')).toContain('await fetch(`${BACKEND_URL}/api/quotes`);');
+describe('App-level GET /api/quotes', () => {
+  it('only runs behind the login gate and sends the Bearer header', () => {
+    expect(read('src/App.tsx')).toContain('fetch(`${BACKEND_URL}/api/quotes`, { headers: getAuthHeaders() })');
   });
 });

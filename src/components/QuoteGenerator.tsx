@@ -1061,7 +1061,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         setIsLoadingSettings(true);
         setSettingsError(null);
 
-        const response = await fetch(`${BACKEND_URL}/api/team-approval-settings`);
+        const response = await fetch(`${BACKEND_URL}/api/team-approval-settings`, { headers: getAuthHeaders() });
         const result = await response.json();
 
         if (result.success && result.data) {

@@ -95,7 +95,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         setIsLoadingSettings(true);
         setSettingsError(null);
         
-        const response = await fetch(`${BACKEND_URL}/api/team-approval-settings`);
+        const response = await fetch(`${BACKEND_URL}/api/team-approval-settings`, { headers: getAuthHeaders() });
         if (!response.ok) {
           throw new Error(`Server error: ${response.status}`);
         }

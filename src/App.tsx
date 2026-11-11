@@ -897,46 +897,46 @@ function App() {
     }
   }, []);
 
-  // Load quotes from database and localStorage on component mount
+  // The quotes route needs a login, so the database copy loads after sign-in; signed out only the saved copy is read.
   useEffect(() => {
+    let cancelled = false;
     const loadQuotes = async () => {
-      try {
-        // First try to load from database
-        const response = await fetch(`${BACKEND_URL}/api/quotes`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.quotes) {
-            // Convert date strings back to Date objects
-            const quotesWithDates = data.quotes.map((quote: any) => ({
-              ...quote,
-              createdAt: new Date(quote.created_at),
-              templateUsed: {
-                id: 'default',
-                name: 'Default Template',
-                isDefault: true
-              }
-            }));
-            setQuotes(quotesWithDates);
-            console.log('✅ Quotes loaded from database:', quotesWithDates.length);
-            return; // Exit early if database load was successful
+      if (authSignal && hasUsableAuthToken()) {
+        try {
+          const response = await fetch(`${BACKEND_URL}/api/quotes`, { headers: getAuthHeaders() });
+          if (cancelled) return;
+          if (response.ok) {
+            const data = await response.json();
+            if (cancelled) return;
+            if (data.success && data.quotes) {
+              const quotesWithDates = data.quotes.map((quote: any) => ({
+                ...quote,
+                createdAt: new Date(quote.created_at),
+                templateUsed: {
+                  id: 'default',
+                  name: 'Default Template',
+                  isDefault: true
+                }
+              }));
+              setQuotes(quotesWithDates);
+              return;
+            }
           }
+        } catch (error) {
+          if (cancelled) return;
+          console.warn('Could not load quotes from database, falling back to localStorage:', error);
         }
-      } catch (error) {
-        console.log('⚠️ Could not load quotes from database, falling back to localStorage:', error);
       }
 
-      // Fallback to localStorage if database fails
       const savedQuotes = localStorage.getItem('cpq_quotes');
       if (savedQuotes) {
         try {
           const parsedQuotes = JSON.parse(savedQuotes);
-          // Convert date strings back to Date objects
           const quotesWithDates = parsedQuotes.map((quote: any) => ({
             ...quote,
             createdAt: new Date(quote.createdAt)
           }));
           setQuotes(quotesWithDates);
-          console.log('✅ Quotes loaded from localStorage:', quotesWithDates.length);
         } catch (error) {
           console.error('Error loading saved quotes from localStorage:', error);
         }
@@ -944,7 +944,10 @@ function App() {
     };
 
     loadQuotes();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [authSignal]);
 
   // Load templates with cache-first strategy and lazy file loading
   useEffect(() => {
@@ -2051,13 +2054,17 @@ function App() {
               <Route path="/auth/microsoft/callback/" element={<MicrosoftCallback />} />
 
               {/* E-Signature routes (with left sidebar) */}
-              <Route path="/esign" element={<EsignLayout />}>
+              <Route path="/esign" element={<ProtectedRoute><EsignLayout /></ProtectedRoute>}>
                 <Route index element={<EsignDocumentsPage />} />
                 <Route path=":documentId/place-fields" element={<EsignPlaceFieldsPage />} />
                 <Route path=":documentId/send" element={<EsignSendPage />} />
                 <Route path=":documentId/status" element={<EsignTrackingPage />} />
               </Route>
-              <Route path="/esign-tracking" element={<EsignAgreementStatusDashboard />} />
+              <Route path="/esign-tracking" element={
+                <ProtectedRoute>
+                  <EsignAgreementStatusDashboard />
+                </ProtectedRoute>
+              } />
               <Route path="/admin-settings" element={
                 <ProtectedRoute>
                   <AdminSettingsPage />

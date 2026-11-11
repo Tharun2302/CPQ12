@@ -128,9 +128,7 @@ export async function refreshZohoDocument(documentId: string, options: { force?:
 /**
  * The one place the provider choice turns into a request.
  *
- * The CPQ branch is deliberately byte-identical to the call the prepare pages made before the
- * picker existed — same URL, same empty body, no Authorization header — so an install with Zoho
- * off behaves exactly as it always has.
+ * The CPQ branch keeps the pre-picker URL and empty body; it only adds the Bearer token that sender routes verify.
  */
 export async function sendDocumentForSignature(
   documentId: string,
@@ -141,7 +139,7 @@ export async function sendDocumentForSignature(
 
   const response = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/send-for-signature`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({}),
   });
   return response.json();

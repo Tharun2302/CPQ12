@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Loader2, Check, Clock, Download, Eye, XCircle, CalendarClock } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from '../utils/authUtils';
 import { useAuth } from '../hooks/useAuth';
 import EditDatesModal from '../components/EditDatesModal';
 import { SUPPRESS_PII } from '../analytics/privacy';
@@ -87,8 +88,8 @@ const EsignTrackingPage: React.FC = () => {
     if (!documentId) return;
     try {
       const [docRes, recRes] = await Promise.all([
-        fetch(`${BACKEND_URL}/api/esign/documents/${documentId}`),
-        fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`),
+        fetch(`${BACKEND_URL}/api/esign/documents/${documentId}`, { headers: getAuthHeaders() }),
+        fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`, { headers: getAuthHeaders() }),
       ]);
       const docData = await docRes.json();
       const recData = await recRes.json();
@@ -132,7 +133,7 @@ const EsignTrackingPage: React.FC = () => {
     if (!documentId || !doc) return;
     setDownloading(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/file?attachment=1`, { credentials: 'include' });
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/file?attachment=1`, { credentials: 'include', headers: getAuthHeaders() });
       if (!res.ok) {
         setError('Download failed');
         return;
@@ -157,7 +158,7 @@ const EsignTrackingPage: React.FC = () => {
     // Pre-flight HEAD so we don't open a new tab that just shows raw JSON when
     // the underlying PDF is missing from storage (FILE_MISSING case).
     try {
-      const head = await fetch(fileUrl, { method: 'HEAD', credentials: 'include' });
+      const head = await fetch(fileUrl, { method: 'HEAD', credentials: 'include', headers: getAuthHeaders() });
       if (head.status === 404) {
         alert('This document could not be loaded. The PDF file is missing from storage. Please re-upload the document and resend for signature, or contact your administrator.');
         return;
@@ -185,7 +186,7 @@ const EsignTrackingPage: React.FC = () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/extend-expiry`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ actor_email: user?.email || '', days }),
       });
       const data = await res.json().catch(() => ({}));

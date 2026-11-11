@@ -33,6 +33,11 @@ const LOCKED: Array<{ method: string; path: string; helper: Helper }> = [
   { method: 'get', path: '/api/combinations/:id/file', helper: 'getAuthenticatedUser' },
   { method: 'get', path: '/api/exhibits', helper: 'getAuthenticatedUser' },
   { method: 'get', path: '/api/exhibits/:id/file', helper: 'getAuthenticatedUser' },
+  { method: 'get', path: '/api/esign/documents', helper: 'getAuthenticatedUser' },
+  { method: 'get', path: '/api/esign/agreement-status', helper: 'getAuthenticatedUser' },
+  { method: 'get', path: '/api/quotes', helper: 'getAuthenticatedUser' },
+  { method: 'get', path: '/api/team-approval-settings', helper: 'getAuthenticatedUser' },
+  { method: 'get', path: '/api/team-approval-settings/team/:teamName', helper: 'getAuthenticatedUser' },
 
   { method: 'get', path: '/api/auth/daily-logins', helper: 'getApprovalAdminUser' },
   { method: 'get', path: '/api/chat/logs', helper: 'getApprovalAdminUser' },
@@ -91,10 +96,7 @@ describe('dead duplicate registrations of POST/DELETE /api/documents', () => {
 
 describe('routes that must stay open are unchanged', () => {
   const OPEN: Array<[string, string]> = [
-    ['get', '/api/quotes'],
     ['post', '/api/convert/docx-to-pdf'],
-    ['get', '/api/team-approval-settings'],
-    ['get', '/api/team-approval-settings/team/:teamName'],
     ['post', '/api/chat/message'],
     ['post', '/api/client-log'],
     ['get', '/api/database/health'],
@@ -318,6 +320,94 @@ describe('GET /api/combinations behaviour', () => {
       combinations: [
         { id: 'c1', label: 'A', fileName: 'a.docx', displayOrder: 1, hasFile: true },
         { id: 'c2', label: 'B', displayOrder: 2, hasFile: false },
+      ],
+    });
+  });
+});
+
+describe('GET /api/quotes behaviour', () => {
+  const route = routeSource('get', '/api/quotes');
+  const helperStart = serverSrc.indexOf('async function getAuthenticatedUser');
+  const helperEnd = serverSrc.indexOf('async function getApprovalAdminUser');
+  const helperSrc = serverSrc.slice(helperStart, helperEnd);
+
+  function setup() {
+    const touched: string[] = [];
+    const db = {
+      collection(name: string) {
+        touched.push(name);
+        if (name === 'users') return { findOne: async ({ id }: { id: string }) => (id === 'user-id' ? { id } : null) };
+        if (name === 'quotes') {
+          return {
+            find() {
+              const cursor = {
+                sort: () => cursor,
+                toArray: async () => [{ id: 'q1', created_at: '2026-01-01', selected_tier: { name: 'T' } }],
+              };
+              return cursor;
+            },
+          };
+        }
+        throw new Error(`unexpected collection ${name}`);
+      },
+    };
+    const jwt = {
+      verify: (token: string) => {
+        if (token === 'aaa.user.ccc') return { userId: 'user-id' };
+        throw new Error('invalid signature');
+      },
+    };
+    let handler: (req: unknown, res: unknown) => Promise<void> = async () => {};
+    const app = { get: (_p: string, h: typeof handler) => { handler = h; } };
+    new Function('app', 'db', 'jwt', 'JWT_SECRET', 'console', `${helperSrc}\n${route}`)(
+      app, db, jwt, 'test-secret', { error: () => {}, log: () => {} },
+    );
+    const call = async (headers: Record<string, string>) => {
+      const res = {
+        statusCode: 200,
+        headers: {} as Record<string, string>,
+        body: undefined as Record<string, unknown> | undefined,
+        set(name: string, value: string) { res.headers[name] = value; return res; },
+        status(code: number) { res.statusCode = code; return res; },
+        json(payload: Record<string, unknown>) { res.body = payload; return res; },
+      };
+      await handler({ headers, query: {} }, res);
+      return res;
+    };
+    return { call, touched };
+  }
+
+  it('no token: 401, no quotes in the body, and the database is never touched', async () => {
+    const { call, touched } = setup();
+    const res = await call({});
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toEqual({ success: false, error: 'Authentication required' });
+    expect(touched).toEqual([]);
+  });
+
+  it('bad-signature token: 401 and quotes are never read', async () => {
+    const { call, touched } = setup();
+    const res = await call({ authorization: 'Bearer aaa.bad.ccc' });
+    expect(res.statusCode).toBe(401);
+    expect(touched).not.toContain('quotes');
+  });
+
+  it('valid token: 200 with the unchanged response shape and no-store caching', async () => {
+    const { call } = setup();
+    const res = await call({ authorization: 'Bearer aaa.user.ccc' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['Cache-Control']).toBe('no-store');
+    expect(res.body).toEqual({
+      success: true,
+      quotes: [
+        {
+          id: 'q1',
+          created_at: '2026-01-01',
+          selected_tier: { name: 'T' },
+          configuration: {},
+          selectedTier: { name: 'T' },
+          calculation: {},
+        },
       ],
     });
   });

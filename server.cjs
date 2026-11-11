@@ -185,6 +185,8 @@ const {
   esignProgressActionLabel,
 } = require('./esign-progress-utils.cjs');
 
+const { loadEsignAccessLinks, filterEsignDocsForCaller } = require('./esign-list-access.cjs');
+
 const {
   buildAgreementLink,
   buildCompletionEmail,
@@ -2163,14 +2165,18 @@ app.post('/api/quotes', async (req, res) => {
 
 // Get all quotes from database
 app.get('/api/quotes', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   try {
     if (!db) {
-      return res.status(500).json({ 
+      return res.status(500).json({
         success: false,
         error: 'Database not available',
         message: 'Cannot fetch quotes without database connection'
       });
     }
+
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
 
     const quotes = await db.collection('quotes').find({}).sort({ created_at: -1 }).toArray();
     
@@ -11402,13 +11408,19 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
 
 // List esign documents
 app.get('/api/esign/documents', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+    const isAdmin = await hasApprovalAdminAccess(authUser);
     // Exclude inline PDF blobs (file_data / signed_file_data can be MBs each) — list view doesn't need them.
-    const docs = await db.collection('esign_documents')
+    const allDocs = await db.collection('esign_documents')
       .find({}, { projection: { file_data: 0, signed_file_data: 0 } })
       .sort({ created_at: -1 })
       .toArray();
+    const links = isAdmin ? {} : await loadEsignAccessLinks(db, allDocs);
+    const docs = filterEsignDocsForCaller({ docs: allDocs, ...links, userEmail: authUser.email, isAdmin });
     res.json({
       success: true,
       documents: docs.map((d) => ({
@@ -11427,22 +11439,28 @@ app.get('/api/esign/documents', async (req, res) => {
 
 // GET /api/esign/agreement-status - All documents with recipient status for tracking dashboard
 app.get('/api/esign/agreement-status', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+    const isAdmin = await hasApprovalAdminAccess(authUser);
     // Exclude inline PDF blobs (file_data / signed_file_data can be MBs each) — dashboard reads metadata only.
-    const docs = await db.collection('esign_documents')
+    const allDocs = await db.collection('esign_documents')
       .find({}, { projection: { file_data: 0, signed_file_data: 0 } })
       .sort({ created_at: -1 })
       .toArray();
-    const docIds = docs.map((d) => d._id);
+    const docIds = allDocs.map((d) => d._id);
     const docIdStrings = docIds.map((id) => id.toString());
     const workflowsLinked = await db.collection('approval_workflows')
       .find({ esignDocumentId: { $in: docIdStrings } })
       .toArray();
     const requestedByFromWorkflow = {};
+    const workflowsByDoc = {};
     workflowsLinked.forEach((w) => {
       const eid = w.esignDocumentId != null ? String(w.esignDocumentId) : '';
       if (!eid) return;
+      (workflowsByDoc[eid] = workflowsByDoc[eid] || []).push(w);
       const label = (w.creatorName && String(w.creatorName).trim()) || (w.creatorEmail && String(w.creatorEmail).trim()) || '';
       if (label && !requestedByFromWorkflow[eid]) requestedByFromWorkflow[eid] = label;
     });
@@ -11476,6 +11494,9 @@ app.get('/api/esign/agreement-status', async (req, res) => {
         forwarded_from_email: r.forwarded_from_email || null,
         forwarded_from_name: r.forwarded_from_name || null,
       });
+    });
+    const docs = filterEsignDocsForCaller({
+      docs: allDocs, workflowsByDoc, recipientsByDoc: byDocId, userEmail: authUser.email, isAdmin,
     });
     const agreements = docs.map((d) => {
       const recs = (byDocId[d._id.toString()] || []).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
@@ -13308,6 +13329,9 @@ app.get('/api/team-approval-settings', async (req, res) => {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     const settingsCollection = db.collection('team_approval_settings');
     
     // Get settings (there should be only one document)
@@ -13395,6 +13419,9 @@ app.get('/api/team-approval-settings/team/:teamName', async (req, res) => {
     if (!db) {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
+
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
 
     const teamName = req.params.teamName.toUpperCase();
     const settingsCollection = db.collection('team_approval_settings');

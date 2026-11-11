@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { FileText, Loader2, Check, Clock, XCircle, Eye, PenLine, Download, MoreVertical, ThumbsUp, Calendar, Bell, CalendarClock, Send, MailCheck, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, Forward, ChevronRight, ChevronDown, Lock, Search, Upload, Copy, FileArchive, Users, Trash2 } from 'lucide-react';
 import { deleteEsignDocument } from '../services/esignDocumentService';
 import { BACKEND_URL } from '../config/api';
+import { authAwareError } from '../utils/authUtils';
 import { SUPPRESS_PII } from '../analytics/privacy';
 import { useAuth } from '../hooks/useAuth';
 import Navigation from './Navigation';
@@ -311,7 +312,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/agreement-status`);
+      const res = await fetch(`${BACKEND_URL}/api/esign/agreement-status`, { headers: getAuthHeaders() });
       const contentType = res.headers.get('content-type') || '';
       const text = await res.text();
       if (!contentType.includes('application/json')) {
@@ -336,7 +337,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
         setError(null);
       } else if (!silent) {
         setAgreements([]);
-        if (!res.ok) setError((data as { error?: string }).error || `Request failed (${res.status})`);
+        if (!res.ok) setError(authAwareError(res.status, (data as { error?: string }).error, `Request failed (${res.status})`));
       }
     } catch (e) {
       if (!silent) {
@@ -367,7 +368,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     setPreviewError(null);
     (async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/esign/documents/${previewDoc.id}/file?inline=1`, { credentials: 'include' });
+        const res = await fetch(`${BACKEND_URL}/api/esign/documents/${previewDoc.id}/file?inline=1`, { credentials: 'include', headers: getAuthHeaders() });
         if (!res.ok) throw new Error(`Request failed (${res.status})`);
         const blob = await res.blob();
         if (cancelled) return;
@@ -548,9 +549,9 @@ const EsignAgreementStatusDashboard: React.FC = () => {
   /** Fetch doc + recipients + activity for a given agreement. Used by open + auto-poll. */
   const loadStatusModalData = useCallback(async (agreementId: string) => {
     const [docRes, recRes, actRes] = await Promise.all([
-      fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}`),
-      fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/recipients`),
-      fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/activity`),
+      fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}`, { headers: getAuthHeaders() }),
+      fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/recipients`, { headers: getAuthHeaders() }),
+      fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/activity`, { headers: getAuthHeaders() }),
     ]);
     const docData = await docRes.json();
     const recData = await recRes.json();
@@ -634,7 +635,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     }
     setCopyingId(agreementId);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/recipients`);
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/recipients`, { headers: getAuthHeaders() });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) {
         alert(data.error || 'Could not fetch signing link.');
@@ -677,7 +678,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/void`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ actor_email: user?.email || '', void_reason: `Signing cancelled: ${trimmed}` }),
       });
       const data = await res.json().catch(() => ({}));
@@ -701,7 +702,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/remind`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ actor_email: user?.email || '' }),
       });
       const data = await res.json().catch(() => ({}));
@@ -733,7 +734,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/extend-expiry`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ actor_email: user?.email || '', days }),
       });
       const data = await res.json().catch(() => ({}));
