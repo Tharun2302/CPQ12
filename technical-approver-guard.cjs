@@ -55,7 +55,8 @@ const VERIFIED_SIGNIN_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 function verifiedClaimsFromGraph({ graphUser, email, tokenPayload, clientId, now = Date.now() } = {}) {
   if (!graphIdentityMatches(graphUser, email) || !tokenPayload || typeof tokenPayload.tid !== 'string') return null;
   const issuedTo = tokenPayload.appid || tokenPayload.azp;
-  if (typeof clientId !== 'string' || clientId.trim() === '' || issuedTo !== clientId.trim()) return null;
+  // Azure treats app ids as case-insensitive GUIDs.
+  if (typeof clientId !== 'string' || clientId.trim() === '' || normalizeEmail(issuedTo) !== normalizeEmail(clientId)) return null;
   if (tokenPayload.acct === 1) return null;
   const name = typeof graphUser.displayName === 'string' ? graphUser.displayName.trim() : '';
   return { msVerified: true, tid: tokenPayload.tid, msName: name, msVerifiedAt: now };

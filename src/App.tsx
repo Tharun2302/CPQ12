@@ -37,8 +37,10 @@ const EsignInboxByToken = lazy(() => import('./pages/EsignInboxByToken'));
 const EsignAgreementStatusDashboard = lazy(() => import('./components/EsignAgreementStatusDashboard'));
 const AdminSettingsPage = lazy(() => import('./pages/AdminSettingsPage'));
 import { BACKEND_URL } from './config/api';
+import { getAuthHeaders, hasUsableAuthToken } from './utils/authUtils';
 import { DealInfo, fetchHubSpotDealDetails, mergeDealDetails, toClientInfo } from './utils/hubspotDealDetails';
 import RefreshDealOnSignIn from './components/RefreshDealOnSignIn';
+import AuthSignalReporter from './components/AuthSignalReporter';
 import { buildQuoteSaveBody, readDiscountRejection, toQuoteDiscount } from './services/quoteSaveRequest';
 import { initClarity, track, trackTierSelection, trackPricingCalculation } from './analytics/clarity';
 
@@ -127,14 +129,18 @@ function App() {
   const [templates, setTemplates] = useState<any[]>([]);
   // Fetched once (and on Combination Manager edits) so template effects never refetch it per render.
   const [combinationCatalog, setCombinationCatalog] = useState<any[] | null>(null);
+  // Catalog routes need a login, so App-level loads wait for (and re-run on) sign-in.
+  const [authSignal, setAuthSignal] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!authSignal) return;
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const loadCatalog = async (attempt = 1) => {
       clearTimeout(retryTimer);
+      if (!hasUsableAuthToken()) return;
       try {
-        const res = await fetch(`${BACKEND_URL}/api/combinations`);
+        const res = await fetch(`${BACKEND_URL}/api/combinations`, { headers: getAuthHeaders() });
         const data = await res.json();
         if (cancelled) return;
         if (res.ok && data.success) {
@@ -159,7 +165,7 @@ function App() {
       clearTimeout(retryTimer);
       window.removeEventListener('combinationsUpdated', reloadCatalog);
     };
-  }, []);
+  }, [authSignal]);
 
   // A reload on the Quote page never mounts ConfigurationForm, so legacy sessions are mapped here too.
   useEffect(() => {
@@ -976,7 +982,7 @@ function App() {
             const createLoadFile = (templateId: string, fileName: string, fileType: string) => {
               return async () => {
                 try {
-                  const fr = await fetch(`${BACKEND_URL}/api/templates/${templateId}/file`);
+                  const fr = await fetch(`${BACKEND_URL}/api/templates/${templateId}/file`, { headers: getAuthHeaders() });
                   if (!fr.ok) return null;
                   const blob = await fr.blob();
                   return new File([blob], fileName || 'template.docx', {
@@ -988,7 +994,7 @@ function App() {
                 }
               };
             };
-            
+
             // OPTIMIZATION: Batch restore efficiently
             const restoreStart = performance.now();
             const restoredTemplates = cached.templates.map((t: any) => ({
@@ -1017,8 +1023,11 @@ function App() {
 
       // 3) Fetch metadata from API and build lazy loaders
       try {
-        const response = await fetch(`${BACKEND_URL}/api/templates`);
-        if (response.ok) {
+        // Logged out: skip the API (it would 401) and fall through to the cached copy below
+        const response = hasUsableAuthToken()
+          ? await fetch(`${BACKEND_URL}/api/templates`, { headers: getAuthHeaders() })
+          : null;
+        if (response?.ok) {
           const data = await response.json();
           if (data?.success && Array.isArray(data.templates)) {
             const mapped = data.templates.map((t: any) => ({
@@ -1038,7 +1047,7 @@ function App() {
               // Fetch Word file only when needed
               loadFile: async () => {
                 try {
-                  const fr = await fetch(`${BACKEND_URL}/api/templates/${t.id}/file`);
+                  const fr = await fetch(`${BACKEND_URL}/api/templates/${t.id}/file`, { headers: getAuthHeaders() });
                   if (!fr.ok) return null;
                   const blob = await fr.blob();
                   return new File([blob], t.fileName || 'template.docx', {
@@ -1060,7 +1069,7 @@ function App() {
             return;
           }
         }
-        console.warn('⚠️ API did not return templates, will attempt cache fallback');
+        if (response) console.warn('⚠️ API did not return templates, will attempt cache fallback');
       } catch (error) {
         console.warn('⚠️ Error fetching templates from API:', error);
       }
@@ -1075,7 +1084,7 @@ function App() {
             const createLoadFile = (templateId: string, fileName: string, fileType: string) => {
               return async () => {
                 try {
-                  const fr = await fetch(`${BACKEND_URL}/api/templates/${templateId}/file`);
+                  const fr = await fetch(`${BACKEND_URL}/api/templates/${templateId}/file`, { headers: getAuthHeaders() });
                   if (!fr.ok) return null;
                   const blob = await fr.blob();
                   return new File([blob], fileName || 'template.docx', {
@@ -1087,7 +1096,7 @@ function App() {
                 }
               };
             };
-            
+
             // Recreate loadFile functions for lazy loading
             const restoredTemplates = cached.templates.map((t: any) => ({
               ...t,
@@ -1124,7 +1133,7 @@ function App() {
     return () => {
       window.removeEventListener('templatesUpdated', handleTemplateUpdate);
     };
-  }, []);
+  }, [authSignal]);
 
   // CRITICAL FIX: Auto-retry template selection when templates load (fixes race condition)
   useEffect(() => {
@@ -1191,7 +1200,7 @@ function App() {
     let cancelled = false;
     (async () => {
       try {
-        const fileRes = await fetch(`${BACKEND_URL}/api/combinations/${combo.id}/file`);
+        const fileRes = await fetch(`${BACKEND_URL}/api/combinations/${combo.id}/file`, { headers: getAuthHeaders() });
         if (!fileRes.ok || cancelled) return;
         const blob = await fileRes.blob();
         const fileName = (combo.fileName || 'agreement.docx').replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -1877,6 +1886,7 @@ function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...getAuthHeaders(),
         },
         body: JSON.stringify(buildQuoteSaveBody(newQuote))
       });
@@ -1907,7 +1917,8 @@ function App() {
     // Delete from database
     try {
       const response = await fetch(`${BACKEND_URL}/api/quotes/${quoteId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: getAuthHeaders()
       });
       
       if (response.ok) {
@@ -1935,6 +1946,7 @@ function App() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({ status: newStatus })
       });
@@ -1984,7 +1996,7 @@ function App() {
           ? (template as any).loadFile
           : async () => {
               try {
-                const fr = await fetch(`${BACKEND_URL}/api/templates/${template.id}/file`);
+                const fr = await fetch(`${BACKEND_URL}/api/templates/${template.id}/file`, { headers: getAuthHeaders() });
                 if (!fr.ok) return null;
                 const blob = await fr.blob();
                 return new File([blob], template.fileName || 'template.docx', {
@@ -2022,6 +2034,7 @@ function App() {
     <Router>
       <AuthProvider>
         <RefreshDealOnSignIn dealId={dealData?.dealId} onRefresh={refreshDealData} />
+        <AuthSignalReporter onChange={setAuthSignal} />
         <DiscountPolicyProvider>
         <Suspense fallback={<LoadingFallback />}>
           <HubSpotAuthHandler>

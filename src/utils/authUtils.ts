@@ -72,6 +72,68 @@ export function clearAuthData(): void {
   }
 }
 
+// Auth plus everything that can hold client names, emails, pricing or documents. Tour flags,
+// exhibitUploadGuideHidden, cpq_discount_policy and third-party keys (Hotjar/Clarity) are left alone.
+export const USER_SESSION_STORAGE_KEYS: readonly string[] = [
+  'cpq_user', 'cpq_token',
+  'msal_code_verifier', 'msal_client_id', 'msal_tenant_id', 'msal_processed_codes',
+  'ms_pkce_verifier', 'microsoft_auth_error',
+  'cpq_quotes', 'cpq_client_info', 'cpq_quote_client_info', 'cpq_contact_info', 'cpq_configure_contact_info',
+  'cpq_hubspot_data', 'hubspotState', 'companyInfo', 'dealInfo',
+  'cpq_team_approval_settings',
+  'cpq_selected_template', 'cpq_selected_exhibits', 'cpq_templates', 'cpq_templates_cache_v2', 'templates', 'templateFromPdf',
+  'pricingTiers', 'pricingTierConfigurations',
+  'cpq_discount', 'cpq_discount_session', 'cpq_discount_session_started',
+  'cpq_quote_custom_line_items', 'cpq_quote_custom_line_items_discount',
+  'cpq_configuration_session', 'cpq_navigation_state', 'cpq_combination_tiers',
+  'cpq_selected_tiers_per_combination', 'cpq_pricing_plan_per_combination',
+  'quotePendingApproval', 'migration_projects',
+  'esign_saved_recipients', 'esign_saved_groups', 'esign_default_group_id',
+];
+
+// LocalStorageHelper writes cpq_app_data_<name>
+export const USER_SESSION_STORAGE_PREFIXES: readonly string[] = ['cpq_app_data'];
+
+function clearUserKeysFrom(store: Storage): void {
+  const keys: string[] = [];
+  for (let i = 0; i < store.length; i += 1) {
+    const key = store.key(i);
+    if (key) keys.push(key);
+  }
+  keys.forEach((key) => {
+    if (USER_SESSION_STORAGE_KEYS.includes(key) || USER_SESSION_STORAGE_PREFIXES.some((p) => key.startsWith(p))) {
+      store.removeItem(key);
+    }
+  });
+}
+
+// Never localStorage.clear(): that would also wipe tour flags and third-party keys
+export function clearUserSessionData(): void {
+  [() => localStorage, () => sessionStorage].forEach((getStore) => {
+    try {
+      clearUserKeysFrom(getStore());
+    } catch (error) {
+      console.error('Error clearing user session data:', error);
+    }
+  });
+}
+
+// Wipes the previous user's data when someone else signs in on the same browser; same user keeps theirs
+export function clearDataIfDifferentUser(nextUser: { id?: string; email?: string } | null | undefined): void {
+  try {
+    const raw = localStorage.getItem('cpq_user');
+    if (!raw || !nextUser) return;
+    let previous: { id?: string; email?: string } | null = null;
+    try { previous = JSON.parse(raw); } catch { previous = null; }
+    const sameId = !!previous?.id && !!nextUser.id && String(previous.id) === String(nextUser.id);
+    const sameEmail = !!previous?.email && !!nextUser.email
+      && previous.email.toLowerCase() === nextUser.email.toLowerCase();
+    if (!sameId && !sameEmail) clearUserSessionData();
+  } catch (error) {
+    console.error('Error comparing signed-in users:', error);
+  }
+}
+
 // Format user display name
 export function formatUserName(user: User): string {
   return user.name || user.email.split('@')[0];

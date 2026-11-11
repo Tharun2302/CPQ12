@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, User, BarChart3, CheckCircle, AlertCircle, Eye, FileText, Server, Users, TrendingUp, Calendar as CalendarIcon, Plus, X, Edit2, Save, FolderPlus, Trash2, Upload, Download, ArrowLeft } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from '../utils/authUtils';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Navigation from './Navigation';
 import { SUPPRESS_PII } from '../analytics/privacy';
@@ -328,6 +329,7 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
 
         const response = await fetch(`${BACKEND_URL}/api/documents/upload`, {
           method: 'POST',
+          headers: getAuthHeaders(),
           body: formData
         });
 
@@ -582,7 +584,8 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
     if (mongoId) {
       try {
         const response = await fetch(`${BACKEND_URL}/api/documents/${mongoId}`, {
-          method: 'DELETE'
+          method: 'DELETE',
+          headers: getAuthHeaders()
         });
         
         if (response.ok) {

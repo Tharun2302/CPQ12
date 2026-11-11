@@ -19,6 +19,7 @@ import { convertPdfToWord, downloadWordFile, isPdfFile, testDocxLibrary } from '
 import { extractTemplateContent } from '../utils/pdfMerger';
 import { formatCurrency } from '../utils/pricing';
 import { templateService } from '../utils/templateService';
+import { getAuthHeaders } from '../utils/authUtils';
 import { sanitizeNameInput, sanitizeEmailInput } from '../utils/emojiSanitizer';
 import { track } from '../analytics/clarity';
 import { BACKEND_URL } from '../config/api';
@@ -226,7 +227,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
             const createLoadFile = (templateId: string, fileName: string, fileType: string) => {
               return async () => {
                 try {
-                  const fr = await fetch(`${BACKEND_URL}/api/templates/${templateId}/file`);
+                  const fr = await fetch(`${BACKEND_URL}/api/templates/${templateId}/file`, { headers: getAuthHeaders() });
                   if (!fr.ok) return null;
                   const blob = await fr.blob();
                   return new File([blob], fileName || 'template.docx', {
@@ -1759,6 +1760,7 @@ CloudFuze Team`;
 
       const response = await fetch(`${backendUrl}/api/email/send`, {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: formData
       });
       

@@ -8,10 +8,18 @@
 const axios = require('axios');
 
 async function reseedTemplates() {
+  // The route is exhibit-admin only; the token must come from the environment, never the source
+  if (!process.env.CPQ_ADMIN_TOKEN) {
+    console.error('CPQ_ADMIN_TOKEN is not set. Set it to an exhibit admin login token, then run this script again.');
+    process.exit(1);
+  }
+
   try {
     console.log('🌱 Triggering template reseed...');
-    
-    const response = await axios.post('http://localhost:3001/api/templates/reseed');
+
+    const response = await axios.post('http://localhost:3001/api/templates/reseed', null, {
+      headers: { Authorization: `Bearer ${process.env.CPQ_ADMIN_TOKEN}` }
+    });
     
     if (response.data.success) {
       console.log('✅ Templates reseeded successfully!');

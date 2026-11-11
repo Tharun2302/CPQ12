@@ -21,6 +21,9 @@ const {
   checkStepUpdateAllowed
 } = require('./approval-step-guard.cjs');
 const technicalApproverGuard = require('./technical-approver-guard.cjs');
+const microsoftLogin = require('./microsoft-login.cjs');
+const passwordLogin = require('./password-login.cjs');
+const jwtSecretCheck = require('./jwt-secret.cjs');
 const { verifyApprovalPortalToken, listApprovalWorkflowsForCaller } = require('./approval-workflow-access.cjs');
 const {
   DISCOUNT_POLICY_SETTINGS_ID,
@@ -837,7 +840,10 @@ const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
 const EMAIL_HOST = process.env.EMAIL_HOST || 'smtp.gmail.com';
 const EMAIL_PORT = process.env.EMAIL_PORT || 587;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || jwtSecretCheck.DEFAULT_JWT_SECRET;
+if (String(process.env.NODE_ENV).trim().toLowerCase() === 'production' && jwtSecretCheck.isWeakJwtSecret(process.env.JWT_SECRET)) {
+  logger.error('JWT_SECRET is missing or weak; set a strong secret', { source: 'jwt-secret' });
+}
 // Every jwt.verify below pins algorithms so a token's own header can never choose how it is checked.
 const GOTENBERG_URL = process.env.GOTENBERG_URL || '';
 const LIBREOFFICE_SERVICE_URL = process.env.LIBREOFFICE_SERVICE_URL || 'http://localhost:3002';
@@ -1847,33 +1853,14 @@ app.post('/api/auth/login', async (req, res) => {
       });
     }
 
-    const { email, password } = req.body;
-    
-    // Validate input
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email and password are required'
-      });
-    }
-
-    // Find user
-    const user = await db.collection('users').findOne({ email: email });
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
-      });
-    }
-
-    // Check password
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
-      });
-    }
+    const result = await passwordLogin.authenticatePasswordLogin({
+      body: req.body,
+      users: db.collection('users'),
+      bcrypt,
+      logger,
+    });
+    if (!result.ok) return res.status(result.status).json(result.body);
+    const user = result.user;
 
     // Generate JWT token
     const token = jwt.sign(
@@ -1900,11 +1887,10 @@ app.post('/api/auth/login', async (req, res) => {
       token: token
     });
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login failed', { source: 'auth-login', error: error.message });
     res.status(500).json({
       success: false,
-      message: 'Failed to login',
-      error: error.message
+      message: 'Failed to login'
     });
   }
 });
@@ -1966,29 +1952,14 @@ app.get('/api/auth/me', async (req, res) => {
   }
 });
 
-// Returns { msVerified, tid } when Graph accepts the token for this email, otherwise {}. Never logs the token.
-async function verifyMicrosoftIdentity(accessToken, email) {
-  if (typeof accessToken !== 'string' || !accessToken || typeof email !== 'string') return {};
-  try {
-    const graph = await axios.get('https://graph.microsoft.com/v1.0/me', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      timeout: 5000,
-    });
-    if (graph.status !== 200) return {};
-    const claims = technicalApproverGuard.verifiedClaimsFromGraph({
-      graphUser: graph.data,
-      email,
-      tokenPayload: technicalApproverGuard.decodeJwtPayload(accessToken),
-      clientId: process.env.AZURE_CLIENT_ID || process.env.VITE_MSAL_CLIENT_ID,
-    });
-    return claims || {};
-  } catch (error) {
-    logger.warn('Microsoft identity not verified', { source: 'technical-approver', status: error.response?.status || null });
-    return {};
-  }
-}
+const authenticateMicrosoftLogin = microsoftLogin.createMicrosoftLogin({
+  graphGet: microsoftLogin.createGraphFetcher(axios),
+  getUsers: () => db.collection('users'),
+  env: process.env,
+  logger,
+});
 
-// Microsoft OAuth user creation/update
+// The browser's claims are never trusted: Graph must confirm the token before any user record is read or written.
 app.post('/api/auth/microsoft', async (req, res) => {
   try {
     if (!db) {
@@ -1999,47 +1970,11 @@ app.post('/api/auth/microsoft', async (req, res) => {
       });
     }
 
-    const { id, name, email, accessToken } = req.body;
-    
-    // Check if user exists
-    let user = await db.collection('users').findOne({ email: email });
-    
-    if (user) {
-      // Update existing user
-      await db.collection('users').updateOne(
-        { email: email },
-        { 
-          $set: { 
-            name: name,
-            provider: 'microsoft',
-            updated_at: new Date()
-          }
-        }
-      );
-      user = await db.collection('users').findOne({ email: email });
-    } else {
-      // Create new user (default role: viewer; set role to 'exhibit_admin' in DB for users who can manage exhibits)
-      user = {
-        id: id || `microsoft_${Date.now()}`,
-        name: name,
-        email: email,
-        provider: 'microsoft',
-        role: 'viewer',
-        created_at: new Date(),
-        updated_at: new Date()
-      };
-      await db.collection('users').insertOne(user);
-    }
+    const result = await authenticateMicrosoftLogin(req.body);
+    if (!result.ok) return res.status(result.status).json(result.body);
+    const user = result.user;
 
-    // Only a Graph-confirmed identity may act on Technical steps; any failure keeps today's login.
-    const msClaims = await verifyMicrosoftIdentity(accessToken, email);
-
-    // Generate JWT token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, ...msClaims },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    const token = jwt.sign(result.jwtPayload, JWT_SECRET, { expiresIn: '7d' });
 
     // Track daily login
     await trackDailyLogin(user.id, 'microsoft', user.email);
@@ -2059,11 +1994,10 @@ app.post('/api/auth/microsoft', async (req, res) => {
       token: token
     });
   } catch (error) {
-    console.error('Microsoft auth error:', error);
+    logger.error('Microsoft auth failed', { source: 'microsoft-login', error: error.message });
     res.status(500).json({
       success: false,
-      message: 'Failed to process Microsoft authentication',
-      error: error.message
+      message: 'Failed to process Microsoft authentication'
     });
   }
 });
@@ -2079,23 +2013,32 @@ app.get('/api/auth/daily-logins', async (req, res) => {
       });
     }
 
-    const { startDate, endDate, limit = 30 } = req.query;
-    
+    // Lists every employee's login email, so only approval admins may read it
+    const authUser = await getApprovalAdminUser(req, res, 'Only approval admins can view login statistics');
+    if (!authUser) return;
+
+    const { startDate, endDate } = req.query;
+    // Query-string objects ({"$ne":""}) must never reach the filter
+    const startDateText = startDate ? String(startDate) : '';
+    const endDateText = endDate ? String(endDate) : '';
+    const parsedLimit = parseInt(String(req.query.limit ?? ''), 10);
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 90) : 30;
+
     const dailyLoginsCollection = db.collection('daily_logins');
     let query = {};
 
     // Filter by date range if provided
-    if (startDate || endDate) {
+    if (startDateText || endDateText) {
       query.date = {};
-      if (startDate) query.date.$gte = startDate;
-      if (endDate) query.date.$lte = endDate;
+      if (startDateText) query.date.$gte = startDateText;
+      if (endDateText) query.date.$lte = endDateText;
     }
 
     // Get daily login records, sorted by date (newest first)
     const records = await dailyLoginsCollection
       .find(query)
       .sort({ date: -1 })
-      .limit(parseInt(limit))
+      .limit(limit)
       .toArray();
 
     // Get user details for each login record
@@ -2179,6 +2122,9 @@ app.post('/api/quotes', async (req, res) => {
       });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     const { id, clientName, clientEmail, company, configuration, selectedTier, calculation, status, discount } = req.body;
 
     const discountCheck = await enforceDiscountCap(discount, res);
@@ -2259,6 +2205,9 @@ app.put('/api/quotes/:id', async (req, res) => {
       });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     const { id } = req.params;
     const { status } = req.body;
     
@@ -2294,6 +2243,9 @@ app.delete('/api/quotes/:id', async (req, res) => {
       });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     const { id } = req.params;
     
     await db.collection('quotes').deleteOne({ id: id });
@@ -2319,6 +2271,9 @@ app.post('/api/pricing-tiers', async (req, res) => {
         message: 'Cannot save pricing tiers without database connection'
       });
     }
+
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
 
     const { id, name, perUserCost, perGBCost, managedMigrationCost, instanceCost, userLimits, gbLimits, features } = req.body;
     
@@ -2364,6 +2319,9 @@ app.get('/api/pricing-tiers', async (req, res) => {
       });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     const tiers = await db.collection('pricing_tiers').find({}).sort({ name: 1 }).toArray();
     
     const formattedTiers = tiers.map(tier => ({
@@ -2403,7 +2361,10 @@ app.post('/api/templates', upload.single('template'), async (req, res) => {
         message: 'Cannot save templates without database connection'
       });
     }
-    
+
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+
     if (!req.file) {
       return res.status(400).json({ 
         success: false, 
@@ -2494,6 +2455,9 @@ app.get('/api/templates', async (req, res) => {
       });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     if (_cacheValid(_cache.templates)) {
       console.log(`📄 Returning ${_cache.templates.data.length} templates from cache`);
       return res.json({ success: true, templates: _cache.templates.data, count: _cache.templates.data.length });
@@ -2555,6 +2519,9 @@ app.get('/api/templates/:id/file', async (req, res) => {
         message: 'Cannot fetch template files without database connection'
       });
     }
+
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
 
     const { id } = req.params;
     
@@ -2666,6 +2633,9 @@ app.post('/api/templates/reseed', async (req, res) => {
       });
     }
 
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+
     console.log('🌱 Reseeding templates/exhibits on demand...');
     const { seedDefaultTemplates } = require('./seed-templates.cjs');
     const { seedDefaultExhibits } = require('./seed-exhibits.cjs');
@@ -2703,6 +2673,8 @@ app.get('/api/combinations', async (req, res) => {
     if (!db) {
       return res.status(500).json({ success: false, error: 'Database not available' });
     }
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
     const { migrationType } = req.query;
     const query = migrationType ? { migrationType: String(migrationType) } : {};
     const raw = await db.collection('combinations')
@@ -2723,6 +2695,8 @@ app.get('/api/combinations/:id/file', async (req, res) => {
     if (!db) {
       return res.status(500).json({ success: false, error: 'Database not available' });
     }
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
     const { id } = req.params;
     const combo = await db.collection('combinations').findOne({ id }, { projection: { fileData: 1, fileName: 1, fileType: 1 } });
     if (!combo || !combo.fileData) {
@@ -2747,6 +2721,8 @@ app.post('/api/combinations', upload.single('file'), async (req, res) => {
     if (!db) {
       return res.status(500).json({ success: false, error: 'Database not available' });
     }
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
     const { value, label, migrationType, displayOrder, requiresUsers } = req.body || {};
     if (!value || !String(value).trim()) {
       return res.status(400).json({ success: false, error: 'value is required' });
@@ -2798,6 +2774,8 @@ app.put('/api/combinations/:id', async (req, res) => {
     if (!db) {
       return res.status(500).json({ success: false, error: 'Database not available' });
     }
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
     const { id } = req.params;
     const { value, label, migrationType, displayOrder, requiresUsers } = req.body || {};
     const update = { updatedAt: new Date() };
@@ -2831,6 +2809,8 @@ app.post('/api/combinations/:id/file', upload.single('file'), async (req, res) =
     if (!db) {
       return res.status(500).json({ success: false, error: 'Database not available' });
     }
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
     const { id } = req.params;
     if (!req.file || !req.file.buffer) {
       return res.status(400).json({ success: false, error: 'File is required' });
@@ -2885,6 +2865,8 @@ app.post('/api/combinations/seed', async (req, res) => {
     if (!db) {
       return res.status(500).json({ success: false, error: 'Database not available' });
     }
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
     const defaults = [
       { value: 'slack-to-teams', label: 'SLACK TO TEAMS', migrationType: 'Messaging', displayOrder: 1 },
       { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT', migrationType: 'Messaging', displayOrder: 2 },
@@ -2957,6 +2939,9 @@ app.get('/api/exhibits', async (req, res) => {
       });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     const { combination, category } = req.query;
 
     if (!category && _cacheValid(_cache.exhibits)) {
@@ -3027,6 +3012,9 @@ app.get('/api/exhibits/:id/file', async (req, res) => {
         error: 'Database not available'
       });
     }
+
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
 
     const { id } = req.params;
     const { ObjectId } = require('mongodb');
@@ -4031,6 +4019,9 @@ app.post('/api/documents', async (req, res) => {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     const {
       fileName, fileData, fileSize, clientName, clientEmail, company,
       templateName, quoteId, metadata, docxFileData, docxFileName,
@@ -4310,6 +4301,9 @@ app.delete('/api/documents/:id', async (req, res) => {
     if (!db) {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
+
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
 
     const documentsCollection = db.collection('documents');
     const result = await documentsCollection.deleteOne({ id: req.params.id });
@@ -6166,6 +6160,9 @@ app.delete('/api/templates/:id', async (req, res) => {
       });
     }
 
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+
     const { id } = req.params;
     
     console.log('🗑️ Deleting template:', id);
@@ -6206,6 +6203,9 @@ app.put('/api/templates/:id', async (req, res) => {
         message: 'Cannot update templates without database connection'
       });
     }
+
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
 
     const { id } = req.params;
     const { name, description, isDefault, combination, planType, category } = req.body;
@@ -6320,7 +6320,11 @@ app.get('/api/test-mongodb', async (req, res) => {
       });
     }
 
-    const testDoc = { 
+    // This route inserts a row, so it is limited to approval admins
+    const authUser = await getApprovalAdminUser(req, res, 'Only approval admins can run the database test');
+    if (!authUser) return;
+
+    const testDoc = {
       message: 'MongoDB Atlas connection test', 
       timestamp: new Date(),
       test: true,
@@ -6529,6 +6533,9 @@ app.post('/api/client-log', clientLogLimiter, express.json({ limit: '10kb' }), (
 // Email sending endpoint (supports attachments e.g., DOCX/PDF)
 app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
   try {
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     console.log('📧 Email send request received');
     console.log('📧 Email configured:', isEmailConfigured);
     console.log('📧 SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? 'Set (hidden)' : 'Not set');
@@ -6618,6 +6625,9 @@ app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
 // API endpoint to check SendGrid suppression status for email addresses
 app.post('/api/email/check-suppression', async (req, res) => {
   try {
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     if (!isEmailConfigured) {
       return res.status(500).json({
         success: false,
@@ -7310,6 +7320,9 @@ app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
         message: 'Cannot save documents without database connection'
       });
     }
+
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
 
     // Extract metadata for optional base64 uploads
     const { clientName, company, quoteId, totalCost, fileName, fileData, fileSize } = req.body;
@@ -11717,6 +11730,9 @@ app.post('/api/documents/test', async (req, res) => {
       });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     console.log('📄 Creating test documents...');
 
     const testDocuments = [
@@ -11952,6 +11968,8 @@ Answer concisely and helpfully. If you do not know a specific detail about this 
 app.get('/api/chat/logs', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res, 'Only approval admins can view chat logs');
+    if (!authUser) return;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50;
     const skip = (page - 1) * limit;
@@ -11972,6 +11990,8 @@ app.get('/api/chat/logs', async (req, res) => {
 app.get('/api/chat/analytics', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res, 'Only approval admins can view chat analytics');
+    if (!authUser) return;
 
     const limit = parseInt(req.query.limit) || 20;
 
@@ -13330,6 +13350,10 @@ app.put('/api/team-approval-settings', async (req, res) => {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
 
+    // These settings hold approver emails and the Technical sign-in allow-list
+    const authUser = await getApprovalAdminUser(req, res, 'Only approval admins can change team approval settings');
+    if (!authUser) return;
+
     const settingsCollection = db.collection('team_approval_settings');
     const newSettings = req.body;
 
@@ -13398,6 +13422,9 @@ app.get('/api/team-approval-settings/team/:teamName', async (req, res) => {
 // POST /api/send-authorization-request - Send authorization request email to team lead and save to MongoDB
 app.post('/api/send-authorization-request', async (req, res) => {
   try {
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     if (!isEmailConfigured) {
       return res.status(500).json({
         success: false,
@@ -13493,6 +13520,9 @@ app.get('/api/authorization-requests', async (req, res) => {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
 
+    const authUser = await getApprovalAdminUser(req, res, 'Only approval admins can view authorization requests');
+    if (!authUser) return;
+
     const { teamLeadEmail, requesterEmail, status, teamName } = req.query;
     const requestsCollection = db.collection('authorization_requests');
     
@@ -13522,6 +13552,9 @@ app.put('/api/authorization-requests/:id/status', async (req, res) => {
     if (!db) {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
+
+    const authUser = await getApprovalAdminUser(req, res);
+    if (!authUser) return;
 
     const { id } = req.params;
     const { status } = req.body; // 'pending', 'approved', 'rejected'

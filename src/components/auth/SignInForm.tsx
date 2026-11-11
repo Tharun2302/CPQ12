@@ -3,6 +3,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { validateSignInForm, getFieldError } from '../../utils/validation';
 import { AuthError } from '../../types/auth';
 import { sanitizeEmailInput } from '../../utils/emojiSanitizer';
+import { isMicrosoftServerError } from '../../utils/microsoftSignInErrors';
 import { Eye, EyeOff } from 'lucide-react';
 
 
@@ -85,6 +86,9 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
     } catch (error: any) {
       if (error?.code === 'NOT_CONFIGURED' || error?.message === 'NOT_CONFIGURED') {
         setErrors([{ field: 'general', message: 'Microsoft sign-in is not configured. Use email and password to sign in.' }]);
+      } else if (isMicrosoftServerError(error)) {
+        setErrors([{ field: 'general', message: error.message }]);
+        onError?.(error.message);
       } else {
         console.error('Microsoft login error:', error);
         setErrors([{ field: 'general', message: 'Microsoft authentication failed. Please try again or use email/password.' }]);

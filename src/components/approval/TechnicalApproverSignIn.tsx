@@ -3,6 +3,7 @@ import { Loader2, LogIn, ShieldAlert, UserCheck } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { BACKEND_URL } from '../../config/api';
 import { getAuthHeaders } from '../../utils/authUtils';
+import { isMicrosoftServerError } from '../../utils/microsoftSignInErrors';
 import {
   TechSignInStatus,
   describeIdentity,
@@ -63,9 +64,13 @@ const TechnicalApproverSignIn: React.FC<TechnicalApproverSignInProps> = ({ child
       await checkStatus();
     } catch (err) {
       const code = (err as { code?: string })?.code;
-      setSignInError(code === 'NOT_CONFIGURED'
-        ? 'Microsoft sign-in is not configured. Please contact your administrator.'
-        : 'Microsoft sign-in failed. Please try again.');
+      if (code === 'NOT_CONFIGURED') {
+        setSignInError('Microsoft sign-in is not configured. Please contact your administrator.');
+      } else if (isMicrosoftServerError(err)) {
+        setSignInError(err.message);
+      } else {
+        setSignInError('Microsoft sign-in failed. Please try again.');
+      }
     } finally {
       setIsSigningIn(false);
     }

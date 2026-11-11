@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from '../utils/authUtils';
 import { ConfigurationData, ManageSprawlConfig } from '../types/pricing';
 import { isMultiWithSprawl, manageAgreementCard, normalizeSprawlConfigs, withSprawlConfigs } from '../utils/pricing';
 import { applySprawlGroups, buildSprawlGroups } from '../utils/sprawlGroups';
@@ -47,7 +48,7 @@ export function useSprawlGroups(
       apply([]);
       return;
     }
-    fetch(`${BACKEND_URL}/api/exhibits`)
+    fetch(`${BACKEND_URL}/api/exhibits`, { headers: getAuthHeaders() })
       .then(res => (res.ok ? res.json() : null))
       .then(data => {
         if (!cancelled && data?.success && Array.isArray(data.exhibits)) apply(data.exhibits);

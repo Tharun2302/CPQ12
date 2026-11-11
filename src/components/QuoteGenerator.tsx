@@ -46,7 +46,7 @@ import { trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from 
 import { diyAddOnTokens, diyTemplateTokens, isDiyToken } from '../utils/diyAgreement';
 import { getEffectiveDurationMonths, formatMonths } from '../utils/configDuration';
 import { serviceTermTokens } from '../utils/serviceTerm';
-import { getCurrentUser } from '../utils/authUtils';
+import { getAuthHeaders, getCurrentUser } from '../utils/authUtils';
 import { reportClientError } from '../utils/reportClientError';
 import { useAuth } from '../hooks/useAuth';
 import CustomDatePicker from './CustomDatePicker';
@@ -1111,6 +1111,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
+            ...getAuthHeaders(),
           },
           body: JSON.stringify(teamApprovalSettings),
         });
@@ -1718,7 +1719,7 @@ Quote ID: ${quoteData.id}
       
       const response = await fetch(`${BACKEND_URL}/api/email/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           to: dealDeskEmail,
           subject: emailSubject,
@@ -1786,7 +1787,7 @@ Quote ID: ${quoteData.id}
             const comboSlug = (selectedTemplate.combination || '').trim().toLowerCase();
             if (comboSlug) {
               try {
-                const listRes = await fetch(`${BACKEND_URL}/api/combinations?t=${Date.now()}`, { cache: 'no-store' });
+                const listRes = await fetch(`${BACKEND_URL}/api/combinations?t=${Date.now()}`, { cache: 'no-store', headers: getAuthHeaders() });
                 const listData = await listRes.json();
                 const match = (listData.combinations || []).find(
                   (c: any) => (c.value || '').trim().toLowerCase() === comboSlug && c.hasFile
@@ -1796,7 +1797,7 @@ Quote ID: ${quoteData.id}
                 console.warn('⚠️ Could not resolve combination by slug, using the stored id');
               }
             }
-            const comboRes = await fetch(`${BACKEND_URL}/api/combinations/${comboId}/file?t=${Date.now()}`, { cache: 'no-store' });
+            const comboRes = await fetch(`${BACKEND_URL}/api/combinations/${comboId}/file?t=${Date.now()}`, { cache: 'no-store', headers: getAuthHeaders() });
             if (!comboRes.ok) {
               console.warn(`⚠️ Combination file fetch failed with status ${comboRes.status}`);
               return selectedTemplate.file || null;
@@ -1805,7 +1806,8 @@ Quote ID: ${quoteData.id}
             return new File([comboBlob], selectedTemplate.fileName || 'agreement.docx', { type: comboBlob.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
           }
           const fr = await fetch(`${BACKEND_URL}/api/templates/${selectedTemplate.id}/file?t=${Date.now()}`, {
-            cache: 'no-store'
+            cache: 'no-store',
+            headers: getAuthHeaders()
           });
           if (!fr.ok) {
             console.warn(`⚠️ Template fetch failed with status ${fr.status}: ${fr.statusText}`);
@@ -2449,7 +2451,7 @@ Quote ID: ${quoteData.id}
               const exhibitBlobs: Blob[] = [];
               // Fetch exhibit metadata once (used for: de-dupe, sort order, and merger grouping)
               const exhibitMetadata: Array<{ name: string; category?: string; includeType?: 'included' | 'notincluded' }> = [];
-              const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
+              const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`, { headers: getAuthHeaders() });
               let allExhibits: any[] = [];
               if (metaResp.ok) {
                 const metaData = await metaResp.json();
@@ -2729,7 +2731,7 @@ Quote ID: ${quoteData.id}
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
                 // Bypass HTTP cache so admin-side exhibit edits show up on the next email send.
                 const cacheBuster = `?t=${Date.now()}`;
-                const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file${cacheBuster}`, { cache: 'no-store' });
+                const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file${cacheBuster}`, { cache: 'no-store', headers: getAuthHeaders() });
 
                 if (response.ok) {
                   const blob = await response.blob();
@@ -2896,6 +2898,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       // Send email using server-side endpoint with attachment
       const response = await fetch(`${BACKEND_URL}/api/email/send`, {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: formData
       });
 
@@ -4982,7 +4985,7 @@ Total Price: {{total price}}`;
             const comboSlug = (selectedTemplate.combination || '').trim().toLowerCase();
             if (comboSlug) {
               try {
-                const listRes = await fetch(`${BACKEND_URL}/api/combinations?t=${Date.now()}`, { cache: 'no-store' });
+                const listRes = await fetch(`${BACKEND_URL}/api/combinations?t=${Date.now()}`, { cache: 'no-store', headers: getAuthHeaders() });
                 const listData = await listRes.json();
                 const match = (listData.combinations || []).find(
                   (c: any) => (c.value || '').trim().toLowerCase() === comboSlug && c.hasFile
@@ -4992,7 +4995,7 @@ Total Price: {{total price}}`;
                 console.warn('⚠️ Could not resolve combination by slug, using the stored id');
               }
             }
-            const comboRes = await fetch(`${BACKEND_URL}/api/combinations/${comboId}/file?t=${Date.now()}`, { cache: 'no-store' });
+            const comboRes = await fetch(`${BACKEND_URL}/api/combinations/${comboId}/file?t=${Date.now()}`, { cache: 'no-store', headers: getAuthHeaders() });
             if (!comboRes.ok) {
               console.warn(`⚠️ Combination file fetch failed with status ${comboRes.status}`);
               return selectedTemplate.file || null;
@@ -5005,7 +5008,8 @@ Total Price: {{total price}}`;
           let fr: Response | null = null;
           for (let attempt = 0; attempt < 2; attempt++) {
             fr = await fetch(`${BACKEND_URL}/api/templates/${selectedTemplate.id}/file?t=${Date.now()}`, {
-              cache: 'no-store'
+              cache: 'no-store',
+              headers: getAuthHeaders()
             });
             if (fr.ok || fr.status < 500) break;
             console.warn(`⚠️ Template fetch attempt ${attempt + 1} returned ${fr.status}; retrying...`);
@@ -5903,7 +5907,7 @@ Total Price: {{total price}}`;
         if (configuration?.migrationType === 'Multi combination' && selectedExhibits && selectedExhibits.length > 0) {
           try {
             console.log('🔍 Fetching exhibit details to determine migration names...');
-            const exhibitResponse = await fetch(`${BACKEND_URL}/api/exhibits`);
+            const exhibitResponse = await fetch(`${BACKEND_URL}/api/exhibits`, { headers: getAuthHeaders() });
             if (exhibitResponse.ok) {
               const exhibitData = await exhibitResponse.json();
               if (exhibitData.success && exhibitData.exhibits) {
@@ -6326,7 +6330,7 @@ Total Price: {{total price}}`;
           }> = [];
 
           if (exhibitIds.length > 0) {
-            const exhibitResponse = await fetch(`${BACKEND_URL}/api/exhibits`);
+            const exhibitResponse = await fetch(`${BACKEND_URL}/api/exhibits`, { headers: getAuthHeaders() });
             if (exhibitResponse.ok) {
               const exhibitDataResponse = await exhibitResponse.json();
               const allExhibits = (exhibitDataResponse?.exhibits || []).map(withPairCombinations);
@@ -8921,7 +8925,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             
             try {
               // Fetch all exhibit files
-              const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
+              const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`, { headers: getAuthHeaders() });
               let allExhibits: any[] = [];
               if (metaResp.ok) {
                 const metaData = await metaResp.json();
@@ -9580,7 +9584,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 // param defeats Vite's dev proxy and any intermediate proxy that ignores
                 // Cache-Control headers (which is why a backend-only fix wasn't enough).
                 const cacheBuster = `?t=${Date.now()}`;
-                const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file${cacheBuster}`, { cache: 'no-store' });
+                const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file${cacheBuster}`, { cache: 'no-store', headers: getAuthHeaders() });
                 
                 if (response.ok) {
                   const blob = await response.blob();

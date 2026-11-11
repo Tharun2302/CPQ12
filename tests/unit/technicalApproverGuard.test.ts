@@ -150,6 +150,14 @@ describe('verifiedClaimsFromGraph', () => {
     expect(verify({ clientId: '  ' })).toBeNull();
   });
 
+  it('compares the app id case-insensitively and ignores padding on either side', () => {
+    expect(verify({ clientId: ` ${CLIENT_ID.toUpperCase()} ` })).not.toBeNull();
+    expect(verify({ tokenPayload: { tid: TENANT, appid: CLIENT_ID.toUpperCase() } })).not.toBeNull();
+    expect(verify({ tokenPayload: { tid: TENANT, azp: ` ${CLIENT_ID.toUpperCase()} ` } })).not.toBeNull();
+    expect(verify({ clientId: CLIENT_ID.toUpperCase(), tokenPayload: { tid: TENANT, appid: 'some-other-app' } })).toBeNull();
+    expect(verify({ tokenPayload: { tid: TENANT, appid: 12345 } })).toBeNull();
+  });
+
   it('rejects guest accounts, a missing tid and a mismatched identity', () => {
     expect(verify({ tokenPayload: { tid: TENANT, appid: CLIENT_ID, acct: 1 } })).toBeNull();
     expect(verify({ tokenPayload: { appid: CLIENT_ID } })).toBeNull();

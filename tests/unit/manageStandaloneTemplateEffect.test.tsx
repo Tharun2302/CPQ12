@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { cleanup, render, waitFor, act } from '@testing-library/react';
 
 import App from '../../src/App';
+import { SIGNED_IN_USER, signIn } from './helpers/signedIn';
 
 const STANDALONE_CONFIG = {
   servicePlan: 'Manage',
@@ -33,6 +34,7 @@ function mockFetch(templates: unknown[], combinations: unknown[] = COMBINATIONS,
   let catalogCalls = 0;
   const fetchMock = vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.endsWith('/api/auth/me')) return ok({ success: true, user: SIGNED_IN_USER });
     if (/\/api\/combinations\/[^/]+\/file/.test(url)) return ok({});
     if (url.includes('/api/combinations')) {
       catalogCalls += 1;
@@ -58,6 +60,7 @@ const fileFetches = (fetchMock: ReturnType<typeof vi.fn>) =>
 beforeEach(() => {
   sessionStorage.clear();
   localStorage.clear();
+  signIn();
   sessionStorage.setItem('cpq_configuration_session', JSON.stringify(STANDALONE_CONFIG));
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});

@@ -4,11 +4,14 @@ import { User, AuthContextType, SignUpData } from '../types/auth';
 import { track, identify } from '../analytics/clarity';
 import { identifyHotjarUser } from '../analytics/hotjar';
 import { BACKEND_URL } from '../config/api';
- 
+import { clearUserSessionData, clearDataIfDifferentUser } from '../utils/authUtils';
+import { getMicrosoftAuthorizeUrl, getMicrosoftTenantId } from '../utils/microsoftAuthority';
+import { microsoftBackendErrorMessage, microsoftPopupErrorMessage, createMicrosoftServerError } from '../utils/microsoftSignInErrors';
+
 // Create the context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
  
-// Microsoft authentication using custom OAuth implementation
+// Microsoft authentication using custom OAuth implementation (single-tenant authority, see microsoftAuthority.ts)
 // This avoids MSAL library issues that cause white page problems
 
 interface AuthProviderComponentProps {
@@ -37,8 +40,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
         if (storedUser && storedToken) {
           // Only server-issued JWTs are trusted; fake tokens from older builds must sign in again
           if (storedToken.split('.').length !== 3) {
-            localStorage.removeItem('cpq_user');
-            localStorage.removeItem('cpq_token');
+            clearUserSessionData();
           } else {
             const backendUrl = BACKEND_URL;
             try {
@@ -64,13 +66,11 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                   });
                 } else {
                   // Token invalid, clear storage
-                  localStorage.removeItem('cpq_user');
-                  localStorage.removeItem('cpq_token');
+                  clearUserSessionData();
                 }
               } else {
                 // Token invalid, clear storage
-                localStorage.removeItem('cpq_user');
-                localStorage.removeItem('cpq_token');
+                clearUserSessionData();
               }
             } catch (backendError) {
               // Stored user data is unverified, so an unreachable server must not count as signed in
@@ -81,8 +81,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
       } catch (error) {
         console.error('Error checking authentication:', error);
         // Clear invalid data
-        localStorage.removeItem('cpq_user');
-        localStorage.removeItem('cpq_token');
+        clearUserSessionData();
       } finally {
         setLoading(false);
       }
@@ -114,6 +113,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
         const data = await response.json();
        
         if (data.success) {
+          clearDataIfDifferentUser(data.user);
           // Store user and token
           localStorage.setItem('cpq_user', JSON.stringify(data.user));
           localStorage.setItem('cpq_token', data.token);
@@ -220,7 +220,10 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
         err.code = 'NOT_CONFIGURED';
         throw err;
       }
-     
+
+      // Throws NOT_CONFIGURED before any popup opens when the tenant is missing or malformed
+      const authorizeUrl = getMicrosoftAuthorizeUrl();
+
       // Create Microsoft OAuth URL with PKCE
       const redirectBase = (import.meta.env.VITE_MSAL_REDIRECT_URI as string) || (window.location.origin + '/auth/microsoft/callback');
       const redirectUri = encodeURIComponent(redirectBase);
@@ -248,7 +251,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
       }
 
       // Build auth URL with PKCE
-      const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?` +
+      const authUrl = `${authorizeUrl}?` +
         `client_id=${clientId}&` +
         `response_type=code&` +
         `redirect_uri=${redirectUri}&` +
@@ -264,7 +267,8 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
  
       // Store client ID for callback page (in localStorage for cross-window access)
       localStorage.setItem('msal_client_id', clientId);
-     
+      localStorage.setItem('msal_tenant_id', getMicrosoftTenantId());
+
       // Open popup window
       const popup = window.open(
         authUrl,
@@ -286,7 +290,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
       if (callbackOrigin && callbackOrigin !== window.location.origin) allowedOrigins.push(callbackOrigin);
 
       // Wait for popup to close or receive message
-      return new Promise((resolve) => {
+      return new Promise<boolean>((resolve, reject) => {
         console.log('⏳ Waiting for popup to close or receive message...');
        
         // Add timeout to prevent infinite loading
@@ -367,6 +371,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
             const backendUrl = BACKEND_URL;
            
             let signedIn = false;
+            let serverError: ReturnType<typeof createMicrosoftServerError> | null = null;
             try {
               const response = await fetch(`${backendUrl}/api/auth/microsoft`, {
                 method: 'POST',
@@ -385,6 +390,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                 const data = await response.json();
                
                 if (data.success) {
+                  clearDataIfDifferentUser(data.user);
                   // Store user and token from backend
                   localStorage.setItem('cpq_user', JSON.stringify(data.user));
                   localStorage.setItem('cpq_token', data.token);
@@ -411,6 +417,9 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                 }
               } else {
                 console.error('Backend Microsoft sign-in failed with status', response.status);
+                const body = await response.json().catch(() => null);
+                const message = microsoftBackendErrorMessage(response.status, body);
+                if (message) serverError = createMicrosoftServerError(response.status, message);
               }
             } catch (backendError) {
               console.error('Backend Microsoft auth error:', backendError);
@@ -422,6 +431,10 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
               localStorage.removeItem('msal_client_id');
             } catch (_) {}
            
+            if (serverError) {
+              reject(serverError);
+              return;
+            }
             resolve(signedIn);
           } else if (event.data.type === 'MICROSOFT_AUTH_ERROR') {
             clearInterval(checkClosed);
@@ -434,6 +447,11 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
               localStorage.removeItem('msal_code_verifier');
               localStorage.removeItem('msal_client_id');
             } catch (_) {}
+            const popupMessage = microsoftPopupErrorMessage(event.data.error);
+            if (popupMessage) {
+              reject(createMicrosoftServerError(0, popupMessage));
+              return;
+            }
             resolve(false);
           }
         };
@@ -535,13 +553,8 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
     // Show the message
     showThankYouMessage();
    
-    // Clear localStorage
-    localStorage.removeItem('cpq_user');
-    localStorage.removeItem('cpq_token');
-
-    // Clear Quote-page session data so it does not carry over to the next sign-in
-    localStorage.removeItem('cpq_quote_custom_line_items');
-    localStorage.removeItem('cpq_quote_custom_line_items_discount');
+    // Shared PCs: the next person must not find this user's quotes or client details
+    clearUserSessionData();
 
     // Update state
     setUser(null);

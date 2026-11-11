@@ -1,5 +1,6 @@
 import { exhibitCombinationKey, scopeExhibitsForCombination } from './exhibitCombination';
 import { isMultiWithSprawl, manageAgreementCard } from './pricing';
+import { getAuthHeaders } from './authUtils';
 import type { ConfigurationData } from '../types/pricing';
 
 type IncludeType = 'included' | 'notincluded';
@@ -102,7 +103,7 @@ export async function mergeManageExhibits(
   agreement: Blob,
   opts: { backendUrl: string; templateValue: string; selectedIds: string[]; titles?: ExhibitGroupTitles },
 ): Promise<ManageMergeResult> {
-  const listRes = await fetch(`${opts.backendUrl}/api/exhibits?t=${Date.now()}`, { cache: 'no-store' });
+  const listRes = await fetch(`${opts.backendUrl}/api/exhibits?t=${Date.now()}`, { cache: 'no-store', headers: getAuthHeaders() });
   if (!listRes.ok) throw new Error(`Could not load the exhibit list (status ${listRes.status}).`);
   const listData = await listRes.json();
   const all: ManageExhibitLike[] = listData?.success && Array.isArray(listData.exhibits) ? listData.exhibits : [];
@@ -116,7 +117,7 @@ export async function mergeManageExhibits(
   for (const ex of exhibits) {
     const label = String(ex.name || idOf(ex));
     try {
-      const res = await fetch(`${opts.backendUrl}/api/exhibits/${idOf(ex)}/file?t=${Date.now()}`, { cache: 'no-store' });
+      const res = await fetch(`${opts.backendUrl}/api/exhibits/${idOf(ex)}/file?t=${Date.now()}`, { cache: 'no-store', headers: getAuthHeaders() });
       if (!res.ok) {
         failed.push(label);
         continue;

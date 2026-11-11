@@ -44,6 +44,17 @@
         }
       }
 
+      // Tenant is written by the SPA at sign-in start; a missing value fails instead of defaulting to /common
+      function getTokenUrl() {
+        const tenant = localStorage.getItem('msal_tenant_id') || '';
+        const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const domain = /^(?=.{3,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
+        if (tenant !== 'common' && !guid.test(tenant) && !domain.test(tenant)) {
+          throw new Error('Microsoft sign-in is not configured');
+        }
+        return 'https://login.microsoftonline.com/' + tenant + '/oauth2/v2.0/token';
+      }
+
       // Function to exchange authorization code for real user data
       async function exchangeCodeForUserData(code) {
         try {
@@ -58,7 +69,7 @@
           console.log('✅ Code verifier found');
 
           // Exchange code for access token
-          const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
+          const tokenResponse = await fetch(getTokenUrl(), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/x-www-form-urlencoded',
@@ -102,18 +113,16 @@
           }
 
           const profile = await profileResponse.json();
-          console.log('✅ Profile data received:', profile);
-          console.log('🔍 Profile displayName:', profile.displayName);
-          console.log('🔍 Profile mail:', profile.mail);
-          console.log('🔍 Profile userPrincipalName:', profile.userPrincipalName);
-          console.log('🔍 Profile givenName:', profile.givenName);
-          console.log('🔍 Profile surname:', profile.surname);
+          const profileEmail = profile.mail || profile.userPrincipalName || '';
+          if (!profile.id || profileEmail.indexOf('@') === -1) {
+            throw new Error('Invalid Microsoft profile');
+          }
 
           // Return user data in the expected format
           const userData = {
-            id: profile.id || 'microsoft_' + Date.now(),
-            name: profile.displayName || profile.givenName + ' ' + profile.surname || 'Microsoft User',
-            email: profile.mail || profile.userPrincipalName || 'user@microsoft.com',
+            id: profile.id,
+            name: profile.displayName || [profile.givenName, profile.surname].filter(Boolean).join(' ') || profileEmail,
+            email: profileEmail,
             accessToken: accessToken,
             provider: 'microsoft',
             createdAt: new Date().toISOString()
@@ -164,38 +173,12 @@
             
             // Exchange authorization code for access token and get real user data
             exchangeCodeForUserData(code).then(userData => {
-              console.log('✅ User data received:', userData);
-              console.log('✅ Final name:', userData.name);
-              console.log('✅ Final email:', userData.email);
               document.getElementById('status').textContent = 'Authentication successful.';
               post({ type: 'MICROSOFT_AUTH_SUCCESS', user: userData });
               setTimeout(() => window.close(), 3000); // Increased delay to see console
             }).catch(error => {
-              console.error('❌ Failed to get user data:', error);
-              console.error('❌ Error details:', error.message);
-              console.error('❌ This means Microsoft Graph API call failed');
-              document.getElementById('status').textContent = 'Using fallback user data...';
-              
-              // Fallback to mock user if real API fails. Derive a friendly name
-              // from the email local-part so the sidebar doesn't show the literal
-              // "Microsoft" placeholder.
-              const fallbackEmail = 'user@microsoft.com';
-              const fallbackName = (fallbackEmail.split('@')[0] || '')
-                .split(/[._\-+]+/)
-                .filter(Boolean)
-                .map(function(p){ return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase(); })
-                .join(' ') || 'User';
-              const fallbackUser = {
-                id: 'microsoft_' + Date.now(),
-                name: fallbackName,
-                email: fallbackEmail,
-                accessToken: 'fallback_token_' + Date.now(),
-                provider: 'microsoft',
-                createdAt: new Date().toISOString()
-              };
-              
-              console.log('⚠️ Using fallback user because Graph API failed:', fallbackUser);
-              post({ type: 'MICROSOFT_AUTH_SUCCESS', user: fallbackUser });
+              document.getElementById('status').textContent = 'Microsoft sign-in failed, please try again';
+              post({ type: 'MICROSOFT_AUTH_ERROR', error: 'Microsoft sign-in failed, please try again' });
               setTimeout(() => window.close(), 1000);
             });
             return;
