@@ -483,7 +483,13 @@ describe('server.cjs wiring — PUT /api/approval-workflows/:id/step/:stepNumber
 
   it('shares the completion rule with the workflow list instead of keeping a second copy', () => {
     expect(serverSrc).not.toMatch(/function areAllApprovalStepsComplete\(/);
-    expect(serverSrc).toContain('areAllApprovalStepsComplete(workflow.workflowSteps)');
+    const accessSrc = fs.readFileSync(fileURLToPath(new URL('../../approval-workflow-access.cjs', import.meta.url)), 'utf8');
+    expect(accessSrc).toMatch(
+      /const\s*\{[^}]*\bareAllApprovalStepsComplete\b[^}]*\}\s*=\s*require\(['"]\.\/approval-step-guard\.cjs['"]\)/,
+    );
+    expect(accessSrc).not.toMatch(/function areAllApprovalStepsComplete\(/);
+    expect(accessSrc).toContain("require('./approval-step-guard.cjs')");
+    expect(accessSrc).toContain('areAllApprovalStepsComplete(w.workflowSteps)');
   });
 });
 

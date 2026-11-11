@@ -16,12 +16,12 @@ const { DEFAULT_EXHIBITS_SYNC_DIR, resolveExhibitSyncDir } = require('./exhibit-
 const {
   parseStepNumber,
   sanitizeStepUpdates,
-  areAllApprovalStepsComplete,
   applyStepUpdate,
   stripLockedWorkflowFields,
   checkStepUpdateAllowed
 } = require('./approval-step-guard.cjs');
 const technicalApproverGuard = require('./technical-approver-guard.cjs');
+const { verifyApprovalPortalToken, listApprovalWorkflowsForCaller } = require('./approval-workflow-access.cjs');
 const {
   DISCOUNT_POLICY_SETTINGS_ID,
   INVALID_MAX_DISCOUNT_ERROR,
@@ -113,6 +113,18 @@ const trustProxyHops = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY)
 if (Number.isFinite(trustProxyHops) && trustProxyHops > 0) {
   app.set('trust proxy', trustProxyHops);
 }
+app.disable('x-powered-by');
+// Set here, not only in nginx: nginx drops server-level add_header in any location that sets its own.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+  }
+  next();
+});
 // IMPORTANT: dotenv values are strings. If PORT is provided as a string (e.g. "3001"),
 // Node can treat it as a named pipe instead of a TCP port. Always coerce to number.
 const PORT = Number.parseInt(process.env.PORT, 10) || 3001;
@@ -395,6 +407,7 @@ function sendIndexHtml(res) {
     "img-src 'self' data: blob: https:",
     "frame-src 'self' blob: https://zenop.ai:8443",
     "worker-src 'self' blob:",
+    "frame-ancestors 'self'",
   ].join('; '));
   res.send(html);
 }
@@ -12067,8 +12080,9 @@ app.post('/api/approval-workflows', async (req, res) => {
   }
 });
 
-// Get all approval workflows
+// Get approval workflows visible to the caller (login JWT, else approval-portal token)
 app.get('/api/approval-workflows', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   try {
     if (!db) {
       return res.status(500).json({
@@ -12078,59 +12092,10 @@ app.get('/api/approval-workflows', async (req, res) => {
       });
     }
 
-    console.log('📄 Fetching approval workflows from MongoDB...');
-    
-    // Sort by createdAt (most recent first) - descending order
-    const workflows = await db.collection('approval_workflows')
-      .find({})
-      .sort({ createdAt: -1 })
-      .toArray();
-    
-    console.log(`✅ Found ${workflows.length} workflows in database`);
-    
-    // Re-evaluate workflows that might be incorrectly marked as 'in_progress'
-    // when all approval steps (Team, Tech, Legal) are actually complete
-    const workflowsToUpdate = [];
-    for (const workflow of workflows) {
-      if (workflow.status === 'in_progress' || workflow.status === 'pending') {
-        if (areAllApprovalStepsComplete(workflow.workflowSteps)) {
-          workflowsToUpdate.push(workflow.id);
-        }
-      }
-    }
-    
-    // Update workflows that should be marked as approved
-    if (workflowsToUpdate.length > 0) {
-      console.log(`🔄 Updating ${workflowsToUpdate.length} workflows to 'approved' status (all approval steps complete)`);
-      await db.collection('approval_workflows').updateMany(
-        { id: { $in: workflowsToUpdate } },
-        { 
-          $set: { 
-            status: 'approved',
-            updatedAt: new Date().toISOString()
-          }
-        }
-      );
-      
-      // Refresh the workflows after update
-      const updatedWorkflows = await db.collection('approval_workflows')
-        .find({})
-        .sort({ createdAt: -1 })
-        .toArray();
-      
-      res.json({
-        success: true,
-        workflows: updatedWorkflows,
-        count: updatedWorkflows.length
-      });
-    } else {
-      res.json({
-        success: true,
-        workflows: workflows,
-        count: workflows.length
-      });
-    }
-    
+    const user = await getOptionalAuthenticatedUser(req);
+    const isAdmin = user ? await hasApprovalAdminAccess(user) : false;
+    const { status, body } = await listApprovalWorkflowsForCaller({ db, user, isAdmin, query: req.query });
+    res.status(status).json(body);
   } catch (error) {
     console.error('❌ Error fetching approval workflows:', error);
     res.status(500).json({
@@ -12150,53 +12115,19 @@ app.get('/api/approval-workflows/verify-access', async (req, res) => {
       });
     }
 
-    const { workflowId, role, token } = req.query;
-    if (!workflowId || !role || !token) {
+    const access = await verifyApprovalPortalToken(db, req.query);
+    if (!access.ok) {
       return res.status(403).json({
         success: false,
         error: 'Access Denied',
-        message: 'Missing workflowId, role, or token'
-      });
-    }
-
-    const normalizedRole = String(role).toLowerCase();
-    const validRoles = ['teamlead', 'technical', 'legal'];
-    if (!validRoles.includes(normalizedRole)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access Denied',
-        message: 'Invalid role'
-      });
-    }
-
-    const record = await db.collection('approval_access_tokens').findOne({
-      workflowId: String(workflowId),
-      role: normalizedRole,
-      token: String(token)
-    });
-
-    if (!record) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access Denied',
-        message: 'Invalid or unknown token'
-      });
-    }
-
-    const now = new Date();
-    const expiresAt = record.expiresAt instanceof Date ? record.expiresAt : new Date(record.expiresAt);
-    if (expiresAt < now) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access Denied',
-        message: 'Token has expired'
+        message: access.message
       });
     }
 
     res.json({
       success: true,
-      workflowId: record.workflowId,
-      role: normalizedRole
+      workflowId: access.workflowId,
+      role: access.role
     });
   } catch (error) {
     console.error('❌ Error verifying approval access:', error);
