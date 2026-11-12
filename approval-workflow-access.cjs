@@ -142,7 +142,9 @@ function findStep(workflow, stepNumber) {
 }
 
 function linkMayDecideStep(role, workflow, step, updates) {
-  if (STEP_ROLE_BY_LINK_ROLE[role] === step.role) return true;
+  // A client link maps to no step; without this a step with no role would match it.
+  const ownStepRole = STEP_ROLE_BY_LINK_ROLE[role];
+  if (ownStepRole && ownStepRole === step.role) return true;
   // The Team Lead portal skips Technical on overage deals right after approving.
   if (role === 'teamlead' && step.role === 'Technical Team') return isOverageTechnicalSkip(workflow, updates);
   // The Legal portal marks Deal Desk "Notified" once the deal is approved.

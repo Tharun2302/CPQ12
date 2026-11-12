@@ -7,9 +7,11 @@
 //   - signer: someone holding a recipient's signing link (esign_recipients.signing_token).
 //             May read the document the link belongs to, plus any other document on which the
 //             same email address is a recipient (the e-sign inbox lists those as history).
-//   - portal: an approval-portal reviewer (approval_access_tokens.token) with no CPQ login.
-//             May read only the e-sign document attached to that workflow.
+//   - portal: an approval-portal reviewer (approval_access_tokens.token, role teamlead,
+//             technical or legal) with no CPQ login. May read only the e-sign document attached to that workflow.
 // The database lookups live in server.cjs; these functions only decide.
+
+const { PORTAL_ROLES } = require('./approval-workflow-access.cjs');
 
 const MIN_TOKEN_LENGTH = 16;
 const MAX_TOKEN_LENGTH = 256;
@@ -58,6 +60,8 @@ function signerCanReadDocument({ recipient, docId, docRecipientEmails = [], now 
 /** Can the holder of this approval-portal token read document `docId`? */
 function portalCanReadDocument({ record, workflow, docId, now = Date.now() }) {
   if (!record || !workflow || !docId) return false;
+  // The read-only customer link must not open the agreement, its fields or its recipients.
+  if (!PORTAL_ROLES.includes(String(record.role || '').toLowerCase())) return false;
   if (!record.expiresAt || isExpired(record.expiresAt, now)) return false;
   if (idString(record.workflowId) !== idString(workflow.id)) return false;
   const attached = idString(workflow.esignDocumentId);

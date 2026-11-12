@@ -95,6 +95,31 @@ describe('dead duplicate registrations of POST/DELETE /api/documents', () => {
   });
 });
 
+describe('routes that mint an approval link token check the caller first', () => {
+  const MINTING: Array<[string, string]> = [
+    ['get', '/api/approval-workflows/:workflowId/portal-link'],
+    ['post', '/api/approval-workflows/:workflowId/remind'],
+  ];
+  const MINT = /createApprovalAccessToken\(|buildCurrentApproverEmail\(|sendEmail\(|\.updateOne\(/;
+
+  it.each(MINTING)('%s %s requires a login before the workflow is read', (method, routePath) => {
+    const route = routeSource(method, routePath);
+    const login = /const authUser = await getAuthenticatedUser\(req, res\);\s*if \(!authUser\) return;/.exec(route);
+    expect(login, 'login check with early return').not.toBeNull();
+    expect(login!.index).toBeLessThan(route.indexOf('.findOne('));
+    expect(login!.index).toBeLessThan(MINT.exec(route)!.index);
+  });
+
+  it.each(MINTING)('%s %s refuses staff who may not manage the workflow before minting', (method, routePath) => {
+    const route = routeSource(method, routePath);
+    expect(route).toContain("findOne({ id: workflowId })");
+    const refusal = /if \(!canManageWorkflow\(workflow, authUser, await hasApprovalAdminAccess\(authUser\)\)\) \{\s*return res\.status\(403\)/.exec(route);
+    expect(refusal, 'canManageWorkflow refusal with 403').not.toBeNull();
+    expect(MINT.exec(route), 'route mints or sends').not.toBeNull();
+    expect(refusal!.index).toBeLessThan(MINT.exec(route)!.index);
+  });
+});
+
 describe('routes that must stay open are unchanged', () => {
   const OPEN: Array<[string, string]> = [
     ['post', '/api/convert/docx-to-pdf'],

@@ -145,6 +145,14 @@ describe('checkStepDecisionCaller', () => {
     expect(comment.ok).toBe(false);
   });
 
+  it('never matches a step that has no role, for a client link or an approver link', () => {
+    const roleless = { ...fresh, workflowSteps: [{ step: 1, email: 'a@x.com', status: 'pending' }] };
+    for (const role of ['client', 'teamlead', 'technical', 'legal', 'unknown']) {
+      const verdict = checkStepDecisionCaller({ caller: link(role), workflow: roleless, stepNumber: 1, updates: approve });
+      expect(verdict, role).toMatchObject({ ok: false, httpStatus: 403, code: 'NOT_YOUR_STEP' });
+    }
+  });
+
   it('lets the Team Lead link skip Technical only on a stored overage deal it has approved', () => {
     const overage = workflow(['approved', 'pending', 'pending'], { isOverage: true, currentStep: 2 });
     const args = { caller: link('teamlead'), stepNumber: 2 };

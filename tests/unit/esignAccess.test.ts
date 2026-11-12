@@ -100,6 +100,15 @@ describe('portalCanReadDocument', () => {
     expect(portalCanReadDocument({ record: { ...record, expiresAt: undefined }, workflow, docId: 'docA', now: NOW })).toBe(false);
   });
 
+  it('allows each approver role and refuses the read-only client link and role-less tokens', () => {
+    for (const role of ['teamlead', 'technical', 'legal']) {
+      expect(portalCanReadDocument({ record: { ...record, role }, workflow, docId: 'docA', now: NOW }), role).toBe(true);
+    }
+    for (const role of ['client', 'Client', '', undefined, 'admin']) {
+      expect(portalCanReadDocument({ record: { ...record, role }, workflow, docId: 'docA', now: NOW }), String(role)).toBe(false);
+    }
+  });
+
   it('refuses a token issued for a different workflow', () => {
     expect(portalCanReadDocument({ record: { ...record, workflowId: 'wf-2' }, workflow, docId: 'docA', now: NOW })).toBe(false);
   });
