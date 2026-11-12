@@ -27,6 +27,7 @@ const BUILDER_NAMES = [
 
 type Builders = Record<(typeof BUILDER_NAMES)[number], (...args: unknown[]) => string> & {
   sanitizeEmailSubject: (subject: unknown) => string;
+  buildApprovalReminderEmail: (workflow: unknown, baseHtml: string) => { subject: string; html: string };
 };
 
 function loadBuilders(): Builders {
@@ -35,7 +36,7 @@ function loadBuilders(): Builders {
     sourceBetween('function cloudFuzeEmailFooterHTML(', '// Email sending function using SendGrid'),
     sourceBetween('function escapeHtml(', 'function escapeEmailMessage('),
     sourceBetween('function sanitizeEmailSubject(', 'async function loadDocumentPdfAttachment('),
-    `return { ${[...BUILDER_NAMES, 'sanitizeEmailSubject'].join(', ')} };`,
+    `return { ${[...BUILDER_NAMES, 'sanitizeEmailSubject'].join(', ')}, buildApprovalReminderEmail: typeof buildApprovalReminderEmail === 'function' ? buildApprovalReminderEmail : undefined };`,
   ].join('\n');
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
   return new Function('process', source)({ env: { BASE_URL: 'https://cpq.example.test' } }) as Builders;
@@ -144,5 +145,48 @@ describe('approval email subjects stay on one line', () => {
 
   it('the automatic reminder fallback body escapes the stored document id and client', () => {
     expect(serverSrc).toContain('<strong>${escapeHtml(workflow.documentId)}</strong> (${escapeHtml(workflow.clientName)}).</p>');
+  });
+});
+
+describe('automatic reminder email (runAutoReminderJob)', () => {
+  const reminderWorkflow = {
+    id: 'WF-1',
+    documentId: `DOC ${MARKUP}`,
+    clientName: 'Client\r\nBcc: attacker@evil.test',
+  };
+
+  it('shows a hostile document id as text in the banner, inside the approver email', () => {
+    const baseHtml = builders.generateTeamEmailHTML(hostile, 'tok');
+    const { html } = builders.buildApprovalReminderEmail(reminderWorkflow, baseHtml);
+    expectNoInjectedMarkup(html);
+    expect(html).toContain(`Your approval for <strong>DOC ${ESCAPED}</strong> is still pending.`);
+    expect(html).toMatch(/<body[^>]*><div style="background:#fef3c7/);
+    expect(html).toContain('&token=tok"');
+  });
+
+  it('keeps the subject on one line', () => {
+    const { subject } = builders.buildApprovalReminderEmail(reminderWorkflow, '<html><body></body></html>');
+    expect(subject).not.toMatch(/[\r\n]/);
+    expect(subject.startsWith('Reminder: Approval Pending')).toBe(true);
+  });
+
+  it('does not treat "$" sequences in the document id or the body tag as replacement patterns', () => {
+    const { html } = builders.buildApprovalReminderEmail(
+      { documentId: "A$&B$1C$'D", clientName: 'Acme' },
+      '<html><body class="x"><p>Hi</p></body></html>'
+    );
+    expect(html).toContain("<strong>A$&amp;B$1C$'D</strong>");
+    expect(html.match(/<body class="x">/g)?.length).toBe(1);
+    expect(html.endsWith('<p>Hi</p></body></html>')).toBe(true);
+  });
+
+  it('runAutoReminderJob builds its email with the shared builder and nothing else', () => {
+    const start = serverSrc.indexOf('async function runAutoReminderJob(');
+    const job = serverSrc.slice(start, serverSrc.indexOf('\nsetTimeout(', start));
+    expect(start).toBeGreaterThan(-1);
+    expect(job).toContain('const { subject, html: htmlWithBanner } = buildApprovalReminderEmail(workflow, baseHtml);');
+    expect(job).toContain('sendEmail(approverEmail, subject, htmlWithBanner, attachments)');
+    expect(job).not.toMatch(/<strong>\$\{workflow\.documentId\}/);
+    expect(job).not.toMatch(/const subject = `/);
   });
 });

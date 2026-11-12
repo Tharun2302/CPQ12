@@ -233,6 +233,19 @@ describe('server.cjs wiring', () => {
     }
   });
 
+  it.each(ROUTES)('%s is rate limited before its handler runs', (routePath) => {
+    expect(route(routePath)).toMatch(/^\napp\.post\('[^']+', approvalEmailLimiter, async \(req, res\) => \{/);
+  });
+
+  it('the approval-email limiter is a real per-minute cap that normal use cannot reach', () => {
+    const src = between('const approvalEmailLimiter = rateLimit({', '});');
+    const windowMs = Number(/windowMs:\s*([\d\s*]+),/.exec(src)?.[1].split('*').reduce((a, b) => a * Number(b), 1));
+    const max = Number(/max:\s*(\d+),/.exec(src)?.[1]);
+    expect(windowMs).toBe(60000);
+    expect(max).toBeGreaterThanOrEqual(10);
+    expect(max).toBeLessThanOrEqual(30);
+  });
+
   it.each(ROUTES)('%s never looks a document up by an id from the request', (routePath) => {
     const src = route(routePath);
     expect(src).not.toMatch(/collection\('documents'\)/);

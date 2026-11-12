@@ -6642,9 +6642,18 @@ app.post('/api/email/check-suppression', async (req, res) => {
   }
 });
 
+// An approver sends each of these once; the cap stops a link holder re-sending them in a loop.
+const approvalEmailLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many approval emails. Try again in a minute.' },
+});
+
 // API endpoint for sending approval workflow emails
 // Sequential email sending - Manager only
-app.post('/api/send-manager-email', async (req, res) => {
+app.post('/api/send-manager-email', approvalEmailLimiter, async (req, res) => {
   try {
     if (!isEmailConfigured) {
       return res.status(500).json({
@@ -6707,7 +6716,7 @@ app.post('/api/send-manager-email', async (req, res) => {
 });
 
 // Sequential email sending - Team Approval (first step)
-app.post('/api/send-team-email', async (req, res) => {
+app.post('/api/send-team-email', approvalEmailLimiter, async (req, res) => {
   try {
     if (!isEmailConfigured) {
       return res.status(500).json({
@@ -6771,7 +6780,7 @@ app.post('/api/send-team-email', async (req, res) => {
 });
 
 // Sequential email sending - CEO only (after Manager approves)
-app.post('/api/send-ceo-email', async (req, res) => {
+app.post('/api/send-ceo-email', approvalEmailLimiter, async (req, res) => {
   try {
     if (!isEmailConfigured) {
       return res.status(500).json({
@@ -6837,7 +6846,7 @@ app.post('/api/send-ceo-email', async (req, res) => {
 // IMPORTANT: This endpoint is designed to respond quickly and not block
 // the approval UI on SendGrid latency. It mirrors the fire-and-forget
 // pattern used for Manager/CEO emails above.
-app.post('/api/send-client-email', async (req, res) => {
+app.post('/api/send-client-email', approvalEmailLimiter, async (req, res) => {
   try {
     if (!isEmailConfigured) {
       return res.status(500).json({
@@ -6890,7 +6899,7 @@ app.post('/api/send-client-email', async (req, res) => {
 
 // Send Deal Desk notification email (after client approval)
 // Also notifies the workflow creator (approval initiator) when available
-app.post('/api/send-deal-desk-email', async (req, res) => {
+app.post('/api/send-deal-desk-email', approvalEmailLimiter, async (req, res) => {
   try {
     if (!isEmailConfigured) {
       return res.status(500).json({
@@ -6958,7 +6967,7 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
 });
 
 // Legacy endpoint - kept for backward compatibility
-app.post('/api/send-approval-emails', async (req, res) => {
+app.post('/api/send-approval-emails', approvalEmailLimiter, async (req, res) => {
   try {
     if (!isEmailConfigured) {
       return res.status(500).json({
@@ -12315,6 +12324,17 @@ function sanitizeEmailSubject(subject) {
   return String(subject || '').replace(/[\r\n]+/g, ' ').trim();
 }
 
+// A reminder is the approver's own email with a banner on top; the stored document id is shown as text
+function buildApprovalReminderEmail(workflow, baseHtml) {
+  const banner = `<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 18px;font-family:Arial,sans-serif;font-size:14px;color:#92400e;line-height:1.5">
+          ⏰ <strong>Reminder:</strong> Your approval for <strong>${escapeHtml(workflow.documentId)}</strong> is still pending. Please review and take action at your earliest convenience.
+        </div>`;
+  return {
+    subject: sanitizeEmailSubject(`Reminder: Approval Pending — ${workflow.documentId} (${workflow.clientName})`),
+    html: String(baseHtml).replace(/<body([^>]*)>/, (match, attrs) => `<body${attrs}>${banner}`),
+  };
+}
+
 async function loadDocumentPdfAttachment(documentId) {
   if (!documentId) return [];
   try {
@@ -13380,10 +13400,7 @@ async function runAutoReminderJob() {
           </body></html>`;
         }
 
-        const reminderBanner = `<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 18px;font-family:Arial,sans-serif;font-size:14px;color:#92400e;line-height:1.5">
-          ⏰ <strong>Reminder:</strong> Your approval for <strong>${workflow.documentId}</strong> is still pending. Please review and take action at your earliest convenience.
-        </div>`;
-        const htmlWithBanner = baseHtml.replace(/<body([^>]*)>/, `<body$1>${reminderBanner}`);
+        const { subject, html: htmlWithBanner } = buildApprovalReminderEmail(workflow, baseHtml);
 
         // Update lastReminderSentAt before sending
         const reminderTimestamp = new Date().toISOString();
@@ -13392,7 +13409,6 @@ async function runAutoReminderJob() {
           { $set: { lastReminderSentAt: reminderTimestamp, updatedAt: reminderTimestamp } }
         );
 
-        const subject = `Reminder: Approval Pending — ${workflow.documentId} (${workflow.clientName})`;
         sendEmail(approverEmail, subject, htmlWithBanner, attachments)
           .then(r  => console.log(`⏰ Auto-reminder sent to ${approverEmail} [${role}] for workflow ${workflow.id}: ${r.success}`))
           .catch(e => console.error(`❌ Auto-reminder email error [${role}]:`, e));
