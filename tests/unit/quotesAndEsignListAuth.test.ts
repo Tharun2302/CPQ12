@@ -211,7 +211,7 @@ describe('GET /api/quotes at runtime', () => {
 
   const PUBLIC_PAGES = [
     '/', '/signin', '/signup', '/sign/doc-1', '/esign-inbox', '/approval/wf-1',
-    '/team-lead-approval', '/technical-approval', '/legal-approval', '/team-approval', '/client-notification',
+    '/team-lead-approval', '/technical-approval', '/legal-approval', '/team-approval',
   ];
 
   it.each(PUBLIC_PAGES)('signed out on %s makes no quotes call', async (route) => {

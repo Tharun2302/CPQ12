@@ -299,13 +299,6 @@ This is an automated message from your approval system.
     
     return `${baseUrl}/${rolePath}?workflow=${workflowId}`;
   }
-
-  // Generate client notification link
-  generateClientLink(workflowId: string): string {
-    // Use window.location.origin for browser compatibility
-    const baseUrl = window.location.origin;
-    return `${baseUrl}/client-notification?workflow=${workflowId}`;
-  }
 }
 
 export default EmailService;

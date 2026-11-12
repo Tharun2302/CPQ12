@@ -67,6 +67,22 @@ function mayManageApprovalWorkflow({ workflow, user, isAdmin }) {
   return !!creator && creator === normalizeEmail(user.email);
 }
 
+/**
+ * What PUT /api/approval-workflows/:id may change, after the caller passed mayManageApprovalWorkflow.
+ * Nobody sets "approved" here: approval is only recorded step by step. A requester may only cancel
+ * (status "denied"); approvers, steps and progress need an approval admin.
+ */
+function checkWorkflowUpdate({ updates, isAdmin }) {
+  const keys = Object.keys(updates || {});
+  if (updates && updates.status === 'approved') {
+    return { ok: false, httpStatus: 400, code: 'APPROVE_VIA_STEPS', error: 'A workflow is approved only by its approvers, one step at a time.' };
+  }
+  if (isAdmin === true) return { ok: true };
+  const onlyCancel = keys.length > 0 && keys.every((k) => k === 'status') && updates.status === 'denied';
+  if (keys.length === 0 || onlyCancel) return { ok: true };
+  return { ok: false, httpStatus: 403, code: 'ADMIN_ONLY_CHANGE', error: 'You can cancel your request. Changing approvers or progress needs an approval admin.' };
+}
+
 // Mutates the returned objects so the response matches what updateMany just wrote.
 async function settleCompletedWorkflows(db, workflows) {
   const completed = workflows.filter((w) => w.id
@@ -122,5 +138,6 @@ module.exports = {
   verifyApprovalPortalToken,
   isWorkflowVisibleToUser,
   mayManageApprovalWorkflow,
+  checkWorkflowUpdate,
   listApprovalWorkflowsForCaller,
 };

@@ -97,7 +97,6 @@ export const API_ENDPOINTS = {
   EMAIL_SEND: '/api/email/send',
   SEND_MANAGER_EMAIL: '/api/send-manager-email',
   SEND_CEO_EMAIL: '/api/send-ceo-email',
-  SEND_CLIENT_EMAIL: '/api/send-client-email',
   
   // Convert
   CONVERT_DOCX_TO_PDF: '/api/convert/docx-to-pdf',

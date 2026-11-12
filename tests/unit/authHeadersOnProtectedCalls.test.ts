@@ -45,6 +45,10 @@ const SITES: Site[] = [
   { label: 'GET /api/chat/analytics', file: 'src/components/Analytics.tsx', opening: /fetch\(`\$\{API_URL\}\/chat\/analytics/ },
   { label: 'GET /api/chat/logs', file: 'src/components/Analytics.tsx', opening: /fetch\(`\$\{API_URL\}\/chat\/logs/ },
   { label: 'POST /api/documents/upload', file: 'src/components/MigrationMonitoringDashboard.tsx', opening: /fetch\(`\$\{BACKEND_URL\}\/api\/documents\/upload`/, formData: true },
+  { label: 'PUT /api/approval-workflows/:id', file: 'src/services/approvalWorkflowServiceMongoDB.ts', opening: /fetch\(`\$\{this\.baseUrl\}\/approval-workflows\/\$\{encodeURIComponent\(workflowId\)\}`,\s*\{\s*method: 'PUT'/ },
+  { label: 'POST /api/esign/documents/from-approval (ApprovalDashboard)', file: 'src/components/ApprovalDashboard.tsx', opening: /fetch\(`\$\{BACKEND_URL\}\/api\/esign\/documents\/from-approval`/ },
+  { label: 'POST /api/esign/documents/from-approval (QuoteGenerator)', file: 'src/components/QuoteGenerator.tsx', opening: /fetch\(`\$\{BACKEND_URL\}\/api\/esign\/documents\/from-approval`/ },
+  { label: 'POST /api/esign/signature-fields', file: 'src/pages/EsignPlaceFieldsPage.tsx', opening: /fetch\(`\$\{BACKEND_URL\}\/api\/esign\/signature-fields`,\s*\{\s*method: 'POST'/ },
   { label: 'DELETE /api/documents/:id (migration)', file: 'src/components/MigrationMonitoringDashboard.tsx', opening: /fetch\(`\$\{BACKEND_URL\}\/api\/documents\/\$\{mongoId\}`,\s*\{\s*method: 'DELETE'/ },
 ];
 

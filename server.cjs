@@ -23,7 +23,7 @@ const {
 const technicalApproverGuard = require('./technical-approver-guard.cjs');
 const microsoftLogin = require('./microsoft-login.cjs');
 const jwtSecretCheck = require('./jwt-secret.cjs');
-const { verifyApprovalPortalToken, listApprovalWorkflowsForCaller, mayManageApprovalWorkflow } = require('./approval-workflow-access.cjs');
+const { verifyApprovalPortalToken, listApprovalWorkflowsForCaller, mayManageApprovalWorkflow, checkWorkflowUpdate } = require('./approval-workflow-access.cjs');
 const {
   DISCOUNT_POLICY_SETTINGS_ID,
   INVALID_MAX_DISCOUNT_ERROR,
@@ -1107,60 +1107,6 @@ function generateLegalTeamEmailHTML(workflowData, token) {
           </div>
           
           <p><strong>Note:</strong> This approval link is secure and will expire in 7 days.</p>
-        </div>
-        
-        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
-          <p>This is an automated message from your approval system.</p>
-          ${cloudFuzeEmailFooterHTML()}
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
-}
-
-function generateClientEmailHTML(workflowData) {
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <title>Document Submitted for Approval</title>
-    </head>
-    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background: linear-gradient(135deg, #10B981, #059669); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-          <h1>📋 Document Submitted for Approval</h1>
-        </div>
-        
-        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
-          <h2>Hello ${workflowData.clientName},</h2>
-          
-          <p>Your document has been submitted for approval:</p>
-          
-          <div style="background: #F0FDF4; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #BBF7D0;">
-            <h3>📄 Document Details</h3>
-            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
-            <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
-            <p><strong>Status:</strong> Pending Approval</p>
-            <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
-          </div>
-          
-          <p>Our team will review your document and get back to you soon.</p>
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${workflowData.workflowId}" 
-               style="background: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
-              Review & Approve Document
-            </a>
-          </div>
-          
-          <div style="background: #FEF3C7; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #F59E0B;">
-            <p style="margin: 0; color: #92400E; font-weight: bold;">📋 Action Required</p>
-            <p style="margin: 5px 0 0 0; color: #92400E; font-size: 14px;">
-              Please review the document details and approve or deny this request. Your decision is required to complete the approval process.
-            </p>
-          </div>
         </div>
         
         <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
@@ -6779,94 +6725,6 @@ app.post('/api/send-ceo-email', async (req, res) => {
   }
 });
 
-// Sequential email sending - Client only (after CEO approves)
-// IMPORTANT: This endpoint is designed to respond quickly and not block
-// the approval UI on SendGrid latency. It mirrors the fire-and-forget
-// pattern used for Manager/CEO emails above.
-app.post('/api/send-client-email', async (req, res) => {
-  try {
-    if (!isEmailConfigured) {
-      return res.status(500).json({
-        success: false,
-        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
-      });
-    }
-
-    const { clientEmail, workflowData } = req.body;
-    
-    console.log('📧 Queuing email to Client (after Legal Team approval)...');
-    console.log('Client:', clientEmail);
-    console.log('Workflow Data:', workflowData);
-
-    // Fetch document attachment
-    let attachments = [];
-    if (workflowData.documentId && db) {
-      try {
-        console.log('📄 Fetching document for attachment:', workflowData.documentId);
-        const documentsCollection = db.collection('documents');
-        const document = await documentsCollection.findOne({ id: workflowData.documentId });
-        
-        if (document && document.fileData) {
-          // Convert document data to attachment
-          let fileBuffer;
-          if (Buffer.isBuffer(document.fileData)) {
-            fileBuffer = document.fileData;
-          } else if (document.fileData.buffer) {
-            fileBuffer = Buffer.from(document.fileData.buffer);
-          } else if (document.fileData.data) {
-            fileBuffer = Buffer.from(document.fileData.data);
-          }
-          
-          if (fileBuffer) {
-            attachments.push({
-              filename: document.fileName || `${workflowData.documentId}.pdf`,
-              content: fileBuffer,
-              contentType: 'application/pdf'
-            });
-            console.log('✅ Document attachment prepared:', document.fileName);
-          }
-        } else {
-          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
-        }
-      } catch (docError) {
-        console.error('❌ Error fetching document for attachment:', docError);
-        // Continue without attachment rather than failing
-      }
-    }
-
-    // Send email to Client only with attachment (fire-and-forget)
-    const sendStartedAt = Date.now();
-    sendEmail(
-      clientEmail,
-      `Document Submitted for Approval: ${workflowData.documentId}`,
-      generateClientEmailHTML(workflowData),
-      attachments
-    )
-      .then(result => {
-        console.log(`✅ Client email async result: ${result.success} (${Date.now() - sendStartedAt}ms)`);
-      })
-      .catch(err => {
-        console.error('❌ Client email async error:', err);
-      });
-
-    // Immediately respond so the frontend is not blocked by SendGrid latency
-    res.json({
-      success: true,
-      message: 'Client email queued for sending',
-      result: { role: 'Client', email: clientEmail, success: true },
-      workflowData: workflowData,
-      attachmentCount: attachments.length
-    });
-
-  } catch (error) {
-    console.error('❌ Error queuing Client email:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
 // Send Deal Desk notification email (after client approval)
 // Also notifies the workflow creator (approval initiator) when available
 app.post('/api/send-deal-desk-email', async (req, res) => {
@@ -6984,86 +6842,6 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error sending Deal Desk email:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-// Legacy endpoint - kept for backward compatibility
-app.post('/api/send-approval-emails', async (req, res) => {
-  try {
-    if (!isEmailConfigured) {
-      return res.status(500).json({
-        success: false,
-        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
-      });
-    }
-
-    const { managerEmail, ceoEmail, clientEmail, workflowData } = req.body;
-    
-    console.log('📧 Sending approval workflow emails (legacy - all at once)...');
-    console.log('Manager:', managerEmail);
-    console.log('CEO:', ceoEmail);
-    console.log('Client:', clientEmail);
-    console.log('Workflow Data:', workflowData);
-
-    const results = [];
-
-    // Send email to Manager
-    try {
-      const managerResult = await sendEmail(
-        managerEmail,
-        `CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
-        generateTechnicalTeamEmailHTML(workflowData)
-      );
-      results.push({ role: 'Manager', email: managerEmail, success: managerResult.success });
-    } catch (error) {
-      console.error('❌ Manager email failed:', error);
-      results.push({ role: 'Manager', email: managerEmail, success: false, error: error.message });
-    }
-
-    // Send email to CEO
-    try {
-      const ceoResult = await sendEmail(
-        ceoEmail,
-        `CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
-        generateLegalTeamEmailHTML(workflowData)
-      );
-      results.push({ role: 'CEO', email: ceoEmail, success: ceoResult.success });
-    } catch (error) {
-      console.error('❌ CEO email failed:', error);
-      results.push({ role: 'CEO', email: ceoEmail, success: false, error: error.message });
-    }
-
-    // Send email to Client
-    try {
-      const clientResult = await sendEmail(
-        clientEmail,
-        `Document Submitted for Approval: ${workflowData.documentId}`,
-        generateClientEmailHTML(workflowData)
-      );
-      results.push({ role: 'Client', email: clientEmail, success: clientResult.success });
-    } catch (error) {
-      console.error('❌ Client email failed:', error);
-      results.push({ role: 'Client', email: clientEmail, success: false, error: error.message });
-    }
-
-    const successCount = results.filter(r => r.success).length;
-    const totalCount = results.length;
-
-    console.log(`✅ Approval emails sent: ${successCount}/${totalCount}`);
-
-    res.json({
-      success: successCount > 0,
-      message: `Approval emails sent: ${successCount}/${totalCount}`,
-      results: results,
-      workflowData: workflowData
-    });
-
-  } catch (error) {
-    console.error('❌ Error sending approval emails:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -7614,14 +7392,20 @@ async function getEsignDocumentForRecipient(recipient) {
 }
 
 // POST /api/esign/documents/upload - Upload document to disk (converts DOCX to PDF), save metadata
-app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), async (req, res) => {
+// Login is checked before multer runs, so an anonymous caller can't even write a file to disk.
+app.post('/api/esign/documents/upload', async (req, res, next) => {
+  const user = await getAuthenticatedUser(req, res);
+  if (!user) return;
+  req.authUser = user;
+  next();
+}, esignDocumentUpload.single('file'), async (req, res) => {
   let filePath = null;
   let dbInserted = false;
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
     if (!req.file) return res.status(400).json({ success: false, error: 'No file provided' });
 
-    const uploadedBy = req.body.uploaded_by || 'anonymous';
+    const uploadedBy = req.authUser.email;
     let fileName = req.file.originalname;
     const originalFilePath = path.join(documentsDir, req.file.filename);
     const fileExt = path.extname(fileName).toLowerCase();
@@ -7749,14 +7533,25 @@ app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), asyn
 app.post('/api/esign/documents/from-approval', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const {
-      documentId,
-      uploaded_by: uploadedBy,
-      workflowId,
-      requested_by_name: requestedByNameBody,
-      requested_by_email: requestedByEmailBody,
-    } = req.body || {};
-    if (!documentId) return res.status(400).json({ success: false, error: 'documentId is required' });
+    const user = await getAuthenticatedUser(req, res);
+    if (!user) return;
+    const { documentId, workflowId, requested_by_name: requestedByNameBody } = req.body || {};
+    if (!documentId || typeof documentId !== 'string') return res.status(400).json({ success: false, error: 'documentId is required' });
+
+    const linkId = typeof workflowId === 'string' ? workflowId.trim() : '';
+    let workflow = null;
+    if (linkId) {
+      const isAdmin = await hasApprovalAdminAccess(user);
+      workflow = await db.collection('approval_workflows').findOne({ id: linkId });
+      if (!mayManageApprovalWorkflow({ workflow, user, isAdmin })) {
+        logger.warn('E-sign from approval refused', { source: 'esign-from-approval', workflowId: linkId, userId: user.id });
+        return res.status(403).json({ success: false, error: 'Only the person who requested this approval or an approval admin can send it for e-sign' });
+      }
+      if (!workflow) return res.status(404).json({ success: false, error: 'Workflow not found' });
+      if (workflow.documentId !== documentId) {
+        return res.status(400).json({ success: false, error: 'This approval is for a different document' });
+      }
+    }
 
     const document = await db.collection('documents').findOne({ id: documentId });
     if (!document) return res.status(404).json({ success: false, error: 'Approval document not found' });
@@ -7778,22 +7573,18 @@ app.post('/api/esign/documents/from-approval', async (req, res) => {
     const filePath = path.join(documentsDir, diskFileName);
     fs.writeFileSync(filePath, fileBuffer);
 
-    const requestedByName =
-      typeof requestedByNameBody === 'string' && requestedByNameBody.trim()
-        ? requestedByNameBody.trim()
-        : null;
-    const requestedByEmail =
-      typeof requestedByEmailBody === 'string' && requestedByEmailBody.trim()
-        ? requestedByEmailBody.trim()
-        : uploadedBy && uploadedBy !== 'approval-workflow'
-          ? String(uploadedBy).trim()
-          : null;
+    // Creator comes from the login, or the approval's requester when an admin acts for them; never from the body.
+    const requestedByEmail = String((workflow && (workflow.creatorEmail || workflow.createdBy)) || user.email || '').trim() || null;
+    const requestedByName = (workflow && workflow.creatorName)
+      || (requestedByEmail === user.email && user.name)
+      || (typeof requestedByNameBody === 'string' && requestedByNameBody.trim().slice(0, 200))
+      || null;
 
     const doc = {
       file_name: fileName,
       file_path: filePath,
       file_data: fileBuffer.toString('base64'),
-      uploaded_by: uploadedBy || 'approval-workflow',
+      uploaded_by: requestedByEmail || 'approval-workflow',
       upload_source: 'approval',
       source_document_id: documentId,
       requested_by_name: requestedByName,
@@ -7813,14 +7604,14 @@ app.post('/api/esign/documents/from-approval', async (req, res) => {
 
     await logAudit(esignId, 'uploaded', doc.uploaded_by, req.ip || req.connection?.remoteAddress);
 
-    if (workflowId && typeof workflowId === 'string' && workflowId.trim()) {
+    if (workflow) {
       try {
         await db.collection('approval_workflows').updateOne(
-          { id: workflowId.trim() },
+          { id: workflow.id },
           { $set: { esignDocumentId: esignId, updatedAt: new Date().toISOString() } }
         );
       } catch (linkErr) {
-        console.warn('E-sign from-approval: could not link esign doc to workflow', workflowId, linkErr);
+        logger.warn('E-sign from-approval: could not link esign doc to workflow', { source: 'esign-from-approval', workflowId: workflow.id, error: linkErr.message });
       }
     }
 
@@ -8164,11 +7955,17 @@ app.post('/api/esign/documents/bulk-download', async (req, res) => {
 app.post('/api/esign/documents/:id/send', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const docId = new ObjectId(req.params.id);
+    const user = await getAuthenticatedUser(req, res);
+    if (!user) return;
+    let docId;
+    try { docId = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
     const { signer_email } = req.body || {};
 
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (!callerMaySeeRecipientTokens({ doc, user, isApprovalAdmin: await hasApprovalAdminAccess(user) })) {
+      return res.status(403).json({ success: false, error: 'Only the document creator or an approval admin can send it' });
+    }
 
     const signingUrl = `${process.env.APP_BASE_URL || 'http://localhost:5173'}/sign/${docId}`;
 
@@ -8177,7 +7974,7 @@ app.post('/api/esign/documents/:id/send', async (req, res) => {
       { $set: { status: 'sent', sent_at: new Date(), signer_email: signer_email || null } }
     );
 
-    await logAudit(docId, 'sent', req.body.uploaded_by || 'system', req.ip || req.connection?.remoteAddress);
+    await logAudit(docId, 'sent', user.email, req.ip || req.connection?.remoteAddress);
 
     res.json({
       success: true,
@@ -8872,8 +8669,18 @@ async function advanceEsignSequentialSigning(docId, actorEmail) {
 app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const user = await getAuthenticatedUser(req, res);
+    if (!user) return;
+    let docId;
+    try { docId = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (!callerMaySeeRecipientTokens({ doc, user, isApprovalAdmin: await hasApprovalAdminAccess(user) })) {
+      logger.warn('E-sign send refused', { source: 'esign-send', documentId: docId.toString(), userId: user.id });
+      return res.status(403).json({ success: false, error: 'Only the document creator or an approval admin can send it for signature' });
+    }
     const result = await sendDocumentForSignatureInternal(req.params.id, {
-      uploadedBy: req.body.uploaded_by || 'system',
+      uploadedBy: user.email,
       ...(Object.prototype.hasOwnProperty.call(req.body || {}, 'signing_order_enforced')
         ? { signingOrderEnforced: req.body.signing_order_enforced === true }
         : {}),
@@ -10434,13 +10241,19 @@ app.post('/api/esign/deny-signing', async (req, res) => {
 app.post('/api/esign/signature-fields', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const { document_id, fields } = req.body;
+    const user = await getAuthenticatedUser(req, res);
+    if (!user) return;
+    const { document_id, fields } = req.body || {};
     if (!document_id || !Array.isArray(fields)) {
       return res.status(400).json({ success: false, error: 'document_id and fields array required' });
     }
-    const docId = new ObjectId(document_id);
+    let docId;
+    try { docId = new ObjectId(document_id); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
     const existing = await db.collection('esign_documents').findOne({ _id: docId });
     if (!existing) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (!callerMaySeeRecipientTokens({ doc: existing, user, isApprovalAdmin: await hasApprovalAdminAccess(user) })) {
+      return res.status(403).json({ success: false, error: 'Only the document creator or an approval admin can change signature fields' });
+    }
 
     await db.collection('signature_fields').deleteMany(signatureFieldsDocumentFilter(docId));
     const toInsert = fields.map((f) => {
@@ -10555,36 +10368,6 @@ app.post('/api/esign/signatures/clear-stored', async (req, res) => {
   } catch (error) {
     console.error('❌ E-sign clear-stored error:', error?.message || error);
     return res.status(500).json({ success: false, error: 'Failed to clear stored signatures' });
-  }
-});
-
-// POST /api/esign/signatures/save - Save signature image and link to document
-app.post('/api/esign/signatures/save', async (req, res) => {
-  try {
-    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const { document_id, field_id, signature_data, signer_email } = req.body;
-    if (!document_id || !signature_data) return res.status(400).json({ success: false, error: 'document_id and signature_data required' });
-
-    const docId = new ObjectId(document_id);
-    const doc = await db.collection('esign_documents').findOne({ _id: docId });
-    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
-
-    const buf = Buffer.from(signature_data.replace(/^data:image\/\w+;base64,/, ''), 'base64');
-    const sigFilename = `sig-${Date.now()}-${Math.random().toString(36).slice(2)}.png`;
-    const sigPath = path.join(signaturesDir, sigFilename);
-    fs.writeFileSync(sigPath, buf);
-
-    await db.collection('esign_documents').updateOne(
-      { _id: docId },
-      { $set: { signature_path: sigPath, signer_email: signer_email || null, signed_at: new Date() } }
-    );
-
-    await logAudit(docId, 'signed', signer_email, req.ip || req.connection?.remoteAddress);
-
-    res.json({ success: true, signature_path: sigPath });
-  } catch (error) {
-    console.error('❌ E-sign save signature error:', error);
-    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -12085,10 +11868,26 @@ app.put('/api/approval-workflows/:id', async (req, res) => {
       });
     }
 
-    const { id } = req.params;
+    const user = await getAuthenticatedUser(req, res);
+    if (!user) return;
+    const isAdmin = await hasApprovalAdminAccess(user);
+    const id = String(req.params.id);
+    const current = await db.collection('approval_workflows').findOne({ id }, { projection: { id: 1, creatorEmail: 1, createdBy: 1 } });
+    // Non-admins get the same 403 for a missing workflow, so the route can't be used to probe IDs.
+    if (!mayManageApprovalWorkflow({ workflow: current, user, isAdmin })) {
+      logger.warn('Workflow update refused', { source: 'workflow-update', workflowId: id, userId: user.id });
+      return res.status(403).json({ success: false, error: 'Only the person who requested this approval or an approval admin can change it' });
+    }
+    if (!current) return res.status(404).json({ success: false, error: 'Workflow not found' });
+
     const { updates: unlocked, stripped } = stripLockedWorkflowFields(req.body);
     if (stripped.length) {
-      console.warn('⛔ Ignored locked fields on workflow update:', JSON.stringify(id), stripped);
+      logger.warn('Ignored locked fields on workflow update', { source: 'workflow-update', workflowId: id, stripped });
+    }
+    const allowed = checkWorkflowUpdate({ updates: unlocked, isAdmin });
+    if (!allowed.ok) {
+      logger.warn('Workflow update blocked', { source: 'workflow-update', workflowId: id, userId: user.id, code: allowed.code });
+      return res.status(allowed.httpStatus).json({ success: false, code: allowed.code, error: allowed.error });
     }
 
     // The Technical step is decided only on the signed-in step route; this route keeps it as stored.
@@ -12125,9 +11924,7 @@ app.put('/api/approval-workflows/:id', async (req, res) => {
       updates.discountPercent = discountCheck.value;
     }
 
-    console.log('📝 Updating approval workflow:', id, updates);
-    
-    // Add updatedAt timestamp
+    logger.info('Approval workflow updated', { source: 'workflow-update', workflowId: id, userId: user.id, fields: Object.keys(updates) });
     updates.updatedAt = new Date().toISOString();
     
     const result = await db.collection('approval_workflows').updateOne(
@@ -12145,17 +11942,15 @@ app.put('/api/approval-workflows/:id', async (req, res) => {
       });
     }
 
-    console.log('✅ Approval workflow updated');
     res.json({
       success: true,
       message: 'Workflow updated successfully'
     });
-    
   } catch (error) {
-    console.error('❌ Error updating approval workflow:', error);
+    logger.error('Approval workflow update failed', { source: 'workflow-update', error: error.message });
     res.status(500).json({
       success: false,
-      error: error.message
+      error: 'Could not update the workflow'
     });
   }
 });

@@ -45,6 +45,12 @@ const LOCKED: Array<{ method: string; path: string; helper: Helper }> = [
   { method: 'post', path: '/api/esign/documents/:id/void', helper: 'getAuthenticatedUser' },
   { method: 'post', path: '/api/esign/documents/:id/remind', helper: 'getAuthenticatedUser' },
   { method: 'post', path: '/api/esign/documents/:id/extend-expiry', helper: 'getAuthenticatedUser' },
+  { method: 'put', path: '/api/approval-workflows/:id', helper: 'getAuthenticatedUser' },
+  { method: 'post', path: '/api/esign/documents/upload', helper: 'getAuthenticatedUser' },
+  { method: 'post', path: '/api/esign/documents/from-approval', helper: 'getAuthenticatedUser' },
+  { method: 'post', path: '/api/esign/documents/:id/send', helper: 'getAuthenticatedUser' },
+  { method: 'post', path: '/api/esign/documents/:id/send-for-signature', helper: 'getAuthenticatedUser' },
+  { method: 'post', path: '/api/esign/signature-fields', helper: 'getAuthenticatedUser' },
 
   { method: 'get', path: '/api/auth/daily-logins', helper: 'getApprovalAdminUser' },
   { method: 'get', path: '/api/chat/logs', helper: 'getApprovalAdminUser' },
@@ -134,9 +140,7 @@ describe('routes that must stay open are unchanged', () => {
     ['post', '/api/send-manager-email'],
     ['post', '/api/send-team-email'],
     ['post', '/api/send-ceo-email'],
-    ['post', '/api/send-client-email'],
     ['post', '/api/send-deal-desk-email'],
-    ['post', '/api/send-approval-emails'],
     ['get', '/api/esign/documents/:id/recipients'],
     // Signers download right after signing from their email link, with no login
     ['get', '/api/esign/documents/:id/file'],

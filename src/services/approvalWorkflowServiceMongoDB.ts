@@ -121,10 +121,11 @@ class ApprovalWorkflowServiceMongoDB {
     try {
       console.log('📝 Updating workflow in MongoDB:', workflowId, updates);
 
-      const response = await fetch(`${this.baseUrl}/approval-workflows/${workflowId}`, {
+      const response = await fetch(`${this.baseUrl}/approval-workflows/${encodeURIComponent(workflowId)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          ...getAuthHeaders(),
         },
         body: JSON.stringify(updates)
       });

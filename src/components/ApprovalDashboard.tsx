@@ -458,7 +458,7 @@ const ApprovalDashboard: React.FC = () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/from-approval`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           documentId: workflow.documentId,
           uploaded_by: workflow.creatorEmail || 'approval-workflow',

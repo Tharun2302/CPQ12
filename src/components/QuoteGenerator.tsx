@@ -3690,7 +3690,7 @@ Total Price: {{total price}}`;
 
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/from-approval`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           documentId,
           uploaded_by: creatorEmail,

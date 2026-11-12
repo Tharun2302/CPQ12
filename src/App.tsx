@@ -24,8 +24,6 @@ const TechnicalTeamApprovalDashboard = lazy(() => import('./components/Technical
 const LegalTeamApprovalDashboard = lazy(() => import('./components/LegalTeamApprovalDashboard'));
 const TeamApprovalDashboard = lazy(() => import('./components/TeamApprovalDashboard'));
 const ApprovalPortalGate = lazy(() => import('./components/ApprovalPortalGate'));
-const ClientNotification = lazy(() => import('./components/ClientNotification'));
-const InfrateamDashboard = lazy(() => import('./components/InfrateamDashboard'));
 const EsignLayout = lazy(() => import('./components/EsignLayout'));
 const EsignDocumentsPage = lazy(() => import('./pages/EsignDocumentsPage'));
 const EsignPlaceFieldsPage = lazy(() => import('./pages/EsignPlaceFieldsPage'));
@@ -2091,16 +2089,6 @@ function App() {
               } />
               <Route path="/team-approval" element={
                 <TeamApprovalDashboard />
-              } />
-              <Route path="/client-notification" element={
-                <ClientNotification />
-              } />
-              <Route path="/infrateam" element={
-                <ProtectedRoute>
-                  <InfrateamDashboard 
-                    teamEmail="infrateam@cloudfuze.com"
-                  />
-                </ProtectedRoute>
               } />
              {/* Main app tabs without /dashboard prefix */}
              <Route

@@ -336,7 +336,6 @@ describe('public signer and approver pages never read token fields from the reci
     'src/components/TeamApprovalDashboard.tsx',
     'src/components/TechnicalTeamApprovalDashboard.tsx',
     'src/components/LegalTeamApprovalDashboard.tsx',
-    'src/components/ClientNotification.tsx',
     'src/pages/EsignSignedPage.tsx',
   ])('%s does not use signing_token or token_expires_at', (rel) => {
     if (!fs.existsSync(path.resolve(process.cwd(), rel))) return;
