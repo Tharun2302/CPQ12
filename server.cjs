@@ -23,7 +23,7 @@ const {
 const technicalApproverGuard = require('./technical-approver-guard.cjs');
 const microsoftLogin = require('./microsoft-login.cjs');
 const jwtSecretCheck = require('./jwt-secret.cjs');
-const { verifyApprovalPortalToken, listApprovalWorkflowsForCaller, mayManageApprovalWorkflow, checkWorkflowUpdate } = require('./approval-workflow-access.cjs');
+const { verifyApprovalPortalToken, listApprovalWorkflowsForCaller, mayManageApprovalWorkflow, checkWorkflowUpdate, pendingNewWorkflowSteps } = require('./approval-workflow-access.cjs');
 const {
   DISCOUNT_POLICY_SETTINGS_ID,
   INVALID_MAX_DISCOUNT_ERROR,
@@ -11590,11 +11590,30 @@ app.post('/api/approval-workflows', async (req, res) => {
       });
     }
 
+    const actor = await getAuthenticatedUser(req, res);
+    if (!actor) return;
+
     // Server-owned fields (id, status, redline history) are never taken from the body
     const { updates: workflowData } = stripLockedWorkflowFields(req.body, { allow: ['documentId'] });
-    // Only the signed-in step route decides the Technical step, so a new workflow cannot arrive with it approved.
+    // Steps are decided only through the step route, so a new workflow cannot arrive with any step approved.
+    if (Array.isArray(workflowData.workflowSteps)) {
+      workflowData.workflowSteps = pendingNewWorkflowSteps(workflowData.workflowSteps);
+    }
     if (technicalApproverGuard.isSigninEnforced(process.env) && Array.isArray(workflowData.workflowSteps)) {
       workflowData.workflowSteps = technicalApproverGuard.withPendingTechnicalStep(workflowData.workflowSteps);
+    }
+    if (workflowData.esignDocumentId !== undefined && workflowData.esignDocumentId !== null && workflowData.esignDocumentId !== '') {
+      let esignDoc = null;
+      try {
+        esignDoc = await db.collection('esign_documents').findOne({ _id: new ObjectId(String(workflowData.esignDocumentId)) });
+      } catch { /* invalid id: treated as not found below */ }
+      const isApprovalAdmin = await hasApprovalAdminAccess(actor);
+      // Otherwise anyone could attach someone else's agreement to a workflow and have it sent.
+      if (!callerMaySeeRecipientTokens({ doc: esignDoc, user: actor, isApprovalAdmin })) {
+        logger.warn('Workflow create refused: e-sign document not owned by caller', { source: 'workflow-create', userId: actor.id });
+        return res.status(403).json({ success: false, error: 'You can only attach an e-sign document that you created' });
+      }
+      workflowData.esignDocumentId = esignDoc ? esignDoc._id.toString() : workflowData.esignDocumentId;
     }
     if (hasNestedDiscountKey(workflowData, 'discountPercent')) {
       return res.status(400).json({ success: false, error: 'Invalid discount field', code: 'INVALID_DISCOUNT' });
@@ -11605,11 +11624,8 @@ app.post('/api/approval-workflows', async (req, res) => {
     if (Object.prototype.hasOwnProperty.call(workflowData, 'discountPercent')) {
       workflowData.discountPercent = discountCheck.value;
     }
-    // A verified login decides the requester; the body is only trusted when there is none
-    const actor = await getOptionalAuthenticatedUser(req);
-    const bodyCreator = typeof req.body?.creatorEmail === 'string' ? normalizeEmail(req.body.creatorEmail) : '';
-    const creatorEmail = actor?.email ? normalizeEmail(actor.email) : bodyCreator;
-    console.log('📋 Creating approval workflow:', workflowData);
+    // The verified login is always the requester; a creatorEmail in the body is ignored.
+    const creatorEmail = normalizeEmail(actor.email);
 
     // Generate unique ID
     const workflowId = `WF-${Date.now()}`;
@@ -11626,32 +11642,23 @@ app.post('/api/approval-workflows', async (req, res) => {
       updatedAt: new Date().toISOString()
     };
 
-    // Save to MongoDB
-    console.log('💾 Attempting to save workflow to database...');
-    console.log('💾 Database object:', !!db);
-    console.log('💾 Collection exists:', !!db?.collection);
-
     const result = await db.collection('approval_workflows').insertOne(workflow);
-    console.log('💾 Insert result:', result);
 
     if (result.insertedId) {
-      console.log('✅ Approval workflow created:', workflowId);
-
+      logger.info('Approval workflow created', { source: 'workflow-create', workflowId, userId: actor.id });
       res.json({
         success: true,
         workflowId: workflowId,
         workflow: workflow
       });
     } else {
-      console.log('❌ Failed to insert workflow - no insertedId');
       throw new Error('Failed to insert workflow');
     }
   } catch (error) {
-    console.error('❌ Error creating approval workflow:', error);
+    logger.error('Approval workflow create failed', { source: 'workflow-create', error: error.message });
     res.status(500).json({
       success: false,
-      error: 'Failed to create approval workflow',
-      details: error.message
+      error: 'Failed to create approval workflow'
     });
   }
 });

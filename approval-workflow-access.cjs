@@ -83,6 +83,20 @@ function checkWorkflowUpdate({ updates, isAdmin }) {
   return { ok: false, httpStatus: 403, code: 'ADMIN_ONLY_CHANGE', error: 'You can cancel your request. Changing approvers or progress needs an approval admin.' };
 }
 
+// Fields that record a decision; a brand-new workflow must not arrive with any of them.
+const STEP_DECISION_FIELDS = ['actedBy', 'timestamp', 'approvedAt', 'deniedAt', 'decidedAt', 'approvedBy', 'deniedBy'];
+
+/** Every step of a new workflow starts undecided, so nobody can create one that is already approved. */
+function pendingNewWorkflowSteps(steps) {
+  if (!Array.isArray(steps)) return steps;
+  return steps.map((step) => {
+    if (!step || typeof step !== 'object') return step;
+    const reset = { ...step, status: 'pending' };
+    STEP_DECISION_FIELDS.forEach((field) => delete reset[field]);
+    return reset;
+  });
+}
+
 // Mutates the returned objects so the response matches what updateMany just wrote.
 async function settleCompletedWorkflows(db, workflows) {
   const completed = workflows.filter((w) => w.id
@@ -139,5 +153,6 @@ module.exports = {
   isWorkflowVisibleToUser,
   mayManageApprovalWorkflow,
   checkWorkflowUpdate,
+  pendingNewWorkflowSteps,
   listApprovalWorkflowsForCaller,
 };

@@ -46,6 +46,7 @@ const LOCKED: Array<{ method: string; path: string; helper: Helper }> = [
   { method: 'post', path: '/api/esign/documents/:id/remind', helper: 'getAuthenticatedUser' },
   { method: 'post', path: '/api/esign/documents/:id/extend-expiry', helper: 'getAuthenticatedUser' },
   { method: 'put', path: '/api/approval-workflows/:id', helper: 'getAuthenticatedUser' },
+  { method: 'post', path: '/api/approval-workflows', helper: 'getAuthenticatedUser' },
   { method: 'post', path: '/api/esign/documents/upload', helper: 'getAuthenticatedUser' },
   { method: 'post', path: '/api/esign/documents/from-approval', helper: 'getAuthenticatedUser' },
   { method: 'post', path: '/api/esign/documents/:id/send', helper: 'getAuthenticatedUser' },
