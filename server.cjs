@@ -23,7 +23,7 @@ const {
 const technicalApproverGuard = require('./technical-approver-guard.cjs');
 const microsoftLogin = require('./microsoft-login.cjs');
 const jwtSecretCheck = require('./jwt-secret.cjs');
-const { verifyApprovalPortalToken, listApprovalWorkflowsForCaller } = require('./approval-workflow-access.cjs');
+const { verifyApprovalPortalToken, listApprovalWorkflowsForCaller, mayManageApprovalWorkflow } = require('./approval-workflow-access.cjs');
 const {
   DISCOUNT_POLICY_SETTINGS_ID,
   INVALID_MAX_DISCOUNT_ERROR,
@@ -184,7 +184,7 @@ const {
 } = require('./esign-progress-utils.cjs');
 
 const { loadEsignAccessLinks, filterEsignDocsForCaller } = require('./esign-list-access.cjs');
-const { recipientsForCaller } = require('./esign-recipient-access.cjs');
+const { recipientsForCaller, callerMaySeeRecipientTokens } = require('./esign-recipient-access.cjs');
 
 const {
   buildAgreementLink,
@@ -4134,79 +4134,15 @@ app.get('/api/documents/:id', async (req, res) => {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
 
-    const documentsCollection = db.collection('documents');
-    let document = await documentsCollection.findOne({ id: req.params.id });
+    // Holds the full PDF and Word file of a customer agreement, so only signed-in users may read it
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+    res.set('Cache-Control', 'no-store');
 
-    // Smart search fallback: if exact ID doesn't match, try to find by client/company
+    // Exact match only: the old client/company regex fallback let a crafted ID return someone else's agreement
+    const document = await db.collection('documents').findOne({ id: String(req.params.id) });
     if (!document) {
-      console.log('⚠️ Exact ID not found in direct fetch, attempting smart search...');
-      const id = req.params.id;
-      
-      // Extract client and company from ID pattern: Company_Client_Timestamp
-      const parts = id.split('_');
-      if (parts.length >= 2) {
-        // Search for documents where ID starts with the same company_client pattern
-        const idPattern = new RegExp(`^${parts[0]}_${parts[1]}_`, 'i');
-        const matchingDocs = await documentsCollection
-          .find({ id: { $regex: idPattern } })
-          .sort({ createdAt: -1 })
-          .limit(1)
-          .toArray();
-        
-        if (matchingDocs.length > 0) {
-          document = matchingDocs[0];
-          console.log(`✅ Found matching document: ${document.id} (searched for: ${id})`);
-        } else {
-          // Fallback: search by company and clientName fields
-          const companyPart = parts[0].replace(/[0-9]/g, '');
-          const clientPart = parts[1].replace(/[0-9]/g, '');
-          
-          if (companyPart && clientPart) {
-            const searchQuery = {
-              $and: [
-                { company: { $regex: companyPart, $options: 'i' } },
-                { clientName: { $regex: clientPart, $options: 'i' } }
-              ]
-            };
-            
-            const matchingDocs2 = await documentsCollection
-              .find(searchQuery)
-              .sort({ createdAt: -1 })
-              .limit(1)
-              .toArray();
-            
-            if (matchingDocs2.length > 0) {
-              document = matchingDocs2[0];
-              console.log(`✅ Found matching document by client/company: ${document.id} (searched for: ${id})`);
-              } else {
-              // Fallback: search by clientName only (in case company name changed or is different)
-              // Convert sanitized client name (e.g., "JasonWoods") to regex that matches with spaces (e.g., "Jason Woods")
-              // Insert optional spaces before capital letters (camelCase handling)
-              const clientNamePattern = clientPart.replace(/([a-z])([A-Z])/g, '$1\\s*$2');
-              // For "JasonWoods" -> "Jason\\s*Woods" (allows "Jason Woods", "JasonWoods", etc.)
-              const clientOnlyQuery = {
-                clientName: { $regex: clientNamePattern, $options: 'i' }
-              };
-              
-              const matchingDocs3 = await documentsCollection
-                .find(clientOnlyQuery)
-                .sort({ createdAt: -1 })
-                .limit(1)
-                .toArray();
-              
-              if (matchingDocs3.length > 0) {
-                document = matchingDocs3[0];
-                console.log(`✅ Found matching document by client name only: ${document.id} (searched for: ${id})`);
-                console.log(`   Note: Company mismatch - workflow: ${companyPart}, document: ${document.company}`);
-              }
-            }
-          }
-        }
-      }
-      
-      if (!document) {
-        return res.status(404).json({ success: false, error: 'Document not found' });
-      }
+      return res.status(404).json({ success: false, error: 'Document not found' });
     }
 
     console.log('✅ Retrieved document from MongoDB:', document.id);
@@ -4265,7 +4201,6 @@ app.get('/api/documents/:id', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: 'Failed to retrieve document',
-      details: error.message 
     });
   }
 });
@@ -8310,13 +8245,16 @@ app.delete('/api/esign/documents/:id', async (req, res) => {
 app.post('/api/esign/documents/:id/void', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const user = await getAuthenticatedUser(req, res);
+    if (!user) return;
     let docId;
     try { docId = new ObjectId(req.params.id); } catch {
       return res.status(400).json({ success: false, error: 'Invalid document ID' });
     }
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
-    const actorEmail = req.body?.actor_email || req.body?.user_email || '';
+    // Identity comes from the verified login; a body actor_email is ignored because anyone can type one.
+    const actorEmail = user.email || '';
     if (!esignActorIsDocumentCreator(doc, actorEmail)) {
       return res.status(403).json({ success: false, error: 'Only the document creator can void this document' });
     }
@@ -8360,7 +8298,7 @@ app.post('/api/esign/documents/:id/void', async (req, res) => {
       $or: [{ document_id: docId }, { document_id: docId.toString() }],
     });
     try {
-      await logAudit(docId.toString(), 'voided', actorEmail || req.body?.voided_by || req.ip || null, req.ip || req.connection?.remoteAddress, { void_reason: voidReason });
+      await logAudit(docId.toString(), 'voided', actorEmail || req.ip || null, req.ip || req.connection?.remoteAddress, { void_reason: voidReason });
     } catch (auditErr) { /* non-fatal */ }
     console.log('E-sign VOID: document voided', req.params.id, doc.file_name, '|', actorEmail, '|', voidReason);
     res.json({ success: true, message: 'Document voided. Signing links no longer work.', void_reason: voidReason });
@@ -8374,13 +8312,15 @@ app.post('/api/esign/documents/:id/void', async (req, res) => {
 app.post('/api/esign/documents/:id/remind', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const user = await getAuthenticatedUser(req, res);
+    if (!user) return;
     let docId;
     try { docId = new ObjectId(req.params.id); } catch {
       return res.status(400).json({ success: false, error: 'Invalid document ID' });
     }
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
-    const actorEmail = req.body?.actor_email || req.body?.user_email || '';
+    const actorEmail = user.email || '';
     if (!esignActorIsDocumentCreator(doc, actorEmail)) {
       return res.status(403).json({ success: false, error: 'Only the document creator can send reminders for this document' });
     }
@@ -8471,7 +8411,7 @@ app.post('/api/esign/documents/:id/remind', async (req, res) => {
     }
 
     try {
-      await logAudit(docId.toString(), 'manual_reminder_sent', req.body?.actor_email || req.ip || 'system', req.ip || null);
+      await logAudit(docId.toString(), 'manual_reminder_sent', actorEmail || req.ip || 'system', req.ip || null);
     } catch (_) { /* non-fatal */ }
 
     if (sentCount === 0) {
@@ -8495,12 +8435,21 @@ app.post('/api/esign/documents/:id/remind', async (req, res) => {
 app.post('/api/approval-workflows/:workflowId/reset-esign', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const workflowId = req.params.workflowId;
+    const user = await getAuthenticatedUser(req, res);
+    if (!user) return;
+    const isAdmin = await hasApprovalAdminAccess(user);
+    const workflowId = String(req.params.workflowId || '');
     if (!workflowId) return res.status(400).json({ success: false, error: 'Invalid workflow ID' });
 
     // Workflows use a string `id` field (e.g. "WF-1775162752752"), not a MongoDB ObjectId
     const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+    // Non-admins get the same 403 for a missing workflow, so the route can't be used to probe IDs.
+    if (!mayManageApprovalWorkflow({ workflow, user, isAdmin })) {
+      logger.warn('E-sign reset refused', { source: 'reset-esign', workflowId, userId: user.id });
+      return res.status(403).json({ success: false, error: 'Only the person who requested this approval or an approval admin can reset its e-sign' });
+    }
     if (!workflow) return res.status(404).json({ success: false, error: 'Workflow not found' });
+    logger.info('E-sign reset', { source: 'reset-esign', workflowId, userId: user.id });
 
     const esignDocIdStr = workflow.esignDocumentId;
     if (esignDocIdStr) {
@@ -8509,6 +8458,11 @@ app.post('/api/approval-workflows/:workflowId/reset-esign', async (req, res) => 
 
       if (docId) {
         const esignDoc = await db.collection('esign_documents').findOne({ _id: docId });
+        // esignDocumentId is writable through the workflow API, so owning the workflow alone can't authorize deleting this document.
+        if (esignDoc && !isAdmin && !esignActorIsDocumentCreator(esignDoc, user.email)) {
+          logger.warn('E-sign reset refused: document owned by someone else', { source: 'reset-esign', workflowId, userId: user.id });
+          return res.status(403).json({ success: false, error: 'Only the person who created this e-sign document or an approval admin can reset it' });
+        }
 
         await db.collection('signature_fields').deleteMany(signatureFieldsDocumentFilter(docId));
         await db.collection('esign_recipients').deleteMany({ document_id: docId });
@@ -8626,10 +8580,17 @@ app.get('/api/esign/documents/:id/activity', async (req, res) => {
 app.post('/api/esign/documents/:id/recipients', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const user = await getAuthenticatedUser(req, res);
+    if (!user) return;
     let docId;
     try { docId = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const isApprovalAdmin = await hasApprovalAdminAccess(user);
+    if (!callerMaySeeRecipientTokens({ doc, user, isApprovalAdmin })) {
+      logger.warn('E-sign recipient change refused', { source: 'esign-recipients', documentId: docId.toString(), userId: user.id });
+      return res.status(403).json({ success: false, error: 'Only the document creator or an approval admin can change who signs' });
+    }
     const { recipients: list } = req.body || {};
     if (!Array.isArray(list)) return res.status(400).json({ success: false, error: 'recipients array required' });
     // Absent key keeps the stored value, so recipient autosaves never clear it.
@@ -9306,6 +9267,8 @@ app.post('/api/zoho-sign/documents/:id/send', zohoSignSendLimiter, async (req, r
 app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const user = await getAuthenticatedUser(req, res);
+    if (!user) return;
     if (!process.env.SENDGRID_API_KEY) {
       return res.status(400).json({ success: false, error: 'Email delivery is not configured. Configure SENDGRID_API_KEY before extending expiry.' });
     }
@@ -9318,7 +9281,7 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
 
-    const actorEmail = (req.body?.actor_email || req.body?.user_email || '').toString().trim();
+    const actorEmail = String(user.email || '').trim();
     if (!esignActorIsDocumentCreator(doc, actorEmail)) {
       return res.status(403).json({ success: false, error: 'Only the document creator can extend expiry for this document' });
     }
@@ -12453,12 +12416,20 @@ app.post('/api/approval-workflows/:workflowId/remind', async (req, res) => {
 // Mints a fresh 7-day token (same shape as the reminder email link) so whoever opens the link
 // lands on the role-based approval portal (/approval/:workflowId?role=..&token=..) — NOT the dashboard.
 app.get('/api/approval-workflows/:workflowId/portal-link', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   if (!db) return res.status(503).json({ success: false, error: 'Database unavailable' });
 
-  const { workflowId } = req.params;
-
   try {
+    const user = await getAuthenticatedUser(req, res);
+    if (!user) return;
+    const isAdmin = await hasApprovalAdminAccess(user);
+    const workflowId = String(req.params.workflowId);
     const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+    // Non-admins get the same 403 for a missing workflow, so the route can't be used to probe IDs.
+    if (!mayManageApprovalWorkflow({ workflow, user, isAdmin })) {
+      logger.warn('Approval link request refused', { source: 'approval-portal-link', workflowId, userId: user.id });
+      return res.status(403).json({ success: false, error: 'Only the person who requested this approval or an approval admin can copy its link' });
+    }
     if (!workflow) {
       return res.status(404).json({ success: false, error: 'Workflow not found' });
     }
@@ -12485,10 +12456,11 @@ app.get('/api/approval-workflows/:workflowId/portal-link', async (req, res) => {
     const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
     const link = `${baseUrl}/approval/${workflowId}?role=${encodeURIComponent(tokenRole)}&token=${encodeURIComponent(token)}`;
 
+    logger.info('Approval link copied', { source: 'approval-portal-link', workflowId, role: tokenRole, userId: user.id });
     res.json({ success: true, link, role, tokenRole, email: pendingStep.email || null });
   } catch (err) {
-    console.error('❌ Error building approval portal link:', err);
-    res.status(500).json({ success: false, error: err.message });
+    logger.error('Approval link build failed', { source: 'approval-portal-link', error: err.message });
+    res.status(500).json({ success: false, error: 'Could not build the approval link' });
   }
 });
 
@@ -12719,173 +12691,6 @@ app.post('/api/documents', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error saving document:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-// Get raw PDF file for a document
-app.get('/api/documents/:id', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({
-        success: false,
-        error: 'Database not available',
-      });
-    }
-
-    const { id } = req.params;
-    let doc = await db.collection('documents').findOne({ id });
-
-    // Smart search fallback: if exact ID doesn't match, try to find by client/company
-    if (!doc) {
-      console.log('⚠️ Exact ID not found in raw fetch, attempting smart search...');
-      
-      // Extract client and company from ID pattern: Company_Client_Timestamp
-      const parts = id.split('_');
-      if (parts.length >= 2) {
-        // Search for documents where ID starts with the same company_client pattern
-        const idPattern = new RegExp(`^${parts[0]}_${parts[1]}_`, 'i');
-        const matchingDocs = await db.collection('documents')
-          .find({ id: { $regex: idPattern } })
-          .sort({ createdAt: -1 })
-          .limit(1)
-          .toArray();
-        
-        if (matchingDocs.length > 0) {
-          doc = matchingDocs[0];
-          console.log(`✅ Found matching document: ${doc.id} (searched for: ${id})`);
-        } else {
-          // Fallback: search by company and clientName fields
-          const companyPart = parts[0].replace(/[0-9]/g, '');
-          const clientPart = parts[1].replace(/[0-9]/g, '');
-          
-          if (companyPart && clientPart) {
-            const searchQuery = {
-              $and: [
-                { company: { $regex: companyPart, $options: 'i' } },
-                { clientName: { $regex: clientPart, $options: 'i' } }
-              ]
-            };
-            
-            const matchingDocs2 = await db.collection('documents')
-              .find(searchQuery)
-              .sort({ createdAt: -1 })
-              .limit(1)
-              .toArray();
-            
-            if (matchingDocs2.length > 0) {
-              doc = matchingDocs2[0];
-              console.log(`✅ Found matching document by client/company: ${doc.id} (searched for: ${id})`);
-            } else {
-              // Fallback: search by clientName only (in case company name changed or is different)
-              // Convert sanitized client name (e.g., "JasonWoods") to regex that matches with spaces (e.g., "Jason Woods")
-              // Insert optional spaces before capital letters (camelCase handling)
-              const clientNamePattern = clientPart.replace(/([a-z])([A-Z])/g, '$1\\s*$2');
-              // For "JasonWoods" -> "Jason\\s*Woods" (allows "Jason Woods", "JasonWoods", etc.)
-              const clientOnlyQuery = {
-                clientName: { $regex: clientNamePattern, $options: 'i' }
-              };
-              
-              const matchingDocs3 = await db.collection('documents')
-                .find(clientOnlyQuery)
-                .sort({ createdAt: -1 })
-                .limit(1)
-                .toArray();
-              
-              if (matchingDocs3.length > 0) {
-                doc = matchingDocs3[0];
-                console.log(`✅ Found matching document by client name only: ${doc.id} (searched for: ${id})`);
-                console.log(`   Note: Company mismatch - workflow: ${companyPart}, document: ${doc.company}`);
-              }
-            }
-          }
-        }
-      }
-      
-      if (!doc || !doc.fileData) {
-        return res.status(404).json({
-          success: false,
-          error: 'Document not found',
-        });
-      }
-    }
-
-    const buffer = Buffer.from(doc.fileData, 'base64');
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      `inline; filename="${doc.fileName || 'document.pdf'}"`
-    );
-    res.send(buffer);
-  } catch (error) {
-    console.error('❌ Error fetching document file:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-// Smart document search by client name and company (fallback when exact ID doesn't match)
-app.get('/api/documents/search', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({
-        success: false,
-        error: 'Database not available',
-      });
-    }
-
-    const { clientName, company } = req.query;
-    
-    if (!clientName && !company) {
-      return res.status(400).json({
-        success: false,
-        error: 'clientName or company query parameter required',
-      });
-    }
-
-    console.log('🔍 Searching documents by:', { clientName, company });
-
-    const query = {};
-    if (clientName) {
-      query.clientName = { $regex: clientName.trim(), $options: 'i' };
-    }
-    if (company) {
-      query.company = { $regex: company.trim(), $options: 'i' };
-    }
-
-    const docs = await db.collection('documents')
-      .find(query)
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .toArray();
-
-    if (docs.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'No documents found matching criteria',
-      });
-    }
-
-    console.log(`✅ Found ${docs.length} matching document(s)`);
-
-    res.json({
-      success: true,
-      documents: docs.map(doc => ({
-        id: doc.id,
-        fileName: doc.fileName,
-        clientName: doc.clientName,
-        company: doc.company,
-        createdAt: doc.createdAt
-      })),
-      count: docs.length
-    });
-  } catch (error) {
-    console.error('❌ Error searching documents:', error);
     res.status(500).json({
       success: false,
       error: error.message,

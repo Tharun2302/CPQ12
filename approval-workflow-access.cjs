@@ -54,6 +54,19 @@ function isWorkflowVisibleToUser(workflow, userEmail) {
   return workflowCreatorEmail(workflow) === email || isStepApprover(workflow, email);
 }
 
+/**
+ * Requester-level actions (copy approver link, reset e-sign): approval admins and the workflow's
+ * creator. Approvers are excluded — a link acts as whichever step is pending, which may not be theirs.
+ * `user` must be the verified login, never a value from the request.
+ */
+function mayManageApprovalWorkflow({ workflow, user, isAdmin }) {
+  if (!user || !user.email) return false;
+  if (isAdmin === true) return true;
+  if (!workflow) return false;
+  const creator = workflowCreatorEmail(workflow);
+  return !!creator && creator === normalizeEmail(user.email);
+}
+
 // Mutates the returned objects so the response matches what updateMany just wrote.
 async function settleCompletedWorkflows(db, workflows) {
   const completed = workflows.filter((w) => w.id
@@ -108,5 +121,6 @@ module.exports = {
   PORTAL_ROLES,
   verifyApprovalPortalToken,
   isWorkflowVisibleToUser,
+  mayManageApprovalWorkflow,
   listApprovalWorkflowsForCaller,
 };

@@ -21,6 +21,7 @@ const LOCKED: Array<{ method: string; path: string; helper: Helper }> = [
   { method: 'get', path: '/api/pricing-tiers', helper: 'getAuthenticatedUser' },
   { method: 'post', path: '/api/pricing-tiers', helper: 'getAuthenticatedUser' },
   { method: 'post', path: '/api/documents', helper: 'getAuthenticatedUser' },
+  { method: 'get', path: '/api/documents/:id', helper: 'getAuthenticatedUser' },
   { method: 'delete', path: '/api/documents/:id', helper: 'getAuthenticatedUser' },
   { method: 'post', path: '/api/documents/upload', helper: 'getAuthenticatedUser' },
   { method: 'post', path: '/api/documents/test', helper: 'getAuthenticatedUser' },
@@ -38,6 +39,12 @@ const LOCKED: Array<{ method: string; path: string; helper: Helper }> = [
   { method: 'get', path: '/api/quotes', helper: 'getAuthenticatedUser' },
   { method: 'get', path: '/api/team-approval-settings', helper: 'getAuthenticatedUser' },
   { method: 'get', path: '/api/team-approval-settings/team/:teamName', helper: 'getAuthenticatedUser' },
+  { method: 'get', path: '/api/approval-workflows/:workflowId/portal-link', helper: 'getAuthenticatedUser' },
+  { method: 'post', path: '/api/approval-workflows/:workflowId/reset-esign', helper: 'getAuthenticatedUser' },
+  { method: 'post', path: '/api/esign/documents/:id/recipients', helper: 'getAuthenticatedUser' },
+  { method: 'post', path: '/api/esign/documents/:id/void', helper: 'getAuthenticatedUser' },
+  { method: 'post', path: '/api/esign/documents/:id/remind', helper: 'getAuthenticatedUser' },
+  { method: 'post', path: '/api/esign/documents/:id/extend-expiry', helper: 'getAuthenticatedUser' },
 
   { method: 'get', path: '/api/auth/daily-logins', helper: 'getApprovalAdminUser' },
   { method: 'get', path: '/api/chat/logs', helper: 'getApprovalAdminUser' },
@@ -94,6 +101,28 @@ describe('dead duplicate registrations of POST/DELETE /api/documents', () => {
   });
 });
 
+describe('GET /api/documents/:id only returns the exact document asked for', () => {
+  const route = routeSource('get', '/api/documents/:id');
+
+  it('is registered once, so no older copy with the regex search can run instead', () => {
+    expect([...serverSrc.matchAll(/\napp\.get\(\s*'\/api\/documents\/:id'\s*,/g)]).toHaveLength(1);
+  });
+
+  it('never builds a pattern search from the ID', () => {
+    const code = route.replace(/\/\/.*$/gm, '');
+    expect(code).not.toMatch(/\$regex|new RegExp|\.find\(/);
+    expect(code).toContain('findOne({ id: String(req.params.id) })');
+  });
+
+  it('does not echo internal error details', () => {
+    expect(route).not.toMatch(/details:\s*error\.message/);
+  });
+
+  it('the unreachable /api/documents/search pattern route is gone', () => {
+    expect(serverSrc).not.toMatch(/app\.get\(\s*'\/api\/documents\/search'/);
+  });
+});
+
 describe('routes that must stay open are unchanged', () => {
   const OPEN: Array<[string, string]> = [
     ['post', '/api/convert/docx-to-pdf'],
@@ -109,6 +138,8 @@ describe('routes that must stay open are unchanged', () => {
     ['post', '/api/send-deal-desk-email'],
     ['post', '/api/send-approval-emails'],
     ['get', '/api/esign/documents/:id/recipients'],
+    // Signers download right after signing from their email link, with no login
+    ['get', '/api/esign/documents/:id/file'],
   ];
 
   it.each(OPEN)('%s %s calls no auth helper', (method, routePath) => {

@@ -264,10 +264,12 @@ const ApprovalDashboard: React.FC = () => {
     // portal). Building the URL client-side as /approval?id=.. would just reopen the dashboard,
     // and would lack the role+token the portal requires — so always go through the API.
     try {
-      const res = await fetch(`${BACKEND_URL}/api/approval-workflows/${encodeURIComponent(workflow.id)}/portal-link`);
+      const res = await fetch(`${BACKEND_URL}/api/approval-workflows/${encodeURIComponent(workflow.id)}/portal-link`, {
+        headers: getAuthHeaders(),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success || !data?.link) {
-        flashToast(data?.error || 'Could not generate approval link');
+        flashToast(authAwareError(res.status, data?.error, 'Could not generate approval link'));
         return;
       }
       await copyToClipboard(data.link);
@@ -533,13 +535,12 @@ const ApprovalDashboard: React.FC = () => {
     if (!confirmed) return;
     setResettingEsignId(workflow.id);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/approval-workflows/${workflow.id}/reset-esign`, {
+      const res = await fetch(`${BACKEND_URL}/api/approval-workflows/${encodeURIComponent(workflow.id)}/reset-esign`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actor_email: workflow.creatorEmail || '' }),
+        headers: getAuthHeaders(),
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to reset e-sign');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(authAwareError(res.status, data.error, 'Failed to reset e-sign'));
       await refreshWorkflows();
     } catch (err: any) {
       alert(err?.message || 'Failed to reset e-sign. Please try again.');
@@ -955,6 +956,7 @@ const ApprovalDashboard: React.FC = () => {
                 const requestedBy = workflow.creatorName || workflow.creatorEmail || '—';
                 const createdAt = workflow.createdAt ? new Date(workflow.createdAt) : null;
                 const canManage = isWorkflowCreator(workflow);
+                const canCopyLink = canManage || userIsApprovalAdmin;
 
                 const teamStep = getStep(workflow, 'Team Approval');
                 const technicalStep = getStep(workflow, 'Technical Team');
@@ -1076,13 +1078,13 @@ const ApprovalDashboard: React.FC = () => {
                         >
                           <Eye className="h-5 w-5 text-gray-500" />
                         </button>
-                        {/* Copy Link — surfaced directly in the UI (creator only) */}
+                        {/* Same rule as the server: requester or approval admin */}
                         <button
                           type="button"
-                          onClick={() => { if (!canManage) { alert('Only the requester can copy the approval link.'); return; } handleCopyApprovalLink(workflow); }}
-                          title={canManage ? 'Copy approval link' : 'Only the requester can copy the approval link'}
+                          onClick={() => { if (!canCopyLink) { alert('Only the requester or an approval admin can copy the approval link.'); return; } handleCopyApprovalLink(workflow); }}
+                          title={canCopyLink ? 'Copy approval link' : 'Only the requester or an approval admin can copy the approval link'}
                           aria-label="Copy approval link"
-                          className={`inline-flex items-center justify-center w-9 h-9 rounded-md bg-white border border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 transition-all ${canManage ? 'text-gray-600 hover:bg-gray-50 hover:border-gray-400' : 'text-gray-400 cursor-not-allowed'}`}
+                          className={`inline-flex items-center justify-center w-9 h-9 rounded-md bg-white border border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 transition-all ${canCopyLink ? 'text-gray-600 hover:bg-gray-50 hover:border-gray-400' : 'text-gray-400 cursor-not-allowed'}`}
                         >
                           <Copy className="h-5 w-5" />
                         </button>
