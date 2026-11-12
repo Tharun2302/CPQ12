@@ -108,6 +108,7 @@ describe('routes that must stay open are unchanged', () => {
     ['post', '/api/send-client-email'],
     ['post', '/api/send-deal-desk-email'],
     ['post', '/api/send-approval-emails'],
+    ['get', '/api/esign/documents/:id/recipients'],
   ];
 
   it.each(OPEN)('%s %s calls no auth helper', (method, routePath) => {

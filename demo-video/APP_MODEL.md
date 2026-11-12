@@ -16,7 +16,7 @@ customer for e-signature. All of this happens in one app.
 
 | Person | What they do in the app | How they get in |
 |---|---|---|
-| **Sales rep (requester)** | Deal → Configure → Quote → Send for Approval → track → e-Sign | Microsoft sign-in (`@cloudfuze.com` only), or the email form (locked to `cpq@zenop.ai`) |
+| **Sales rep (requester)** | Deal → Configure → Quote → Send for Approval → track → e-Sign | Microsoft sign-in only (`@cloudfuze.com`) |
 | **Team Lead** (per team: SMB, AM, ENT, DEV, DEV2…) | Step 1 approve / deny / comment | Emailed link `/approval/<id>?role=teamlead&token=…` (7-day token) |
 | **Technical team** (shared mailbox) | Step 2 approve / deny | Emailed link, **plus** a Microsoft sign-in with an email on `team_approval_settings.technicalEmails` |
 | **Legal team** (shared mailbox) | Step 3, the final approval | Emailed link |
@@ -28,7 +28,7 @@ customer for e-signature. All of this happens in one app.
 There is no general role system. Stored roles are only `viewer` and `exhibit_admin`. Approvers
 are **not** user accounts: they are identified by the token in their email link.
 
-**Login** (`src/contexts/AuthContext.tsx`, `server.cjs:1819-2100`): the server issues a 7-day JWT.
+**Login** (`src/contexts/AuthContext.tsx`, `POST /api/auth/microsoft` in `server.cjs`): Microsoft sign-in only; the server issues a 7-day JWT.
 The client keeps `localStorage.cpq_token` and `cpq_user`, and re-checks a JWT with `/api/auth/me` on
 load. Success lands on `/deal`. Sign-out clears both keys.
 
@@ -188,7 +188,7 @@ HubSpot deal ─▶ quote (quotes) ─▶ agreement (documents) ─▶ approval 
 ## 9. Bugs and risks noticed (kept out of the video)
 
 1. `POST /api/auth/microsoft` issues a JWT for **any posted email** without verifying the Microsoft token (`server.cjs:2045-2095`).
-2. `AuthContext.tsx:210-250` has a **hard-coded fallback password** that logs in with a mock token when the backend login fails.
+2. Fixed: the hard-coded fallback password is gone, and password sign-in was removed entirely.
 3. The approval step route does not check the portal token for Team Lead / Legal. Anyone with the workflow id can approve (`server.cjs:12534`).
 4. `PUT /api/team-approval-settings` is unauthenticated and `$set`s the whole body. The Approval page also auto-saves settings 1 s after load (`ApprovalWorkflow.tsx:157-199`).
 5. The creator-only e-sign actions (void, remind, extend) trust `actor_email` from the request body (`server.cjs:8532`, `8596`, `9530`).

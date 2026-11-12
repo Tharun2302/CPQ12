@@ -21,7 +21,8 @@ export const FFMPEG_DIR = 'C:/Users/AbhilashaK/AppData/Local/Microsoft/WinGet/Pa
 export const FFMPEG = process.env.FFMPEG || `${FFMPEG_DIR}/ffmpeg.exe`;
 export const FFPROBE = process.env.FFPROBE || `${FFMPEG_DIR}/ffprobe.exe`;
 
-export const DEMO_PASSWORD = 'Demo-Walkthrough-2026';
+// Password sign-in is gone, so the scripts sign their own session tokens; this secret only works on the local demo backend.
+export const DEMO_JWT_SECRET = 'demo-video-local-only-jwt-secret-never-used-on-real-servers';
 
 export const PEOPLE = {
   priya: { name: 'Priya Raman', email: 'priya.raman@demo.local', role: 'Sales rep · SMB' },
@@ -86,6 +87,7 @@ export function demoServerEnv() {
     DB_NAME,
     PORT: String(BACKEND_PORT),
     NODE_ENV: 'development',
+    JWT_SECRET: DEMO_JWT_SECRET,
     APP_BASE_URL: APP_URL,
     BASE_URL: APP_URL,
     ALLOWED_ORIGINS: APP_URL,

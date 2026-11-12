@@ -5,11 +5,10 @@
 //   node setup-demo.mjs --remove --all   also drop the cached configuration copy
 import fs from 'node:fs';
 import path from 'node:path';
-import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import { MongoClient } from 'mongodb';
 import {
-  APP_DIR, CONFIG_CACHE_DB, DB_NAME, DEMO_PASSWORD, MONGO_URI, OUT_DIR, PEOPLE, TEAM_LEADS, assertLocalMongo,
+  APP_DIR, CONFIG_CACHE_DB, DB_NAME, MONGO_URI, OUT_DIR, PEOPLE, TEAM_LEADS, assertLocalMongo,
 } from './lib/demo-env.mjs';
 
 const args = new Set(process.argv.slice(2));
@@ -124,15 +123,13 @@ await demo.collection('team_approval_settings').insertOne({
   updatedAt: new Date(),
 });
 
-const hash = await bcrypt.hash(DEMO_PASSWORD, 10);
 const now = new Date();
 await demo.collection('users').insertMany(
   ['priya', 'jordan', 'marcus', 'aisha', 'daniel'].map((key, i) => ({
     id: `user_demo_${key}`,
     name: PEOPLE[key].name,
     email: PEOPLE[key].email,
-    password: hash,
-    provider: 'email',
+    provider: 'microsoft',
     role: 'viewer',
     created_at: new Date(now.getTime() - (30 - i) * 86400000),
     updated_at: now,
@@ -204,5 +201,5 @@ fs.writeFileSync(DEMO_FILE_LIST, '[]');
 const counts = {};
 for (const c of [...CONFIG_COLLECTIONS, 'users', 'approval_workflows']) counts[c] = await demo.collection(c).countDocuments();
 console.log('Demo workspace ready:', counts);
-console.log(`Logins (password "${DEMO_PASSWORD}"): ${['priya', 'jordan', 'marcus', 'aisha', 'daniel'].map((k) => PEOPLE[k].email).join(', ')}`);
+console.log(`Demo users (sign in with: node lib/session.mjs <name>): ${['priya', 'jordan', 'marcus', 'aisha', 'daniel'].map((k) => PEOPLE[k].email).join(', ')}`);
 await local.close();

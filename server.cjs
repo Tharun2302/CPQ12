@@ -22,7 +22,6 @@ const {
 } = require('./approval-step-guard.cjs');
 const technicalApproverGuard = require('./technical-approver-guard.cjs');
 const microsoftLogin = require('./microsoft-login.cjs');
-const passwordLogin = require('./password-login.cjs');
 const jwtSecretCheck = require('./jwt-secret.cjs');
 const { verifyApprovalPortalToken, listApprovalWorkflowsForCaller } = require('./approval-workflow-access.cjs');
 const {
@@ -35,7 +34,6 @@ const {
   toDiscountPolicyResponse,
   createMaxDiscountReader
 } = require('./discount-policy.cjs');
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
@@ -186,6 +184,7 @@ const {
 } = require('./esign-progress-utils.cjs');
 
 const { loadEsignAccessLinks, filterEsignDocsForCaller } = require('./esign-list-access.cjs');
+const { recipientsForCaller } = require('./esign-recipient-access.cjs');
 
 const {
   buildAgreementLink,
@@ -1857,62 +1856,14 @@ app.post('/api/boldsign/create-embedded-send', async (req, res) => {
 // Authentication endpoints
 
 // User registration
-// Open self-registration let anyone mint an account and a token; accounts come from scripts/create-default-login.cjs
+// Open self-registration let anyone mint an account and a token; accounts are created by Microsoft sign-in
 app.post('/api/auth/register', (req, res) => {
   res.status(403).json({ success: false, message: 'Registration is disabled' });
 });
 
-// User login
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({ 
-        success: false,
-        error: 'Database not available',
-        message: 'Cannot login without database connection'
-      });
-    }
-
-    const result = await passwordLogin.authenticatePasswordLogin({
-      body: req.body,
-      users: db.collection('users'),
-      bcrypt,
-      logger,
-    });
-    if (!result.ok) return res.status(result.status).json(result.body);
-    const user = result.user;
-
-    // Generate JWT token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    // Track daily login
-    await trackDailyLogin(user.id, 'email', user.email);
-
-    // Return user without password (with computed role + isApprovalAdmin flag)
-    const { password: _, ...userWithoutPassword } = user;
-    const dbExhibitEmails = await getExhibitAdminEmailsFromDb();
-    const isExhibitAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || dbExhibitEmails.some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
-    const effectiveRole = user.role || (isExhibitAdmin ? 'exhibit_admin' : 'viewer');
-    const isApprovalAdmin = await hasApprovalAdminAccess(user);
-    const userResponse = { ...userWithoutPassword, role: effectiveRole, isApprovalAdmin };
-
-    res.json({
-      success: true,
-      message: 'Login successful',
-      user: userResponse,
-      token: token
-    });
-  } catch (error) {
-    logger.error('Login failed', { source: 'auth-login', error: error.message });
-    res.status(500).json({
-      success: false,
-      message: 'Failed to login'
-    });
-  }
+// Password sign-in was removed; only Microsoft sign-in (POST /api/auth/microsoft) creates sessions.
+app.post('/api/auth/login', (req, res) => {
+  res.status(410).json({ success: false, message: 'Password sign-in is turned off. Use Continue with Microsoft Account.' });
 });
 
 // Get user by token
@@ -8595,6 +8546,7 @@ app.post('/api/approval-workflows/:workflowId/reset-esign', async (req, res) => 
 
 // GET /api/esign/documents/:id/recipients - List recipients for a document
 app.get('/api/esign/documents/:id/recipients', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
     let docId;
@@ -8606,9 +8558,12 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
       .find({ $or: [{ document_id: docId }, { document_id: docIdStr }] })
       .sort({ order: 1, _id: 1 })
       .toArray();
+    // Public signer/approver pages call this without a login, so it answers everyone but only creators and admins get tokens.
+    const user = await getOptionalAuthenticatedUser(req);
+    const isApprovalAdmin = user ? await hasApprovalAdminAccess(user) : false;
     res.json({
       success: true,
-      recipients: recipients.map((r) => ({
+      recipients: recipientsForCaller({ doc, user, isApprovalAdmin, recipients: recipients.map((r) => ({
         id: r._id.toString(),
         name: r.name || r.email || 'Recipient',
         email: r.email,
@@ -8632,7 +8587,7 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
         forward_count: r.forward_count || 0,
         forwarded_from_email: r.forwarded_from_email || null,
         forwarded_from_name: r.forwarded_from_name || null,
-      })),
+      })) }),
     });
   } catch (error) {
     console.error('❌ E-sign get recipients error:', error);
@@ -9941,42 +9896,6 @@ app.get('/api/esign/fixed-role-recipients', async (req, res) => {
     res.json({ success: true, recipients, selectedTeam: team });
   } catch (error) {
     console.error('❌ E-sign fixed-role-recipients error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// GET /api/esign/pending-for-email - List documents pending signature for an email (for E-Sign Portal / Team Lead Dashboard)
-app.get('/api/esign/pending-for-email', async (req, res) => {
-  try {
-    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const email = (req.query.email || '').toString().trim().toLowerCase();
-    if (!email) return res.status(400).json({ success: false, error: 'email query required' });
-    // Case-insensitive email match so dashboard finds items regardless of how email was stored
-    const emailRegex = new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
-    const recipients = await db.collection('esign_recipients')
-      .find({ email: emailRegex, status: { $in: ['pending', 'viewed'] }, signing_token: { $exists: true, $ne: '' } })
-      .toArray();
-    const docIds = [...new Set(recipients.map((r) => r.document_id).filter(Boolean))];
-    const docs = await db.collection('esign_documents')
-      .find({ _id: { $in: docIds }, status: 'sent' })
-      .toArray();
-    const docMap = new Map(docs.map((d) => [d._id.toString(), d]));
-    const items = recipients
-      .map((r) => {
-        const docId = r.document_id && (r.document_id.toString ? r.document_id.toString() : String(r.document_id));
-        const doc = docMap.get(docId);
-        if (!doc || !r.signing_token) return null;
-        return {
-          documentId: docId,
-          file_name: doc.file_name || 'Document',
-          signing_token: r.signing_token,
-          role: r.role || 'signer',
-        };
-      })
-      .filter(Boolean);
-    res.json({ success: true, items });
-  } catch (error) {
-    console.error('❌ E-sign pending-for-email error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -13126,7 +13045,6 @@ async function startServer() {
       console.log(`   - GET  /api/health`);
       console.log(`   - GET  /api/database/health`);
       console.log(`   - GET  /api/test-mongodb`);
-      console.log(`   - POST /api/auth/login`);
       console.log(`   - GET  /api/auth/me`);
       console.log(`   - POST /api/auth/microsoft`);
       console.log(`   - GET  /api/quotes`);

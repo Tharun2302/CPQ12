@@ -1,15 +1,17 @@
-// Browser-side safety net and API login shared by the explorer, dry runs and the recorder.
-import { APP_URL, BACKEND_URL, DEMO_PASSWORD, FORBIDDEN_PORTS } from './demo-env.mjs';
+// Browser-side safety net and session setup shared by the explorer, dry runs and the recorder.
+import { pathToFileURL } from 'node:url';
+import jwt from 'jsonwebtoken';
+import { APP_URL, BACKEND_URL, DEMO_JWT_SECRET, FORBIDDEN_PORTS, PEOPLE } from './demo-env.mjs';
 
+// Minimal session token (no Microsoft claims, so Technical approval sign-in stays off in the demo); ids come from setup-demo.mjs.
 export async function apiLogin(email) {
-  const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password: DEMO_PASSWORD }),
-  });
+  const key = Object.keys(PEOPLE).find((k) => PEOPLE[k].email === email);
+  if (!key) throw new Error(`Not a demo user: ${email}`);
+  const token = jwt.sign({ userId: `user_demo_${key}`, email }, DEMO_JWT_SECRET, { algorithm: 'HS256', expiresIn: '1d' });
+  const res = await fetch(`${BACKEND_URL}/api/auth/me`, { headers: { authorization: `Bearer ${token}` } });
   const data = await res.json();
-  if (!data.success) throw new Error(`Demo login failed for ${email}: ${data.error || res.status}`);
-  return data;
+  if (!data.success) throw new Error(`Demo login failed for ${email}: ${data.message || res.status}`);
+  return { token, user: data.user };
 }
 
 // Any request to the developer's live servers (which use production) is rerouted to the demo backend.
@@ -51,4 +53,14 @@ export function dealUrl(deal, pathName = '/deal') {
     CompanyName: deal.company,
   });
   return `${APP_URL}${pathName}?${p}`;
+}
+
+// node lib/session.mjs <name>  prints a snippet to paste into the demo app's browser console.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const who = process.argv[2] || 'priya';
+  const logins = ['priya', 'jordan', 'marcus', 'aisha', 'daniel'];
+  if (!logins.includes(who)) throw new Error(`Unknown demo user "${who}". Use one of: ${logins.join(', ')}`);
+  const { token, user } = await apiLogin(PEOPLE[who].email);
+  process.stdout.write(`localStorage.cpq_token=${JSON.stringify(token)};localStorage.cpq_user=${JSON.stringify(JSON.stringify(user))};location='/deal'
+`);
 }

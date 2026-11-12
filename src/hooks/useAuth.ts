@@ -16,12 +16,3 @@ export function useAuthState() {
   };
 }
 
-export function useAuthActions() {
-  const { login, logout, signup } = useAuthContext();
-  
-  return {
-    login,
-    logout,
-    signup
-  };
-}

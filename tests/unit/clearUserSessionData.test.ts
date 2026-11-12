@@ -232,42 +232,6 @@ describe('AuthContext clears client data', () => {
     expect(localStorage.getItem('cpq_quotes')).not.toBeNull();
   });
 
-  describe('password login', () => {
-    async function loginAs(serverUser: typeof USER_A) {
-      fetchMock.mockImplementation(async (url: string) => {
-        if (String(url).includes('/api/auth/login')) {
-          return { ok: true, status: 200, json: async () => ({ success: true, user: serverUser, token: 'x.y.z' }) };
-        }
-        return { ok: false, status: 401, json: async () => ({ success: false }) };
-      });
-      mountApp();
-      await screen.findByText('signed-out');
-      localStorage.setItem('cpq_user', JSON.stringify(USER_A));
-      localStorage.setItem('cpq_quotes', '[{"clientName":"Acme"}]');
-      localStorage.setItem('cpq_hubspot_data', '{"email":"x@acme.com"}');
-      localStorage.setItem('cpq_esign_tour_landing_v1', '1');
-      await act(async () => {
-        await latestAuth.login('cpq@zenop.ai', 'pw');
-      });
-    }
-
-    it('a different user clears the previous user data and stores the new login', async () => {
-      await loginAs(USER_B);
-      expect(localStorage.getItem('cpq_quotes')).toBeNull();
-      expect(localStorage.getItem('cpq_hubspot_data')).toBeNull();
-      expect(localStorage.getItem('cpq_esign_tour_landing_v1')).toBe('1');
-      expect(localStorage.getItem('cpq_token')).toBe('x.y.z');
-      expect(JSON.parse(localStorage.getItem('cpq_user') as string).id).toBe('u2');
-    });
-
-    it('the same user keeps their data', async () => {
-      await loginAs(USER_A);
-      expect(localStorage.getItem('cpq_quotes')).toBe('[{"clientName":"Acme"}]');
-      expect(localStorage.getItem('cpq_hubspot_data')).toBe('{"email":"x@acme.com"}');
-      expect(localStorage.getItem('cpq_token')).toBe('x.y.z');
-    });
-  });
-
   describe('Microsoft login', () => {
     const popup = { closed: false, close: vi.fn() };
 

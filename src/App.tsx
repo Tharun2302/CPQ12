@@ -16,7 +16,6 @@ const CATALOG_RETRY_BASE_MS = 500;
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const LandingPage = lazy(() => import('./pages/LandingPage'));
 const SignInPage = lazy(() => import('./pages/SignInPage'));
-const SignUpPage = lazy(() => import('./pages/SignUpPage'));
 const MicrosoftCallback = lazy(() => import('./pages/MicrosoftCallback'));
 const HubSpotAuthHandler = lazy(() => import('./components/auth/HubSpotAuthHandler'));
 const ProtectedRoute = lazy(() => import('./components/auth/ProtectedRoute'));
@@ -2049,7 +2048,8 @@ function App() {
               {/* Public Routes */}
               <Route path="/" element={<LandingPage />} />
               <Route path="/signin" element={<SignInPage />} />
-              <Route path="/signup" element={<SignUpPage />} />
+              {/* Sign-up was a password form; accounts now come only from Microsoft sign-in */}
+              <Route path="/signup" element={<Navigate to="/signin" replace />} />
               <Route path="/auth/microsoft/callback" element={<MicrosoftCallback />} />
               <Route path="/auth/microsoft/callback/" element={<MicrosoftCallback />} />
 

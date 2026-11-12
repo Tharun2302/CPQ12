@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, act, cleanup } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('../../src/analytics/clarity', () => ({ track: vi.fn(), identify: vi.fn() }));
@@ -82,14 +82,13 @@ describe('AuthContext rejects fake sessions', () => {
   });
 });
 
-describe('AuthContext email login has no client-side backdoor', () => {
+describe('AuthContext offers Microsoft sign-in only', () => {
   const fetchMock = vi.fn();
 
   beforeEach(() => {
     localStorage.clear();
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
-    vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -98,28 +97,12 @@ describe('AuthContext email login has no client-side backdoor', () => {
     vi.restoreAllMocks();
   });
 
-  it('rejects the old built-in password when the server says no', async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 401, json: async () => ({ success: false }) });
+  it('exposes no password login or sign-up', async () => {
     mountApp();
     await screen.findByText('signed-out');
-    let result: boolean | undefined;
-    await act(async () => {
-      result = await latestAuth.login('cpq@zenop.ai', 'CPQ@2025@TEAM');
-    });
-    expect(result).toBe(false);
-    expect(localStorage.getItem('cpq_token')).toBeNull();
-    await waitFor(() => expect(screen.getByText('signed-out')).toBeTruthy());
-  });
-
-  it('rejects the old built-in password when the server is down', async () => {
-    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
-    mountApp();
-    await screen.findByText('signed-out');
-    let result: boolean | undefined;
-    await act(async () => {
-      result = await latestAuth.login('cpq@zenop.ai', 'CPQ@2025@TEAM');
-    });
-    expect(result).toBe(false);
-    expect(localStorage.getItem('cpq_token')).toBeNull();
+    expect(latestAuth).not.toHaveProperty('login');
+    expect(latestAuth).not.toHaveProperty('signup');
+    expect(latestAuth).not.toHaveProperty('signupWithMicrosoft');
+    expect(typeof latestAuth.loginWithMicrosoft).toBe('function');
   });
 });

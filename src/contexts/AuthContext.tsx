@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, AuthContextType, SignUpData } from '../types/auth';
+import { User, AuthContextType } from '../types/auth';
 import { track, identify } from '../analytics/clarity';
 import { identifyHotjarUser } from '../analytics/hotjar';
 import { BACKEND_URL } from '../config/api';
@@ -24,7 +24,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Single identify point covering every auth path (restored session, email, Microsoft, HubSpot):
+  // Single identify point covering every auth path (restored session, Microsoft, HubSpot):
   // the first render where `user` is set is the first moment the app knows who this is.
   useEffect(() => {
     if (user) identifyHotjarUser(user);
@@ -90,65 +90,6 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
     checkAuth();
   }, []);
  
-  const login = async (email: string, password: string): Promise<boolean> => {
-    try {
-      setLoading(true);
-      
-      // Restrict to only specific account
-      if (email !== 'cpq@zenop.ai') {
-        console.error('❌ Access denied: Only cpq@zenop.ai is allowed for manual authentication');
-        return false;
-      }
-     
-      const backendUrl = BACKEND_URL;
-      const response = await fetch(`${backendUrl}/api/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password })
-      });
- 
-      if (response.ok) {
-        const data = await response.json();
-       
-        if (data.success) {
-          clearDataIfDifferentUser(data.user);
-          // Store user and token
-          localStorage.setItem('cpq_user', JSON.stringify(data.user));
-          localStorage.setItem('cpq_token', data.token);
-         
-          // Update state
-          setUser(data.user);
-          setIsAuthenticated(true);
-          
-          // Identify user in Clarity (so email appears in dashboard)
-          identify(data.user.email, {
-            name: data.user.name,
-            email: data.user.email,
-            userId: data.user.id
-          });
-          
-          // Track sign-in event
-          track('user.sign_in', {
-            method: 'email',
-            email: data.user.email
-          });
-          
-          return true;
-        }
-      }
-     
-      return false;
-    } catch (error) {
-      console.error('Login error:', error);
-
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  };
- 
   // PKCE helpers for Microsoft OAuth (S256)
   const generateRandomString = (length: number): string => {
     const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
@@ -187,22 +128,6 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
     } catch (error) {
       console.error('❌ Error creating code challenge:', error);
       throw new Error('Failed to create PKCE code challenge. Please ensure you are using HTTPS with a valid certificate.');
-    }
-  };
- 
-  const signup = async (_userData: SignUpData): Promise<boolean> => {
-    try {
-      setLoading(true);
-      
-      // Disable signup - only allow specific account
-      console.error('❌ Signup is disabled. Only cpq@zenop.ai is allowed for manual authentication');
-      // Return false immediately without making any API calls
-      return false;
-    } catch (error) {
-      console.error('Signup error:', error);
-      return false;
-    } finally {
-      setLoading(false);
     }
   };
  
@@ -471,11 +396,6 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
     }
   };
  
-  const signupWithMicrosoft = async (): Promise<boolean> => {
-    // For Microsoft, signup and login are the same process
-    return await loginWithMicrosoft();
-  };
- 
   const logout = () => {
     // Show thank you message with a more elegant approach
     const showThankYouMessage = () => {
@@ -567,11 +487,8 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
   const value: AuthContextType = {
     isAuthenticated,
     user,
-    login,
     loginWithMicrosoft,
     logout,
-    signup,
-    signupWithMicrosoft,
     loading
   };
  

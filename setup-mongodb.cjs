@@ -64,7 +64,7 @@ async function setupMongoDB() {
         ]
       },
       // Users collection for authentication (login)
-      // Indexing email ensures fast lookups for /api/auth/login and /api/auth/me
+      // Indexing email ensures fast lookups for /api/auth/microsoft and /api/auth/me
       {
         name: 'users',
         indexes: [

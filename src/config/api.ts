@@ -59,7 +59,6 @@ export const getApiEndpoint = (path: string): string => {
 export const API_ENDPOINTS = {
   // Authentication
   AUTH_ME: '/api/auth/me',
-  AUTH_LOGIN: '/api/auth/login',
   AUTH_MICROSOFT: '/api/auth/microsoft',
   
   // Quotes

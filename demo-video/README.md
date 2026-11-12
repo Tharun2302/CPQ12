@@ -21,13 +21,13 @@ Differences from production, on purpose:
 
 ## Demo logins
 
-Password for all: `Demo-Walkthrough-2026`
+There is no password: sign-in is Microsoft-only, so the scripts sign their own session token for the local demo backend (`lib/session.mjs`).
 
 `priya.raman@demo.local`, `jordan.lee@demo.local`, `marcus.bell@demo.local`, `aisha.khan@demo.local`, `daniel.ortiz@demo.local`
 
-The UI's email form only accepts `cpq@zenop.ai`, so the scripts log in through `POST /api/auth/login` and seed the session.
-To look around by hand, open `http://localhost:5273` after `node lib/servers.mjs start`. Then in the browser console, run:
-`fetch('/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:'priya.raman@demo.local',password:'Demo-Walkthrough-2026'})}).then(r=>r.json()).then(d=>{localStorage.cpq_token=d.token;localStorage.cpq_user=JSON.stringify(d.user);location='/deal'})`
+If a demo backend was started before this change, stop it once (`node lib/servers.mjs stop`) so it picks up the demo secret.
+To look around by hand, run `node lib/servers.mjs start`, then `node lib/session.mjs priya` (or jordan, marcus, aisha, daniel).
+Open `http://localhost:5273`, paste the printed line into the browser console and press Enter.
 
 ## Regenerating the video
 

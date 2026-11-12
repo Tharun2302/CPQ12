@@ -7,7 +7,7 @@
 # ===========================================
 # Get this from Azure App Registration
 # Go to: https://portal.azure.com > Azure Active Directory > App registrations
-# If not set, Microsoft sign-in is disabled; users can still sign in with email/password.
+# Microsoft is the ONLY way to sign in: if this is not set, nobody can sign in.
 VITE_MSAL_CLIENT_ID=your-microsoft-client-id-here
 VITE_MSAL_REDIRECT_URI=
 # The Azure/Entra app registration is SINGLE tenant, so the browser must sign in against the
@@ -85,6 +85,10 @@ ALLOWED_ORIGINS=
 
 # JWT Secret for authentication tokens (CHANGE IN PRODUCTION!)
 JWT_SECRET=your-super-secret-jwt-key-change-in-production
+
+# Behind nginx set TRUST_PROXY=1, or rate limits and audit logs see every visitor as one IP.
+# Leave unset when the app is reached directly (no proxy), or visitors can fake their IP.
+TRUST_PROXY=
 
 # ===========================================
 # DEVELOPMENT vs PRODUCTION

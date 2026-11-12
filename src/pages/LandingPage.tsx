@@ -97,10 +97,10 @@ const LandingPage: React.FC = () => {
             Trusted by leading companies worldwide to streamline their quoting process.
           </p>
           <Link
-            to="/signup"
+            to="/signin"
             className="bg-white text-blue-600 px-8 py-3 rounded-lg text-lg font-semibold hover:bg-gray-100 transition-colors"
           >
-            Start Your Free Trial
+            Sign In with Microsoft
           </Link>
         </div>
       </main>
