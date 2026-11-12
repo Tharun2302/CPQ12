@@ -155,7 +155,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
       
       try {
         console.log('🔄 Fetching document preview for:', workflow.documentId);
-        const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
+        const response = await fetch(withApprovalPortalQuery(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`), { headers: getAuthHeaders() });
         
         console.log('📡 Response status:', response.status);
         console.log('📡 Response ok:', response.ok);
@@ -483,7 +483,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
           setEsignFields(Array.isArray(fieldsData?.fields) ? fieldsData.fields : []);
         }
         if (!fileRes.ok) {
-          const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
+          const response = await fetch(withApprovalPortalQuery(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`), { headers: getAuthHeaders() });
           if (response.ok) {
             const result = await response.json();
             const previewSrc = iframeSrcFromDocumentPreview(result, workflow.documentId);
@@ -492,7 +492,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
           }
         }
       } else {
-        const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
+        const response = await fetch(withApprovalPortalQuery(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`), { headers: getAuthHeaders() });
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const result = await response.json();
         const previewSrc = iframeSrcFromDocumentPreview(result, workflow.documentId);

@@ -141,7 +141,7 @@ class DocumentServiceMongoDB {
     try {
       console.log('📥 Fetching document from MongoDB:', id);
       
-      const response = await fetch(`${this.apiUrl}/${id}`);
+      const response = await fetch(`${this.apiUrl}/${id}`, { headers: getAuthHeaders() });
 
       if (!response.ok) {
         if (response.status === 404) {

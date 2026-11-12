@@ -294,7 +294,7 @@ const ApprovalDashboard: React.FC = () => {
       // 1) Preferred: preview endpoint returns a base64 dataUrl even while the
       //    workflow is pending (when /file downloads are blocked).
       try {
-        const previewResp = await fetch(`${BACKEND_URL}/api/documents/${encodeURIComponent(docId)}/preview`);
+        const previewResp = await fetch(`${BACKEND_URL}/api/documents/${encodeURIComponent(docId)}/preview`, { headers: getAuthHeaders() });
         if (previewResp.ok) {
           const result = await previewResp.json();
           if (result?.success && typeof result.dataUrl === 'string' && result.dataUrl.startsWith('data:')) {
@@ -305,7 +305,7 @@ const ApprovalDashboard: React.FC = () => {
 
       // 2) Fallback: binary PDF stream (inline=1 is always permitted).
       if (!blob) {
-        const fileResp = await fetch(getDocumentFileInlineUrl(String(docId)));
+        const fileResp = await fetch(getDocumentFileInlineUrl(String(docId)), { headers: getAuthHeaders() });
         if (!fileResp.ok) throw new Error(`Download failed (${fileResp.status})`);
         blob = await fileResp.blob();
       }
@@ -755,7 +755,7 @@ const ApprovalDashboard: React.FC = () => {
 
     try {
       // 1) Preferred: preview endpoint returns a data URL for iframe
-      const previewResp = await fetch(`${BACKEND_URL}/api/documents/${docId}/preview`);
+      const previewResp = await fetch(`${BACKEND_URL}/api/documents/${docId}/preview`, { headers: getAuthHeaders() });
       if (previewResp.ok) {
         const result = await previewResp.json();
         if (result?.success) {

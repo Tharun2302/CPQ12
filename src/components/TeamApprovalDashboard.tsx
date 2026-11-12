@@ -331,7 +331,7 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
           setEsignRecipients([]);
         }
         if (!fileRes.ok) {
-          const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
+          const response = await fetch(withApprovalPortalQuery(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`), { headers: getAuthHeaders() });
           if (response.ok) {
             const result = await response.json();
             const src = iframeSrcFromDocumentPreview(result, workflow.documentId);
@@ -341,7 +341,7 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
         }
       } else {
         console.log('🔄 Fetching document preview for:', workflow.documentId);
-        const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
+        const response = await fetch(withApprovalPortalQuery(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`), { headers: getAuthHeaders() });
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const result = await response.json();
         const src = iframeSrcFromDocumentPreview(result, workflow.documentId);
@@ -406,7 +406,7 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
           setEsignRecipients([]);
         }
         if (!fileRes.ok) {
-          const resp = await fetch(`${BACKEND_URL}/api/documents/${wf.documentId}/preview`);
+          const resp = await fetch(withApprovalPortalQuery(`${BACKEND_URL}/api/documents/${wf.documentId}/preview`), { headers: getAuthHeaders() });
           if (resp.ok) {
             const result = await resp.json();
             const src = iframeSrcFromDocumentPreview(result, wf.documentId);
@@ -416,7 +416,7 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
         }
       } else {
         setEsignRecipients([]);
-        const resp = await fetch(`${BACKEND_URL}/api/documents/${wf.documentId}/preview`);
+        const resp = await fetch(withApprovalPortalQuery(`${BACKEND_URL}/api/documents/${wf.documentId}/preview`), { headers: getAuthHeaders() });
         if (resp.ok) {
           const result = await resp.json();
           const src = iframeSrcFromDocumentPreview(result, wf.documentId);

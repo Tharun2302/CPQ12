@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import {
   PenLine,
@@ -9,7 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
-import { BACKEND_URL } from '../config/api';
+import { fetchDocumentFileObjectUrl } from '../utils/documentPreviewUrl';
 import { SUPPRESS_PII } from '../analytics/privacy';
 
 export interface SignatureField {
@@ -67,6 +67,27 @@ const EsignPrepareModal: React.FC<EsignPrepareModalProps> = ({
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
   const [dragSource, setDragSource] = useState<'toolbox' | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [documentFileUrl, setDocumentFileUrl] = useState<string | null>(null);
+  const workflowDocumentId = workflow?.documentId;
+
+  // An <iframe> cannot send the login header, so the PDF is fetched and shown from an object URL.
+  useEffect(() => {
+    if (!workflowDocumentId) return;
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    fetchDocumentFileObjectUrl(workflowDocumentId)
+      .then((url) => {
+        objectUrl = url;
+        if (cancelled) URL.revokeObjectURL(url);
+        else setDocumentFileUrl(url);
+      })
+      .catch(() => setDocumentFileUrl(null));
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setDocumentFileUrl(null);
+    };
+  }, [workflowDocumentId]);
   const documentRef = useRef<HTMLDivElement>(null);
 
   const addRecipient = () => {
@@ -260,8 +281,8 @@ const EsignPrepareModal: React.FC<EsignPrepareModalProps> = ({
                     <>
                       <iframe
                         src={
-                          workflow?.documentId
-                            ? `${BACKEND_URL}/api/documents/${workflow.documentId}/file?inline=1#page=${currentPage}`
+                          documentFileUrl
+                            ? `${documentFileUrl}#page=${currentPage}`
                             : (documentPreviewUrl || '')
                         }
                         title="Document"

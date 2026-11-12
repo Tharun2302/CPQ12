@@ -79,7 +79,7 @@ const InfrateamDashboard: React.FC<InfrateamDashboardProps> = ({
       setDocumentPreview(null);
       
       try {
-        const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
+        const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`, { headers: getAuthHeaders() });
         if (response.ok) {
           const result = await response.json();
           const src = iframeSrcFromDocumentPreview(result, workflow.documentId);

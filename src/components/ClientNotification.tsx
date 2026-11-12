@@ -4,7 +4,7 @@ import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 import { getAuthHeaders } from '../utils/authUtils';
 import { withApprovalPortalQuery } from '../utils/approvalPortalParams';
-import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
+import { downloadDocumentFile, getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import PdfCanvasViewer from './PdfCanvasViewer';
 import { track } from '../analytics/clarity';
 
@@ -265,7 +265,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
       console.log('📄 Fetching document for preview:', workflow.documentId);
       
       try {
-        const previewResponse = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
+        const previewResponse = await fetch(withApprovalPortalQuery(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`), { headers: getAuthHeaders() });
         if (previewResponse.ok) {
           const result = await previewResponse.json();
           if (result.success) {
@@ -302,13 +302,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     try {
       console.log('📥 Downloading document:', workflow.documentId);
       
-      const fileUrl = `${BACKEND_URL}/api/documents/${encodeURIComponent(workflow.documentId)}/file`;
-      const link = document.createElement('a');
-      link.href = fileUrl;
-      link.download = `${workflow.documentId}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      await downloadDocumentFile(workflow.documentId, `${workflow.documentId}.pdf`, false);
       
       console.log('✅ Document downloaded');
     } catch (error) {

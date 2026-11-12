@@ -3,6 +3,7 @@ import { Calendar, Clock, User, BarChart3, CheckCircle, AlertCircle, Eye, FileTe
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 import { getAuthHeaders } from '../utils/authUtils';
+import { downloadDocumentFile } from '../utils/documentPreviewUrl';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Navigation from './Navigation';
 import { SUPPRESS_PII } from '../analytics/privacy';
@@ -540,7 +541,7 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
       for (const doc of selectedProject.documents) {
         if (doc.mongoId) {
           // Download from MongoDB
-          const response = await fetch(`${BACKEND_URL}/api/documents/${doc.mongoId}/file`);
+          const response = await fetch(`${BACKEND_URL}/api/documents/${doc.mongoId}/file`, { headers: getAuthHeaders() });
           if (response.ok) {
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
@@ -630,6 +631,10 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
     return Array.from({ length: days }, (_, i) => i + 1);
   };
 
+  const handleDownloadStoredDocument = (mongoId: string, name: string) => {
+    downloadDocumentFile(mongoId, name, false).catch(() => alert('Failed to download document. Please try again.'));
+  };
+
   const handleViewDocument = async (doc: UploadedDocument) => {
     console.log('🔍 View document clicked:', doc);
     
@@ -664,7 +669,7 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
       if (doc.mongoId) {
         console.log('📥 Fetching document from MongoDB:', doc.mongoId);
         try {
-          const response = await fetch(`${BACKEND_URL}/api/documents/${doc.mongoId}/file`);
+          const response = await fetch(`${BACKEND_URL}/api/documents/${doc.mongoId}/file`, { headers: getAuthHeaders() });
           if (response.ok) {
             const blob = await response.blob();
             console.log('✅ Document fetched successfully, size:', blob.size);
@@ -677,16 +682,8 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
               const text = await blob.text();
               setPreviewContent(text);
               setShowDocumentPreview(true);
-            } else if (fileExtension === '.docx' || fileExtension === '.doc' || 
-                       fileExtension === '.xls' || fileExtension === '.xlsx') {
-              // For Word/Excel, try using Office Online Viewer with MongoDB URL
-              const fileUrl = `${BACKEND_URL}/api/documents/${doc.mongoId}/file`;
-              // Office Online Viewer requires a publicly accessible URL
-              const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fileUrl)}`;
-              setPreviewContent(viewerUrl);
-              setShowDocumentPreview(true);
             } else {
-              // For other file types, create blob URL
+              // Word/Excel and other types: Office Online Viewer cannot log in, so offer the fetched file
               const url = URL.createObjectURL(blob);
               setPreviewContent(url);
               setShowDocumentPreview(true);
@@ -1994,13 +1991,13 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
                                 </>
                               ) : doc.mongoId ? (
                                 <>
-                                  <a
-                                    href={`${BACKEND_URL}/api/documents/${doc.mongoId}/file`}
-                                    download={doc.name}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadStoredDocument(doc.mongoId!, doc.name)}
                                     className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-semibold"
                                   >
                                     Download
-                                  </a>
+                                  </button>
                                   <button
                                     onClick={() => handleViewDocument(doc)}
                                     className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm font-semibold"
@@ -2066,13 +2063,13 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
                     Download
                   </a>
                 ) : previewDocument.mongoId ? (
-                  <a
-                    href={`${BACKEND_URL}/api/documents/${previewDocument.mongoId}/file`}
-                    download={previewDocument.name}
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadStoredDocument(previewDocument.mongoId!, previewDocument.name)}
                     className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-semibold"
                   >
                     Download
-                  </a>
+                  </button>
                 ) : (
                   <span className="text-sm text-gray-500">File not available</span>
                 )}
@@ -2160,13 +2157,13 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
                           Download File
                         </a>
                       ) : previewDocument.mongoId ? (
-                        <a
-                          href={`${BACKEND_URL}/api/documents/${previewDocument.mongoId}/file`}
-                          download={previewDocument.name}
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadStoredDocument(previewDocument.mongoId!, previewDocument.name)}
                           className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold"
                         >
                           Download File
-                        </a>
+                        </button>
                       ) : (
                         <span className="text-sm text-gray-500">File not available</span>
                       )}

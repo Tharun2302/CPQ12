@@ -22,6 +22,7 @@ const {
 } = require('./approval-step-guard.cjs');
 const technicalApproverGuard = require('./technical-approver-guard.cjs');
 const esignAccess = require('./esign-access.cjs');
+const documentAccess = require('./document-access.cjs');
 const microsoftLogin = require('./microsoft-login.cjs');
 const passwordLogin = require('./password-login.cjs');
 const jwtSecretCheck = require('./jwt-secret.cjs');
@@ -1753,13 +1754,17 @@ app.get('/api/boldsign/download-document/:documentId', async (req, res) => {
       return res.status(503).json({ success: false, message: 'Database not available' });
     }
 
+    const caller = await requireDocumentReadCaller(req, res);
+    if (!caller) return;
+
     const { documentId } = req.params;
     
     // Try documents collection first
     const documentsCollection = db.collection('documents');
-    const document = await documentsCollection.findOne({ id: documentId });
+    const document = await documentsCollection.findOne({ id: String(documentId) });
 
     if (document && document.fileData) {
+      if (!(await documentReadAllowed(req, res, caller, document))) return;
       let fileBuffer;
       if (Buffer.isBuffer(document.fileData)) {
         fileBuffer = document.fileData;
@@ -1780,7 +1785,8 @@ app.get('/api/boldsign/download-document/:documentId', async (req, res) => {
 
     // Fallback: try templates collection (in case approved file is stored as a template)
     const templatesCollection = db.collection('templates');
-    const template = await templatesCollection.findOne({ id: documentId });
+    // Templates need a login everywhere else, so an emailed link never reaches them here.
+    const template = caller.kind === 'staff' ? await templatesCollection.findOne({ id: String(documentId) }) : null;
     if (template && template.fileData) {
       let fileBuffer;
       if (Buffer.isBuffer(template.fileData)) {
@@ -4215,6 +4221,7 @@ app.post('/api/documents', async (req, res) => {
       quoteId,
       metadata,
       createdAt: new Date(),
+      createdBy: normalizeEmail(authUser.email),
       status: 'active',
       // Snapshot of inputs used to render this document — enables date editing post-generation.
       // dates may be undefined for legacy callers; templateData/templateId/customLineItems are
@@ -4272,80 +4279,14 @@ app.get('/api/documents/:id', async (req, res) => {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
 
-    const documentsCollection = db.collection('documents');
-    let document = await documentsCollection.findOne({ id: req.params.id });
+    const caller = await requireDocumentReadCaller(req, res);
+    if (!caller) return;
 
-    // Smart search fallback: if exact ID doesn't match, try to find by client/company
+    const document = await resolveStoredDocumentById(db, req.params.id);
     if (!document) {
-      console.log('⚠️ Exact ID not found in direct fetch, attempting smart search...');
-      const id = req.params.id;
-      
-      // Extract client and company from ID pattern: Company_Client_Timestamp
-      const parts = id.split('_');
-      if (parts.length >= 2) {
-        // Search for documents where ID starts with the same company_client pattern
-        const idPattern = new RegExp(`^${parts[0]}_${parts[1]}_`, 'i');
-        const matchingDocs = await documentsCollection
-          .find({ id: { $regex: idPattern } })
-          .sort({ createdAt: -1 })
-          .limit(1)
-          .toArray();
-        
-        if (matchingDocs.length > 0) {
-          document = matchingDocs[0];
-          console.log(`✅ Found matching document: ${document.id} (searched for: ${id})`);
-        } else {
-          // Fallback: search by company and clientName fields
-          const companyPart = parts[0].replace(/[0-9]/g, '');
-          const clientPart = parts[1].replace(/[0-9]/g, '');
-          
-          if (companyPart && clientPart) {
-            const searchQuery = {
-              $and: [
-                { company: { $regex: companyPart, $options: 'i' } },
-                { clientName: { $regex: clientPart, $options: 'i' } }
-              ]
-            };
-            
-            const matchingDocs2 = await documentsCollection
-              .find(searchQuery)
-              .sort({ createdAt: -1 })
-              .limit(1)
-              .toArray();
-            
-            if (matchingDocs2.length > 0) {
-              document = matchingDocs2[0];
-              console.log(`✅ Found matching document by client/company: ${document.id} (searched for: ${id})`);
-              } else {
-              // Fallback: search by clientName only (in case company name changed or is different)
-              // Convert sanitized client name (e.g., "JasonWoods") to regex that matches with spaces (e.g., "Jason Woods")
-              // Insert optional spaces before capital letters (camelCase handling)
-              const clientNamePattern = clientPart.replace(/([a-z])([A-Z])/g, '$1\\s*$2');
-              // For "JasonWoods" -> "Jason\\s*Woods" (allows "Jason Woods", "JasonWoods", etc.)
-              const clientOnlyQuery = {
-                clientName: { $regex: clientNamePattern, $options: 'i' }
-              };
-              
-              const matchingDocs3 = await documentsCollection
-                .find(clientOnlyQuery)
-                .sort({ createdAt: -1 })
-                .limit(1)
-                .toArray();
-              
-              if (matchingDocs3.length > 0) {
-                document = matchingDocs3[0];
-                console.log(`✅ Found matching document by client name only: ${document.id} (searched for: ${id})`);
-                console.log(`   Note: Company mismatch - workflow: ${companyPart}, document: ${document.company}`);
-              }
-            }
-          }
-        }
-      }
-      
-      if (!document) {
-        return res.status(404).json({ success: false, error: 'Document not found' });
-      }
+      return res.status(404).json({ success: false, error: 'Document not found' });
     }
+    if (!(await documentReadAllowed(req, res, caller, document))) return;
 
     console.log('✅ Retrieved document from MongoDB:', document.id);
 
@@ -4419,7 +4360,19 @@ app.delete('/api/documents/:id', async (req, res) => {
     if (!authUser) return;
 
     const documentsCollection = db.collection('documents');
-    const result = await documentsCollection.deleteOne({ id: req.params.id });
+    const documentId = String(req.params.id);
+    const existing = await documentsCollection.findOne(
+      { id: documentId },
+      { projection: { id: 1, createdBy: 1 } }
+    );
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+    if (!(await actorMayDeleteDocument(existing, authUser))) {
+      return res.status(403).json({ success: false, error: 'Only the document creator or an approval admin can delete this document' });
+    }
+
+    const result = await documentsCollection.deleteOne({ id: documentId });
 
     if (result.deletedCount === 0) {
       return res.status(404).json({ success: false, error: 'Document not found' });
@@ -7178,6 +7131,7 @@ app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
       },
       status: 'active',
       createdAt: new Date().toISOString(),
+      createdBy: normalizeEmail(authUser.email),
       generatedDate: new Date().toISOString()
     };
     
@@ -9405,8 +9359,11 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
 app.get('/api/documents/:id/edit-context', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const doc = await db.collection('documents').findOne({ id: req.params.id });
+    const caller = await requireDocumentReadCaller(req, res);
+    if (!caller) return;
+    const doc = await db.collection('documents').findOne({ id: String(req.params.id) });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (!(await documentReadAllowed(req, res, caller, doc))) return;
 
     res.json({
       success: true,
@@ -11292,57 +11249,61 @@ app.get('/api/esign/agreement-status', async (req, res) => {
 // NOTE: This endpoint is replaced by the one below at line 3725 to avoid duplicates
 // Keeping this comment for reference but the endpoint below should be used
 
-/** Resolve a documents row by exact id or workflow-style id (company_client_timestamp). */
+/**
+ * Resolve a documents row by exact id, else the newest document of the same company and client:
+ * an approval can hold a Company_Client_12345 id whose number no longer matches the stored row.
+ * Patterns come from document-access.cjs, so the id is never used as a pattern itself.
+ */
 async function resolveStoredDocumentById(db, idParam) {
   const id = String(idParam || '');
-  let document = await db.collection('documents').findOne({ id });
-  if (document) return document;
-  console.log('⚠️ Exact ID not found, attempting smart search...');
-  const parts = id.split('_');
-  if (parts.length < 2) return null;
-  const companyPart = parts[0].replace(/[0-9]/g, '');
-  const clientPart = parts[1].replace(/[0-9]/g, '');
-  if (!companyPart || !clientPart) return null;
-  console.log('🔍 Searching by company/client pattern:', { companyPart, clientPart });
-  const idPattern = new RegExp(`^${parts[0]}_${parts[1]}_`, 'i');
-  let matchingDocs = await db
-    .collection('documents')
-    .find({ id: { $regex: idPattern } })
-    .sort({ createdAt: -1 })
-    .limit(1)
-    .toArray();
-  if (matchingDocs.length > 0) {
-    console.log(`✅ Found matching document: ${matchingDocs[0].id} (searched for: ${id})`);
-    return matchingDocs[0];
-  }
-  const searchQuery = {
+  const exact = await db.collection('documents').findOne({ id });
+  if (exact) return exact;
+  const customer = documentAccess.parseDocumentId(id);
+  if (!customer) return null;
+  const newest = (filter) => db.collection('documents').find(filter).sort({ createdAt: -1 }).limit(1).toArray();
+  const [byId] = await newest({ id: { $regex: documentAccess.sameCustomerIdPattern(customer) } });
+  if (byId) return byId;
+  const [byNames] = await newest({
     $and: [
-      { company: { $regex: companyPart, $options: 'i' } },
-      { clientName: { $regex: clientPart, $options: 'i' } },
+      { company: { $regex: documentAccess.storedNamePattern(customer.company) } },
+      { clientName: { $regex: documentAccess.storedNamePattern(customer.client) } },
     ],
-  };
-  matchingDocs = await db
-    .collection('documents')
-    .find(searchQuery)
-    .sort({ createdAt: -1 })
-    .limit(1)
-    .toArray();
-  if (matchingDocs.length > 0) {
-    console.log(`✅ Found matching document by client/company: ${matchingDocs[0].id} (searched for: ${id})`);
-    return matchingDocs[0];
+  });
+  return byNames || null;
+}
+
+// Staff login, else the emailed link for the workflow named in the query. Answers 401 itself.
+async function requireDocumentReadCaller(req, res) {
+  const workflowId = typeof req.query.workflowId === 'string' ? req.query.workflowId : '';
+  return requireApprovalCaller(req, res, workflowId);
+}
+
+// Stored ids of the documents a link's own workflow points at (its document and redline copy).
+async function linkWorkflowDocumentIds(workflowId) {
+  const workflow = await db.collection('approval_workflows').findOne(
+    { id: String(workflowId) },
+    { projection: { documentId: 1, redlineDocumentId: 1 } }
+  );
+  const ids = [];
+  for (const id of documentAccess.workflowDocumentIds(workflow)) {
+    const stored = await resolveStoredDocumentById(db, id);
+    if (stored) ids.push(stored.id);
   }
-  const clientNamePattern = clientPart.replace(/([a-z])([A-Z])/g, '$1\\s*$2');
-  matchingDocs = await db
-    .collection('documents')
-    .find({ clientName: { $regex: clientNamePattern, $options: 'i' } })
-    .sort({ createdAt: -1 })
-    .limit(1)
-    .toArray();
-  if (matchingDocs.length > 0) {
-    console.log(`✅ Found matching document by client name only: ${matchingDocs[0].id} (searched for: ${id})`);
-    console.log(`   Note: Company mismatch - workflow: ${companyPart}, document: ${matchingDocs[0].company}`);
-  }
-  return matchingDocs[0] || null;
+  return ids;
+}
+
+// A link opens only its own workflow's document, compared by stored id. Answers 403 itself.
+async function documentReadAllowed(req, res, caller, document) {
+  const linkDocumentIds = caller.kind === 'link' ? await linkWorkflowDocumentIds(req.query.workflowId) : [];
+  const verdict = documentAccess.checkDocumentReadCaller({ caller, document, linkDocumentIds });
+  if (!verdict.ok) res.status(verdict.httpStatus).json({ success: false, error: verdict.error });
+  return verdict.ok;
+}
+
+// Creator recorded at save, else the requester of its approval or agreement, else an approval admin.
+async function actorMayDeleteDocument(document, actor) {
+  if (documentAccess.isDocumentCreator(document, actor.email)) return true;
+  return actorCanEditSourceDocumentDates(document, normalizeEmail(actor.email));
 }
 
 function fileDataToBuffer(fileData) {
@@ -11368,13 +11329,16 @@ app.get('/api/documents/:id/file', async (req, res) => {
       });
     }
 
+    const caller = await requireDocumentReadCaller(req, res);
+    if (!caller) return;
+
     const { id } = req.params;
 
     console.log('📄 Fetching document file:', id);
 
     // Block file *downloads* when an active approval workflow exists.
-    // Inline preview requests (inline=1) are always allowed so that the approval portal
-    // can display the document to approvers — they must see it to approve it.
+    // Inline preview requests (inline=1) skip this block (never the access check) so that the
+    // approval portal can display the document to approvers — they must see it to approve it.
     const inline = req.query.inline === '1' || req.query.inline === 'true';
     if (!inline) {
       const activeWorkflow = await db.collection('approval_workflows').findOne({
@@ -11398,6 +11362,7 @@ app.get('/api/documents/:id/file', async (req, res) => {
         error: 'Document not found'
       });
     }
+    if (!(await documentReadAllowed(req, res, caller, document))) return;
 
     // Normalize fileData to Buffer (support Buffer, BSON Binary, or base64 string)
     let fileBuffer;
@@ -11435,6 +11400,9 @@ app.get('/api/documents/:id/preview', async (req, res) => {
       });
     }
 
+    const caller = await requireDocumentReadCaller(req, res);
+    if (!caller) return;
+
     const { id } = req.params;
     
     console.log('📄 Fetching document preview:', id);
@@ -11446,6 +11414,7 @@ app.get('/api/documents/:id/preview', async (req, res) => {
         error: 'Document not found',
       });
     }
+    if (!(await documentReadAllowed(req, res, caller, document))) return;
 
     let fileBuffer;
     try {
@@ -12769,109 +12738,6 @@ app.post('/api/documents', async (req, res) => {
   }
 });
 
-// Get raw PDF file for a document
-app.get('/api/documents/:id', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({
-        success: false,
-        error: 'Database not available',
-      });
-    }
-
-    const { id } = req.params;
-    let doc = await db.collection('documents').findOne({ id });
-
-    // Smart search fallback: if exact ID doesn't match, try to find by client/company
-    if (!doc) {
-      console.log('⚠️ Exact ID not found in raw fetch, attempting smart search...');
-      
-      // Extract client and company from ID pattern: Company_Client_Timestamp
-      const parts = id.split('_');
-      if (parts.length >= 2) {
-        // Search for documents where ID starts with the same company_client pattern
-        const idPattern = new RegExp(`^${parts[0]}_${parts[1]}_`, 'i');
-        const matchingDocs = await db.collection('documents')
-          .find({ id: { $regex: idPattern } })
-          .sort({ createdAt: -1 })
-          .limit(1)
-          .toArray();
-        
-        if (matchingDocs.length > 0) {
-          doc = matchingDocs[0];
-          console.log(`✅ Found matching document: ${doc.id} (searched for: ${id})`);
-        } else {
-          // Fallback: search by company and clientName fields
-          const companyPart = parts[0].replace(/[0-9]/g, '');
-          const clientPart = parts[1].replace(/[0-9]/g, '');
-          
-          if (companyPart && clientPart) {
-            const searchQuery = {
-              $and: [
-                { company: { $regex: companyPart, $options: 'i' } },
-                { clientName: { $regex: clientPart, $options: 'i' } }
-              ]
-            };
-            
-            const matchingDocs2 = await db.collection('documents')
-              .find(searchQuery)
-              .sort({ createdAt: -1 })
-              .limit(1)
-              .toArray();
-            
-            if (matchingDocs2.length > 0) {
-              doc = matchingDocs2[0];
-              console.log(`✅ Found matching document by client/company: ${doc.id} (searched for: ${id})`);
-            } else {
-              // Fallback: search by clientName only (in case company name changed or is different)
-              // Convert sanitized client name (e.g., "JasonWoods") to regex that matches with spaces (e.g., "Jason Woods")
-              // Insert optional spaces before capital letters (camelCase handling)
-              const clientNamePattern = clientPart.replace(/([a-z])([A-Z])/g, '$1\\s*$2');
-              // For "JasonWoods" -> "Jason\\s*Woods" (allows "Jason Woods", "JasonWoods", etc.)
-              const clientOnlyQuery = {
-                clientName: { $regex: clientNamePattern, $options: 'i' }
-              };
-              
-              const matchingDocs3 = await db.collection('documents')
-                .find(clientOnlyQuery)
-                .sort({ createdAt: -1 })
-                .limit(1)
-                .toArray();
-              
-              if (matchingDocs3.length > 0) {
-                doc = matchingDocs3[0];
-                console.log(`✅ Found matching document by client name only: ${doc.id} (searched for: ${id})`);
-                console.log(`   Note: Company mismatch - workflow: ${companyPart}, document: ${doc.company}`);
-              }
-            }
-          }
-        }
-      }
-      
-      if (!doc || !doc.fileData) {
-        return res.status(404).json({
-          success: false,
-          error: 'Document not found',
-        });
-      }
-    }
-
-    const buffer = Buffer.from(doc.fileData, 'base64');
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      `inline; filename="${doc.fileName || 'document.pdf'}"`
-    );
-    res.send(buffer);
-  } catch (error) {
-    console.error('❌ Error fetching document file:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
 // Smart document search by client name and company (fallback when exact ID doesn't match)
 app.get('/api/documents/search', async (req, res) => {
   try {
@@ -12929,96 +12795,6 @@ app.get('/api/documents/search', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error searching documents:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-// Get a base64 preview for a document
-app.get('/api/documents/:id/preview', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({
-        success: false,
-        error: 'Database not available',
-      });
-    }
-
-    const { id } = req.params;
-    const doc = await db.collection('documents').findOne({ id });
-
-    if (!doc || !doc.fileData) {
-      // Try smart search as fallback if exact ID doesn't match
-      console.log('⚠️ Exact ID not found, attempting smart search...');
-      
-      // Extract client and company from ID pattern: Company_Client_Timestamp
-      const parts = id.split('_');
-      if (parts.length >= 2) {
-        const sanitizeForSearch = (str) => {
-          if (!str) return null;
-          // Remove numbers and special chars, keep letters
-          return str.replace(/[0-9]/g, '').replace(/[^a-zA-Z]/g, ' ').trim();
-        };
-        
-        const possibleCompany = sanitizeForSearch(parts[0]);
-        const possibleClient = sanitizeForSearch(parts[1]);
-        
-        if (possibleCompany && possibleClient) {
-          console.log('🔍 Searching by:', { company: possibleCompany, client: possibleClient });
-          const searchQuery = {
-            $or: [
-              { company: { $regex: possibleCompany, $options: 'i' } },
-              { clientName: { $regex: possibleClient, $options: 'i' } }
-            ]
-          };
-          
-          const matchingDocs = await db.collection('documents')
-            .find(searchQuery)
-            .sort({ createdAt: -1 })
-            .limit(1)
-            .toArray();
-          
-          if (matchingDocs.length > 0) {
-            const matchedDoc = matchingDocs[0];
-            console.log(`✅ Found matching document: ${matchedDoc.id} (searched for: ${id})`);
-            
-            // Return the matched document
-            const dataUrl = typeof matchedDoc.fileData === 'string' 
-              ? `data:application/pdf;base64,${matchedDoc.fileData}`
-              : `data:application/pdf;base64,${Buffer.from(matchedDoc.fileData).toString('base64')}`;
-            
-            return res.json({
-              success: true,
-              dataUrl,
-              fileName: matchedDoc.fileName || 'document.pdf',
-              documentId: matchedDoc.id,
-              originalSearchedId: id,
-              matched: true
-            });
-          }
-        }
-      }
-      
-      return res.status(404).json({
-        success: false,
-        error: 'Document not found',
-      });
-    }
-
-    const dataUrl = typeof doc.fileData === 'string'
-      ? `data:application/pdf;base64,${doc.fileData}`
-      : `data:application/pdf;base64,${Buffer.from(doc.fileData).toString('base64')}`;
-
-    res.json({
-      success: true,
-      dataUrl,
-      fileName: doc.fileName || 'document.pdf',
-      documentId: id,
-    });
-  } catch (error) {
-    console.error('❌ Error generating document preview:', error);
     res.status(500).json({
       success: false,
       error: error.message,

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { getAuthHeaders } from '../utils/authUtils';
 
 if (typeof window !== 'undefined') {
   try {
@@ -48,7 +49,7 @@ const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({ src, className = '', 
           for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
           arrayBuffer = bytes.buffer;
         } else {
-          const res = await fetch(src, { mode: 'cors', credentials: 'include' });
+          const res = await fetch(src, { mode: 'cors', credentials: 'include', headers: getAuthHeaders() });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           arrayBuffer = await res.arrayBuffer();
         }
