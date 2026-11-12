@@ -6,6 +6,7 @@ import { overageLineItem } from '../utils/migrateSelection';
 import { calculateDiscount, normalizeDiscountPercent } from '../utils/discount';
 import { useDiscountPolicy } from '../hooks/useDiscountPolicy';
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from '../utils/authUtils';
 import { configsMissingPlan, planSelectionBlockedMessage } from '../utils/exhibitPlan';
 
 interface PricingComparisonProps {
@@ -67,7 +68,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/exhibits`);
+        const res = await fetch(`${BACKEND_URL}/api/exhibits`, { headers: getAuthHeaders() });
         const data = res.ok ? await res.json() : null;
         if (!cancelled && Array.isArray(data?.exhibits)) setExhibitCatalogue(data.exhibits);
       } catch (e) {

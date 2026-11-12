@@ -277,7 +277,7 @@ const EditDatesModal: React.FC<EditDatesModalProps> = ({ documentId, actorEmail,
       // client-side so the new dates appear inside the actual file.
       if (canRerender && context.templateData && context.templateId) {
         setProgress('Fetching template…');
-        const tmplResp = await fetch(`${BACKEND_URL}/api/templates/${context.templateId}/file`);
+        const tmplResp = await fetch(`${BACKEND_URL}/api/templates/${context.templateId}/file`, { headers: getAuthHeaders() });
         if (!tmplResp.ok) {
           throw new Error(`Could not fetch original template (${tmplResp.status}). Dates not updated.`);
         }

@@ -55,6 +55,7 @@ class DocumentServiceMongoDB {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...getAuthHeaders(),
         },
         body: JSON.stringify(document),
       });
@@ -174,6 +175,7 @@ class DocumentServiceMongoDB {
       
       const response = await fetch(`${this.apiUrl}/${id}`, {
         method: 'DELETE',
+        headers: getAuthHeaders(),
       });
 
       if (!response.ok) {

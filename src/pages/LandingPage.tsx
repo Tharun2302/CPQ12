@@ -1,8 +1,10 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Calculator, Users, FileText, BarChart3, Shield, Zap } from 'lucide-react';
 
 const LandingPage: React.FC = () => {
+  // ProtectedRoute sends signed-out visitors here with the page they wanted; Sign In hands it on.
+  const from = (useLocation().state as { from?: unknown } | null)?.from;
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
 
@@ -22,6 +24,7 @@ const LandingPage: React.FC = () => {
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
               to="/signin"
+              state={from ? { from } : undefined}
               className="bg-white text-blue-600 px-8 py-3 rounded-lg text-lg font-semibold border-2 border-blue-600 hover:bg-blue-50 transition-colors"
             >
               Sign In

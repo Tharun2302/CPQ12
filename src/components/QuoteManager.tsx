@@ -1291,6 +1291,7 @@ ZENOP Pro Solutions Team`;
       // Send email with PDF and signature form link
       const response = await fetch(`${backendUrl}/api/email/send`, {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: formData
       });
       

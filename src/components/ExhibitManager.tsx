@@ -456,7 +456,7 @@ const ExhibitManager: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/combinations`);
+        const res = await fetch(`${BACKEND_URL}/api/combinations`, { headers: getAuthHeaders() });
         if (!res.ok) return;
         const data = await res.json();
         if (cancelled || !data?.success || !Array.isArray(data.combinations)) return;
@@ -516,7 +516,7 @@ const ExhibitManager: React.FC = () => {
   const loadExhibits = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(`${BACKEND_URL}/api/exhibits`);
+      const response = await fetch(`${BACKEND_URL}/api/exhibits`, { headers: getAuthHeaders() });
       const data = await response.json();
       
       if (data.success) {

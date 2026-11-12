@@ -2,6 +2,7 @@
 import { ApprovalWorkflow, ApprovalStep } from '../types/approval';
 import { BACKEND_URL } from '../config/api';
 import { getAuthHeaders } from '../utils/authUtils';
+import { getApprovalPortalQuery } from '../utils/approvalPortalParams';
 
 /** Safely read the error message and code from a non-ok response without crashing on empty bodies. */
 async function readErrorBody(response: Response, fallback: string): Promise<{ message: string; code?: string }> {
@@ -74,7 +75,10 @@ class ApprovalWorkflowServiceMongoDB {
     try {
       console.log('📄 Fetching workflows from MongoDB...');
 
-      const response = await fetch(`${this.baseUrl}/approval-workflows`);
+      // Login JWT for signed-in users; the portal link's workflowId/role/token for emailed approvers
+      const response = await fetch(`${this.baseUrl}/approval-workflows${getApprovalPortalQuery()}`, {
+        headers: getAuthHeaders(),
+      });
 
       if (!response.ok) {
         throw new Error(await extractErrorMessage(response, 'Failed to fetch workflows'));

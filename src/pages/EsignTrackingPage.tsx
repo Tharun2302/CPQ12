@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Loader2, Check, Clock, Download, Eye, XCircle, CalendarClock } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
-import { esignFetch } from '../utils/esignAccess';
+import { getAuthHeaders } from '../utils/authUtils';
 import { useAuth } from '../hooks/useAuth';
 import EditDatesModal from '../components/EditDatesModal';
 import { SUPPRESS_PII } from '../analytics/privacy';
@@ -88,8 +88,8 @@ const EsignTrackingPage: React.FC = () => {
     if (!documentId) return;
     try {
       const [docRes, recRes] = await Promise.all([
-        esignFetch(`${BACKEND_URL}/api/esign/documents/${documentId}`),
-        esignFetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`),
+        fetch(`${BACKEND_URL}/api/esign/documents/${documentId}`, { headers: getAuthHeaders() }),
+        fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`, { headers: getAuthHeaders() }),
       ]);
       const docData = await docRes.json();
       const recData = await recRes.json();
@@ -133,7 +133,7 @@ const EsignTrackingPage: React.FC = () => {
     if (!documentId || !doc) return;
     setDownloading(true);
     try {
-      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${documentId}/file?attachment=1`, { credentials: 'include' });
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/file?attachment=1`, { credentials: 'include', headers: getAuthHeaders() });
       if (!res.ok) {
         setError('Download failed');
         return;
@@ -160,7 +160,7 @@ const EsignTrackingPage: React.FC = () => {
     // blockers drop window.open calls made after an await.
     const tab = window.open('', '_blank');
     try {
-      const res = await esignFetch(fileUrl);
+      const res = await fetch(fileUrl, { headers: getAuthHeaders() });
       if (res.status === 404) {
         tab?.close();
         alert('This document could not be loaded. The PDF file is missing from storage. Please re-upload the document and resend for signature, or contact your administrator.');
@@ -192,9 +192,9 @@ const EsignTrackingPage: React.FC = () => {
     setExtendingExpiry(true);
     setExtendResult(null);
     try {
-      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${documentId}/extend-expiry`, {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/extend-expiry`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ actor_email: user?.email || '', days }),
       });
       const data = await res.json().catch(() => ({}));

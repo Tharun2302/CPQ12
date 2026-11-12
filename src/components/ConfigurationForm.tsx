@@ -49,6 +49,7 @@ import { useSprawlGroups } from '../hooks/useSprawlGroups';
 import SprawlGroupCard from './SprawlGroupCard';
 import { getContentTimelineByServerType, formatServerTypeLabel, type SourceEnvironment, type ContentMigrationType } from '../utils/timelineProjection';
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from '../utils/authUtils';
 import { SUPPRESS_PII } from '../analytics/privacy';
 import { calculateDiscount, isDiscountAboveMax, sanitizeDiscountInput } from '../utils/discount';
 import { DISCOUNT_UPDATED_EVENT } from '../utils/discountSession';
@@ -204,7 +205,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   // Combinations from API (user-managed via Combination Manager); fallback to hardcoded if empty
   const [apiCombinations, setApiCombinations] = useState<Array<{ value: string; label: string; migrationType: string; requiresUsers?: boolean }>>([]);
   const fetchCombinations = () => {
-    fetch(`${BACKEND_URL}/api/combinations`)
+    fetch(`${BACKEND_URL}/api/combinations`, { headers: getAuthHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.success && Array.isArray(data.combinations)) {
@@ -462,7 +463,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
       try {
        
-        const response = await fetch(`${BACKEND_URL}/api/exhibits`);
+        const response = await fetch(`${BACKEND_URL}/api/exhibits`, { headers: getAuthHeaders() });
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.exhibits) {
@@ -897,7 +898,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
     (async () => {
       try {
-        const response = await fetch(`${BACKEND_URL}/api/exhibits`);
+        const response = await fetch(`${BACKEND_URL}/api/exhibits`, { headers: getAuthHeaders() });
         if (!response.ok) return;
         const data = await response.json();
         const families = (data?.exhibits || [])
@@ -1062,7 +1063,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     const fetchExhibitCategories = async () => {
       try {
         
-        const response = await fetch(`${BACKEND_URL}/api/exhibits`);
+        const response = await fetch(`${BACKEND_URL}/api/exhibits`, { headers: getAuthHeaders() });
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.exhibits) {

@@ -84,7 +84,7 @@ describe('sendDocumentForSignature — one call per provider, and no crossover',
     vi.restoreAllMocks();
   });
 
-  it('sends the in-house request byte-identically to the pre-Zoho call', async () => {
+  it('sends the in-house request to the original route with an empty body and the Bearer token', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { success: true }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -96,9 +96,7 @@ describe('sendDocumentForSignature — one call per provider, and no crossover',
     expect(String(url)).not.toContain('zoho');
     expect(init.method).toBe('POST');
     expect(init.body).toBe('{}');
-    expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
-    // The in-house route authorizes differently; adding a header here would be a silent change.
-    expect(init.headers.Authorization).toBeUndefined();
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` });
   });
 
   it('sends the Zoho request to the Zoho route with the Bearer token', async () => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle, X, MessageCircle, FileText, DollarSign, User, Eye, Download } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
@@ -21,6 +21,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
   const [showCommentInModal, setShowCommentInModal] = useState(false);
   const [loadingWorkflow, setLoadingWorkflow] = useState(true);
   const [workflowNotFound, setWorkflowNotFound] = useState(false);
+  const requestedFetchIdRef = useRef<string | null>(null);
   const { workflows, updateWorkflowStep, updateWorkflow } = useApprovalWorkflows();
   
   // Get workflow ID from URL parameters and auto-open document preview
@@ -42,15 +43,9 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
         setWorkflowNotFound(false);
         setLoadingWorkflow(false);
         console.log('📋 Client viewing workflow from loaded data:', foundWorkflow);
-      } else if (workflows.length > 0) {
-        // If workflows are loaded but this one not found, it doesn't exist
-        console.error('❌ Workflow not found in loaded workflows:', workflowId);
-        console.error('❌ Available workflow IDs:', workflows.map(w => w.id));
-        setWorkflowNotFound(true);
-        setLoadingWorkflow(false);
-      } else {
-        // If workflows not loaded yet, fetch this specific workflow directly
-        console.log('🔄 Workflows not loaded yet, fetching specific workflow:', workflowId);
+      } else if (requestedFetchIdRef.current !== workflowId) {
+        // The list only holds workflows visible to the caller, so a missing id still needs a direct lookup
+        requestedFetchIdRef.current = workflowId;
         fetchSpecificWorkflow(workflowId);
       }
     } else if (!workflowId) {

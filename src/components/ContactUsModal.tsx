@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Send, CheckCircle, Loader2, HelpCircle, Paperclip, Trash2 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from '../utils/authUtils';
 
 interface ContactUsModalProps {
   isOpen: boolean;
@@ -91,6 +92,7 @@ const ContactUsModal: React.FC<ContactUsModalProps> = ({
 
       const res = await fetch(`${BACKEND_URL}/api/email/send`, {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: formData,
       });
 

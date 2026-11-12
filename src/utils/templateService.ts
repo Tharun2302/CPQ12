@@ -1,5 +1,6 @@
 // Template Service for Database Operations
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from './authUtils';
 export interface DatabaseTemplate {
   id: string;
   name: string;
@@ -55,6 +56,7 @@ class TemplateService {
 
       const response = await fetch(`${this.baseUrl}/templates`, {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: formData
       });
 
@@ -91,7 +93,8 @@ class TemplateService {
 
       try {
         const response = await fetch(`${this.baseUrl}/templates`, {
-          signal: controller.signal
+          signal: controller.signal,
+          headers: getAuthHeaders()
         });
         clearTimeout(timeoutId);
         
@@ -129,7 +132,7 @@ class TemplateService {
     try {
       console.log('📄 Fetching template file:', templateId);
 
-      const response = await fetch(`${this.baseUrl}/templates/${templateId}/file`);
+      const response = await fetch(`${this.baseUrl}/templates/${templateId}/file`, { headers: getAuthHeaders() });
       
       if (!response.ok) {
         const errorData = await response.json();
@@ -181,7 +184,7 @@ class TemplateService {
       const form = new FormData();
       form.append('file', file, 'agreement.docx');
       const url = `${this.baseUrl}/convert/docx-to-pdf${skipPreprocess ? '?skipPreprocess=true' : ''}`;
-      return fetch(url, { method: 'POST', body: form });
+      return fetch(url, { method: 'POST', headers: getAuthHeaders(), body: form });
     };
 
     let response: Response;
@@ -307,7 +310,8 @@ class TemplateService {
       console.log('🗑️ Deleting template:', templateId);
 
       const response = await fetch(`${this.baseUrl}/templates/${templateId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: getAuthHeaders()
       });
       
       if (!response.ok) {
@@ -331,7 +335,8 @@ class TemplateService {
       const response = await fetch(`${this.baseUrl}/templates/${templateId}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
         },
         body: JSON.stringify(updates)
       });

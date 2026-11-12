@@ -1,5 +1,6 @@
 // Microsoft OAuth implementation without MSAL library
 // This prevents white page issues while providing Microsoft authentication
+import { getMicrosoftAuthorizeUrl } from './microsoftAuthority';
 
 interface MicrosoftUser {
   id: string;
@@ -12,7 +13,6 @@ export class MicrosoftAuth {
   private static readonly CLIENT_ID = (import.meta as any).env?.VITE_MSAL_CLIENT_ID as string;
   private static readonly REDIRECT_URI = ((import.meta as any).env?.VITE_MSAL_REDIRECT_URI as string) || `${window.location.origin}/auth/microsoft/callback`;
   private static readonly SCOPES = 'openid profile email User.Read';
-  private static readonly AUTHORITY = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize';
 
   private static generateRandomString(length: number): string {
     const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
@@ -82,7 +82,7 @@ export class MicrosoftAuth {
       code_challenge_method: 'S256'
     } as any);
 
-    return `${this.AUTHORITY}?${params.toString()}`;
+    return `${getMicrosoftAuthorizeUrl()}?${params.toString()}`;
   }
 
   private static generateState(): string {

@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { useNavigate, Link } from 'react-router-dom';
 import { Upload, FileText, Loader2, PenLine, Download, Trash2, Check, Clock, XCircle, Eye, MoreVertical, BookOpen, Copy, Bell, X, Users } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
-import { esignFetch, downloadEsignFile, fetchEsignFileObjectUrl } from '../utils/esignAccess';
+import { downloadEsignFile, fetchEsignFileObjectUrl } from '../utils/esignAccess';
+import { authAwareError, getAuthHeaders } from '../utils/authUtils';
 import { SUPPRESS_PII } from '../analytics/privacy';
 import { useAuth } from '../hooks/useAuth';
 import { shouldAutoStartLandingTour, startEsignLandingTour } from '../utils/esignTour';
@@ -150,6 +151,7 @@ const EsignDocumentsPage: React.FC = () => {
 
 const [documents, setDocuments] = useState<EsignDocument[]>([]);
   const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadedBy, setUploadedBy] = useState('');
@@ -188,7 +190,7 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
 
   const loadDocuments = useCallback(async () => {
     try {
-      const res = await esignFetch(`${BACKEND_URL}/api/esign/agreement-status`);
+      const res = await fetch(`${BACKEND_URL}/api/esign/agreement-status`, { headers: getAuthHeaders() });
       const data = await res.json();
       if (data.success && Array.isArray(data.agreements)) {
         const email = user?.email;
@@ -200,8 +202,10 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
             )
           : [];
         setDocuments(mine);
+        setListError(null);
       } else {
         setDocuments([]);
+        setListError(res.ok ? null : authAwareError(res.status, data.error, 'Could not load your documents.'));
       }
     } catch (err) {
       console.error('Failed to load documents:', err);
@@ -249,8 +253,9 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
       const formData = new FormData();
       formData.append('file', file);
       formData.append('uploaded_by', user?.email || uploadedBy || 'anonymous');
-      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/upload`, {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/upload`, {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: formData,
       });
       const data = await res.json();
@@ -296,9 +301,9 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
     if (valid.length > 0 || signingOrderEnabled) {
       setSavingRecipients(true);
       try {
-        const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${uploadedDocumentId}/recipients`, {
+        const res = await fetch(`${BACKEND_URL}/api/esign/documents/${uploadedDocumentId}/recipients`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({
             recipients: valid.map((r) => ({
               name: r.name.trim() || r.email.trim(),
@@ -389,9 +394,9 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
     }
     setVoidingId(docId);
     try {
-      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${docId}/void`, {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}/void`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ actor_email: user?.email || '', void_reason: trimmed }),
       });
       const data = await res.json().catch(() => ({}));
@@ -412,9 +417,9 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
     if (remindingDocId) return;
     setRemindingDocId(docId);
     try {
-      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${docId}/remind`, {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}/remind`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ actor_email: user?.email }),
       });
       const data = await res.json().catch(() => ({}));
@@ -453,7 +458,7 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
     }
     setCopyingDocId(docId);
     try {
-      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${docId}/recipients`);
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}/recipients`, { headers: getAuthHeaders() });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) {
         alert(data.error || 'Could not fetch signing link.');
@@ -501,8 +506,8 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
     setStatusModalLoading(true);
     try {
       const [docRes, recRes] = await Promise.all([
-        esignFetch(`${BACKEND_URL}/api/esign/documents/${docId}`),
-        esignFetch(`${BACKEND_URL}/api/esign/documents/${docId}/recipients`),
+        fetch(`${BACKEND_URL}/api/esign/documents/${docId}`, { headers: getAuthHeaders() }),
+        fetch(`${BACKEND_URL}/api/esign/documents/${docId}/recipients`, { headers: getAuthHeaders() }),
       ]);
       const docData = await docRes.json();
       const recData = await recRes.json();
@@ -920,7 +925,9 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
           ) : documents.length === 0 ? (
             <div className="py-12 text-center text-slate-500">
               <FileText className="h-12 w-12 mx-auto mb-3 text-slate-300" />
-              {!normalizeEmail(user?.email) ? (
+              {listError ? (
+                <p role="alert" className="text-red-600">{listError}</p>
+              ) : !normalizeEmail(user?.email) ? (
                 <>
                   <p>Sign in to see your documents.</p>
                   <p className="text-sm mt-1">Your e-sign agreements are shown for the account you&apos;re logged in with.</p>

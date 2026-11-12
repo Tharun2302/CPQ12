@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { cleanup, render, waitFor, act } from '@testing-library/react';
 
 import App from '../../src/App';
+import { SIGNED_IN_USER, signIn } from './helpers/signedIn';
 import { effectiveTemplateKey, templateChoiceChanged } from '../../src/utils/templateSelection';
 
 const STANDALONE = { servicePlan: 'Manage', migrationType: '', combination: 'manage-standalone', manageAgreementLabel: 'Manage Standalone', manageUsers: 30 };
@@ -34,6 +35,7 @@ const res = (body: unknown, ok = true) =>
 function mockFetch() {
   const fetchMock = vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.endsWith('/api/auth/me')) return res({ success: true, user: SIGNED_IN_USER });
     const file = url.match(/\/api\/combinations\/([^/?]+)\/file/);
     if (file) return res({}, catalog.some(c => c.id === file[1] && c.hasFile));
     if (url.includes('/api/combinations')) return res({ success: true, combinations: catalog });
@@ -61,6 +63,7 @@ beforeEach(() => {
   catalog = BASE_CATALOG;
   sessionStorage.clear();
   localStorage.clear();
+  signIn();
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });

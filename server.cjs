@@ -16,13 +16,16 @@ const { DEFAULT_EXHIBITS_SYNC_DIR, resolveExhibitSyncDir } = require('./exhibit-
 const {
   parseStepNumber,
   sanitizeStepUpdates,
-  areAllApprovalStepsComplete,
   applyStepUpdate,
   stripLockedWorkflowFields,
   checkStepUpdateAllowed
 } = require('./approval-step-guard.cjs');
 const technicalApproverGuard = require('./technical-approver-guard.cjs');
 const esignAccess = require('./esign-access.cjs');
+const microsoftLogin = require('./microsoft-login.cjs');
+const passwordLogin = require('./password-login.cjs');
+const jwtSecretCheck = require('./jwt-secret.cjs');
+const { verifyApprovalPortalToken, listApprovalWorkflowsForCaller } = require('./approval-workflow-access.cjs');
 const {
   DISCOUNT_POLICY_SETTINGS_ID,
   INVALID_MAX_DISCOUNT_ERROR,
@@ -114,6 +117,18 @@ const trustProxyHops = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY)
 if (Number.isFinite(trustProxyHops) && trustProxyHops > 0) {
   app.set('trust proxy', trustProxyHops);
 }
+app.disable('x-powered-by');
+// Set here, not only in nginx: nginx drops server-level add_header in any location that sets its own.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+  }
+  next();
+});
 // IMPORTANT: dotenv values are strings. If PORT is provided as a string (e.g. "3001"),
 // Node can treat it as a named pipe instead of a TCP port. Always coerce to number.
 const PORT = Number.parseInt(process.env.PORT, 10) || 3001;
@@ -170,6 +185,8 @@ const {
   formatEsignProgressLine,
   esignProgressActionLabel,
 } = require('./esign-progress-utils.cjs');
+
+const { loadEsignAccessLinks, filterEsignDocsForCaller } = require('./esign-list-access.cjs');
 
 const {
   buildAgreementLink,
@@ -396,6 +413,7 @@ function sendIndexHtml(res) {
     "img-src 'self' data: blob: https:",
     "frame-src 'self' blob: https://zenop.ai:8443",
     "worker-src 'self' blob:",
+    "frame-ancestors 'self'",
   ].join('; '));
   res.send(html);
 }
@@ -825,7 +843,10 @@ const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
 const EMAIL_HOST = process.env.EMAIL_HOST || 'smtp.gmail.com';
 const EMAIL_PORT = process.env.EMAIL_PORT || 587;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || jwtSecretCheck.DEFAULT_JWT_SECRET;
+if (String(process.env.NODE_ENV).trim().toLowerCase() === 'production' && jwtSecretCheck.isWeakJwtSecret(process.env.JWT_SECRET)) {
+  logger.error('JWT_SECRET is missing or weak; set a strong secret', { source: 'jwt-secret' });
+}
 // Every jwt.verify below pins algorithms so a token's own header can never choose how it is checked.
 const GOTENBERG_URL = process.env.GOTENBERG_URL || '';
 const LIBREOFFICE_SERVICE_URL = process.env.LIBREOFFICE_SERVICE_URL || 'http://localhost:3002';
@@ -1626,25 +1647,43 @@ async function sendZohoSignCompletionEmailToCreator(doc, at) {
 
 // NOTE: Static files are already served above with cache-safe headers (do not duplicate express.static).
 
+// Query values are attacker-controlled: keep strings only, cap the length, escape for HTML text
+function landingText(value) {
+  if (typeof value !== 'string') return '';
+  return value
+    .slice(0, 200)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // HubSpot redirect handler - only when deal/contact params present; otherwise SPA handles /
 app.get('/hubspot-landing', (req, res) => {
-  const dealId = req.query.dealId;
-  const dealName = req.query.dealName;
-  const amount = req.query.amount;
-  const closeDate = req.query.closeDate;
-  const stage = req.query.stage;
-  const ownerId = req.query.ownerId;
-  const contactEmail = req.query.ContactEmail;
-  const contactFirstName = req.query.ContactFirstName;
-  const contactLastName = req.query.ContactLastName;
-  const companyName = req.query.CompanyName;
-  const companyByContact = req.query.CompanyByContact || req.query.CompanyFromContact;
+  const dealId = landingText(req.query.dealId);
+  const dealName = landingText(req.query.dealName);
+  const amount = landingText(req.query.amount);
+  const closeDate = landingText(req.query.closeDate);
+  const stage = landingText(req.query.stage);
+  const ownerId = landingText(req.query.ownerId);
+  const contactEmail = landingText(req.query.ContactEmail);
+  const contactFirstName = landingText(req.query.ContactFirstName);
+  const contactLastName = landingText(req.query.ContactLastName);
+  const companyName = landingText(req.query.CompanyName);
+  const companyByContact = landingText(req.query.CompanyByContact) || landingText(req.query.CompanyFromContact);
   console.log({
     deal: { dealId, dealName, amount, closeDate, stage, ownerId },
     contact: { email: contactEmail, firstName: contactFirstName, lastName: contactLastName },
     company: { name: companyName, byContact: companyByContact }
   });
   const fullContactName = `${contactFirstName} ${contactLastName}`.trim();
+  res.set({
+    'Content-Type': 'text/html; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
+    // The page has no script, style or image, so everything can be denied
+    'Content-Security-Policy': "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+  });
   res.send(`
     <h2>Deal Information</h2>
     <p><strong>Deal:</strong> ${dealName} (ID: ${dealId})</p>
@@ -1835,33 +1874,14 @@ app.post('/api/auth/login', async (req, res) => {
       });
     }
 
-    const { email, password } = req.body;
-    
-    // Validate input
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email and password are required'
-      });
-    }
-
-    // Find user
-    const user = await db.collection('users').findOne({ email: email });
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
-      });
-    }
-
-    // Check password
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
-      });
-    }
+    const result = await passwordLogin.authenticatePasswordLogin({
+      body: req.body,
+      users: db.collection('users'),
+      bcrypt,
+      logger,
+    });
+    if (!result.ok) return res.status(result.status).json(result.body);
+    const user = result.user;
 
     // Generate JWT token
     const token = jwt.sign(
@@ -1888,11 +1908,10 @@ app.post('/api/auth/login', async (req, res) => {
       token: token
     });
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login failed', { source: 'auth-login', error: error.message });
     res.status(500).json({
       success: false,
-      message: 'Failed to login',
-      error: error.message
+      message: 'Failed to login'
     });
   }
 });
@@ -1954,29 +1973,14 @@ app.get('/api/auth/me', async (req, res) => {
   }
 });
 
-// Returns { msVerified, tid } when Graph accepts the token for this email, otherwise {}. Never logs the token.
-async function verifyMicrosoftIdentity(accessToken, email) {
-  if (typeof accessToken !== 'string' || !accessToken || typeof email !== 'string') return {};
-  try {
-    const graph = await axios.get('https://graph.microsoft.com/v1.0/me', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      timeout: 5000,
-    });
-    if (graph.status !== 200) return {};
-    const claims = technicalApproverGuard.verifiedClaimsFromGraph({
-      graphUser: graph.data,
-      email,
-      tokenPayload: technicalApproverGuard.decodeJwtPayload(accessToken),
-      clientId: process.env.AZURE_CLIENT_ID || process.env.VITE_MSAL_CLIENT_ID,
-    });
-    return claims || {};
-  } catch (error) {
-    logger.warn('Microsoft identity not verified', { source: 'technical-approver', status: error.response?.status || null });
-    return {};
-  }
-}
+const authenticateMicrosoftLogin = microsoftLogin.createMicrosoftLogin({
+  graphGet: microsoftLogin.createGraphFetcher(axios),
+  getUsers: () => db.collection('users'),
+  env: process.env,
+  logger,
+});
 
-// Microsoft OAuth user creation/update
+// The browser's claims are never trusted: Graph must confirm the token before any user record is read or written.
 app.post('/api/auth/microsoft', async (req, res) => {
   try {
     if (!db) {
@@ -1987,47 +1991,11 @@ app.post('/api/auth/microsoft', async (req, res) => {
       });
     }
 
-    const { id, name, email, accessToken } = req.body;
-    
-    // Check if user exists
-    let user = await db.collection('users').findOne({ email: email });
-    
-    if (user) {
-      // Update existing user
-      await db.collection('users').updateOne(
-        { email: email },
-        { 
-          $set: { 
-            name: name,
-            provider: 'microsoft',
-            updated_at: new Date()
-          }
-        }
-      );
-      user = await db.collection('users').findOne({ email: email });
-    } else {
-      // Create new user (default role: viewer; set role to 'exhibit_admin' in DB for users who can manage exhibits)
-      user = {
-        id: id || `microsoft_${Date.now()}`,
-        name: name,
-        email: email,
-        provider: 'microsoft',
-        role: 'viewer',
-        created_at: new Date(),
-        updated_at: new Date()
-      };
-      await db.collection('users').insertOne(user);
-    }
+    const result = await authenticateMicrosoftLogin(req.body);
+    if (!result.ok) return res.status(result.status).json(result.body);
+    const user = result.user;
 
-    // Only a Graph-confirmed identity may act on Technical steps; any failure keeps today's login.
-    const msClaims = await verifyMicrosoftIdentity(accessToken, email);
-
-    // Generate JWT token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, ...msClaims },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    const token = jwt.sign(result.jwtPayload, JWT_SECRET, { expiresIn: '7d' });
 
     // Track daily login
     await trackDailyLogin(user.id, 'microsoft', user.email);
@@ -2047,11 +2015,10 @@ app.post('/api/auth/microsoft', async (req, res) => {
       token: token
     });
   } catch (error) {
-    console.error('Microsoft auth error:', error);
+    logger.error('Microsoft auth failed', { source: 'microsoft-login', error: error.message });
     res.status(500).json({
       success: false,
-      message: 'Failed to process Microsoft authentication',
-      error: error.message
+      message: 'Failed to process Microsoft authentication'
     });
   }
 });
@@ -2067,23 +2034,32 @@ app.get('/api/auth/daily-logins', async (req, res) => {
       });
     }
 
-    const { startDate, endDate, limit = 30 } = req.query;
-    
+    // Lists every employee's login email, so only approval admins may read it
+    const authUser = await getApprovalAdminUser(req, res, 'Only approval admins can view login statistics');
+    if (!authUser) return;
+
+    const { startDate, endDate } = req.query;
+    // Query-string objects ({"$ne":""}) must never reach the filter
+    const startDateText = startDate ? String(startDate) : '';
+    const endDateText = endDate ? String(endDate) : '';
+    const parsedLimit = parseInt(String(req.query.limit ?? ''), 10);
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 90) : 30;
+
     const dailyLoginsCollection = db.collection('daily_logins');
     let query = {};
 
     // Filter by date range if provided
-    if (startDate || endDate) {
+    if (startDateText || endDateText) {
       query.date = {};
-      if (startDate) query.date.$gte = startDate;
-      if (endDate) query.date.$lte = endDate;
+      if (startDateText) query.date.$gte = startDateText;
+      if (endDateText) query.date.$lte = endDateText;
     }
 
     // Get daily login records, sorted by date (newest first)
     const records = await dailyLoginsCollection
       .find(query)
       .sort({ date: -1 })
-      .limit(parseInt(limit))
+      .limit(limit)
       .toArray();
 
     // Get user details for each login record
@@ -2167,6 +2143,9 @@ app.post('/api/quotes', async (req, res) => {
       });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     const { id, clientName, clientEmail, company, configuration, selectedTier, calculation, status, discount } = req.body;
 
     const discountCheck = await enforceDiscountCap(discount, res);
@@ -2205,14 +2184,18 @@ app.post('/api/quotes', async (req, res) => {
 
 // Get all quotes from database
 app.get('/api/quotes', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   try {
     if (!db) {
-      return res.status(500).json({ 
+      return res.status(500).json({
         success: false,
         error: 'Database not available',
         message: 'Cannot fetch quotes without database connection'
       });
     }
+
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
 
     const quotes = await db.collection('quotes').find({}).sort({ created_at: -1 }).toArray();
     
@@ -2246,6 +2229,9 @@ app.put('/api/quotes/:id', async (req, res) => {
         message: 'Cannot update quotes without database connection'
       });
     }
+
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
 
     const { id } = req.params;
     const { status } = req.body;
@@ -2282,6 +2268,9 @@ app.delete('/api/quotes/:id', async (req, res) => {
       });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     const { id } = req.params;
     
     await db.collection('quotes').deleteOne({ id: id });
@@ -2307,6 +2296,9 @@ app.post('/api/pricing-tiers', async (req, res) => {
         message: 'Cannot save pricing tiers without database connection'
       });
     }
+
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
 
     const { id, name, perUserCost, perGBCost, managedMigrationCost, instanceCost, userLimits, gbLimits, features } = req.body;
     
@@ -2352,6 +2344,9 @@ app.get('/api/pricing-tiers', async (req, res) => {
       });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     const tiers = await db.collection('pricing_tiers').find({}).sort({ name: 1 }).toArray();
     
     const formattedTiers = tiers.map(tier => ({
@@ -2391,7 +2386,10 @@ app.post('/api/templates', upload.single('template'), async (req, res) => {
         message: 'Cannot save templates without database connection'
       });
     }
-    
+
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+
     if (!req.file) {
       return res.status(400).json({ 
         success: false, 
@@ -2482,6 +2480,9 @@ app.get('/api/templates', async (req, res) => {
       });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     if (_cacheValid(_cache.templates)) {
       console.log(`📄 Returning ${_cache.templates.data.length} templates from cache`);
       return res.json({ success: true, templates: _cache.templates.data, count: _cache.templates.data.length });
@@ -2543,6 +2544,9 @@ app.get('/api/templates/:id/file', async (req, res) => {
         message: 'Cannot fetch template files without database connection'
       });
     }
+
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
 
     const { id } = req.params;
     
@@ -2654,6 +2658,9 @@ app.post('/api/templates/reseed', async (req, res) => {
       });
     }
 
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+
     console.log('🌱 Reseeding templates/exhibits on demand...');
     const { seedDefaultTemplates } = require('./seed-templates.cjs');
     const { seedDefaultExhibits } = require('./seed-exhibits.cjs');
@@ -2691,6 +2698,8 @@ app.get('/api/combinations', async (req, res) => {
     if (!db) {
       return res.status(500).json({ success: false, error: 'Database not available' });
     }
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
     const { migrationType } = req.query;
     const query = migrationType ? { migrationType: String(migrationType) } : {};
     const raw = await db.collection('combinations')
@@ -2711,6 +2720,8 @@ app.get('/api/combinations/:id/file', async (req, res) => {
     if (!db) {
       return res.status(500).json({ success: false, error: 'Database not available' });
     }
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
     const { id } = req.params;
     const combo = await db.collection('combinations').findOne({ id }, { projection: { fileData: 1, fileName: 1, fileType: 1 } });
     if (!combo || !combo.fileData) {
@@ -2735,6 +2746,8 @@ app.post('/api/combinations', upload.single('file'), async (req, res) => {
     if (!db) {
       return res.status(500).json({ success: false, error: 'Database not available' });
     }
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
     const { value, label, migrationType, displayOrder, requiresUsers } = req.body || {};
     if (!value || !String(value).trim()) {
       return res.status(400).json({ success: false, error: 'value is required' });
@@ -2786,6 +2799,8 @@ app.put('/api/combinations/:id', async (req, res) => {
     if (!db) {
       return res.status(500).json({ success: false, error: 'Database not available' });
     }
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
     const { id } = req.params;
     const { value, label, migrationType, displayOrder, requiresUsers } = req.body || {};
     const update = { updatedAt: new Date() };
@@ -2819,6 +2834,8 @@ app.post('/api/combinations/:id/file', upload.single('file'), async (req, res) =
     if (!db) {
       return res.status(500).json({ success: false, error: 'Database not available' });
     }
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
     const { id } = req.params;
     if (!req.file || !req.file.buffer) {
       return res.status(400).json({ success: false, error: 'File is required' });
@@ -2873,6 +2890,8 @@ app.post('/api/combinations/seed', async (req, res) => {
     if (!db) {
       return res.status(500).json({ success: false, error: 'Database not available' });
     }
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
     const defaults = [
       { value: 'slack-to-teams', label: 'SLACK TO TEAMS', migrationType: 'Messaging', displayOrder: 1 },
       { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT', migrationType: 'Messaging', displayOrder: 2 },
@@ -2945,6 +2964,9 @@ app.get('/api/exhibits', async (req, res) => {
       });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     const { combination, category } = req.query;
 
     if (!category && _cacheValid(_cache.exhibits)) {
@@ -3015,6 +3037,9 @@ app.get('/api/exhibits/:id/file', async (req, res) => {
         error: 'Database not available'
       });
     }
+
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
 
     const { id } = req.params;
     const { ObjectId } = require('mongodb');
@@ -4088,6 +4113,9 @@ app.post('/api/documents', async (req, res) => {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     const {
       fileName, fileData, fileSize, clientName, clientEmail, company,
       templateName, quoteId, metadata, docxFileData, docxFileName,
@@ -4367,6 +4395,9 @@ app.delete('/api/documents/:id', async (req, res) => {
     if (!db) {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
+
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
 
     const documentsCollection = db.collection('documents');
     const result = await documentsCollection.deleteOne({ id: req.params.id });
@@ -6223,6 +6254,9 @@ app.delete('/api/templates/:id', async (req, res) => {
       });
     }
 
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+
     const { id } = req.params;
     
     console.log('🗑️ Deleting template:', id);
@@ -6263,6 +6297,9 @@ app.put('/api/templates/:id', async (req, res) => {
         message: 'Cannot update templates without database connection'
       });
     }
+
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
 
     const { id } = req.params;
     const { name, description, isDefault, combination, planType, category } = req.body;
@@ -6309,46 +6346,6 @@ app.put('/api/templates/:id', async (req, res) => {
   }
 });
 
-// HubSpot API endpoints for authentication
-// Get HubSpot contact by ID
-app.get('/api/hubspot/contacts/:contactId', async (req, res) => {
-  try {
-    const { contactId } = req.params;
-    
-    if (!HUBSPOT_API_KEY) {
-      return res.status(500).json({
-        success: false,
-        error: 'HubSpot API key not configured'
-      });
-    }
-
-    const response = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/${contactId}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${HUBSPOT_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`HubSpot API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    res.json({
-      success: true,
-      data: data
-    });
-  } catch (error) {
-    console.error('❌ Error fetching HubSpot contact:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
 // Get HubSpot deal by ID, with its associated contact and company resolved
 // Contact/company PII is returned, so callers must be signed in and the route is capped
 const hubspotDealLimiter = rateLimit({
@@ -6377,7 +6374,11 @@ app.get('/api/test-mongodb', async (req, res) => {
       });
     }
 
-    const testDoc = { 
+    // This route inserts a row, so it is limited to approval admins
+    const authUser = await getApprovalAdminUser(req, res, 'Only approval admins can run the database test');
+    if (!authUser) return;
+
+    const testDoc = {
       message: 'MongoDB Atlas connection test', 
       timestamp: new Date(),
       test: true,
@@ -6399,114 +6400,6 @@ app.get('/api/test-mongodb', async (req, res) => {
       error: error.message,
       database: DB_NAME,
       message: 'MongoDB connection failed'
-    });
-  }
-});
-
-// HubSpot API endpoints
-app.get('/api/hubspot/contacts', async (req, res) => {
-  try {
-    console.log('🔍 HubSpot contacts endpoint called');
-    
-    // For now, return demo data since we don't have real HubSpot integration
-    const demoContacts = [
-      {
-        id: 'contact_1',
-        email: 'john.doe@example.com',
-        firstName: 'John',
-        lastName: 'Doe',
-        company: 'Example Corp',
-        phone: '+1-555-0123'
-      },
-      {
-        id: 'contact_2', 
-        email: 'jane.smith@example.com',
-        firstName: 'Jane',
-        lastName: 'Smith',
-        company: 'Tech Solutions',
-        phone: '+1-555-0456'
-      }
-    ];
-    
-    res.json({
-      success: true,
-      data: demoContacts,
-      isDemo: true,
-      message: 'Demo HubSpot contacts data'
-    });
-  } catch (error) {
-    console.error('❌ Error fetching HubSpot contacts:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch contacts',
-      message: error.message
-    });
-  }
-});
-
-app.get('/api/hubspot/deals', async (req, res) => {
-  try {
-    console.log('🔍 HubSpot deals endpoint called');
-    
-    // For now, return demo data since we don't have real HubSpot integration
-    const demoDeals = [
-      {
-        id: 'deal_1',
-        dealName: 'Cloud Migration Project',
-        amount: '$25,000',
-        stage: 'Proposal',
-        closeDate: '2024-12-31',
-        ownerId: 'owner_1'
-      },
-      {
-        id: 'deal_2',
-        dealName: 'Digital Transformation',
-        amount: '$50,000', 
-        stage: 'Negotiation',
-        closeDate: '2024-11-15',
-        ownerId: 'owner_2'
-      }
-    ];
-    
-    res.json({
-      success: true,
-      data: demoDeals,
-      isDemo: true,
-      message: 'Demo HubSpot deals data'
-    });
-  } catch (error) {
-    console.error('❌ Error fetching HubSpot deals:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch deals',
-      message: error.message
-    });
-  }
-});
-
-app.post('/api/hubspot/contacts', async (req, res) => {
-  try {
-    console.log('🔍 Creating HubSpot contact:', req.body);
-    
-    // For now, simulate contact creation
-    const newContact = {
-      id: `contact_${Date.now()}`,
-      ...req.body,
-      createdAt: new Date().toISOString()
-    };
-    
-    res.json({
-      success: true,
-      contact: newContact,
-      isDemo: true,
-      message: 'Demo contact created successfully'
-    });
-  } catch (error) {
-    console.error('❌ Error creating HubSpot contact:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to create contact',
-      message: error.message
     });
   }
 });
@@ -6586,6 +6479,9 @@ app.post('/api/client-log', clientLogLimiter, express.json({ limit: '10kb' }), (
 // Email sending endpoint (supports attachments e.g., DOCX/PDF)
 app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
   try {
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     console.log('📧 Email send request received');
     console.log('📧 Email configured:', isEmailConfigured);
     console.log('📧 SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? 'Set (hidden)' : 'Not set');
@@ -6675,6 +6571,9 @@ app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
 // API endpoint to check SendGrid suppression status for email addresses
 app.post('/api/email/check-suppression', async (req, res) => {
   try {
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     if (!isEmailConfigured) {
       return res.status(500).json({
         success: false,
@@ -7367,6 +7266,9 @@ app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
         message: 'Cannot save documents without database connection'
       });
     }
+
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
 
     // Extract metadata for optional base64 uploads
     const { clientName, company, quoteId, totalCost, fileName, fileData, fileSize } = req.body;
@@ -8371,8 +8273,6 @@ const {
 app.post('/api/esign/documents/bulk-download', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const esignActor = await getAuthenticatedUser(req, res);
-    if (!esignActor) return; // 401 already sent
     const admin = await getExhibitAdminUser(req, res);
     if (!admin) return; // getExhibitAdminUser already responded
 
@@ -11414,15 +11314,19 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
 
 // List esign documents
 app.get('/api/esign/documents', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const esignActor = await getAuthenticatedUser(req, res);
-    if (!esignActor) return; // 401 already sent
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+    const isAdmin = await hasApprovalAdminAccess(authUser);
     // Exclude inline PDF blobs (file_data / signed_file_data can be MBs each) — list view doesn't need them.
-    const docs = await db.collection('esign_documents')
+    const allDocs = await db.collection('esign_documents')
       .find({}, { projection: { file_data: 0, signed_file_data: 0 } })
       .sort({ created_at: -1 })
       .toArray();
+    const links = isAdmin ? {} : await loadEsignAccessLinks(db, allDocs);
+    const docs = filterEsignDocsForCaller({ docs: allDocs, ...links, userEmail: authUser.email, isAdmin });
     res.json({
       success: true,
       documents: docs.map((d) => ({
@@ -11441,24 +11345,28 @@ app.get('/api/esign/documents', async (req, res) => {
 
 // GET /api/esign/agreement-status - All documents with recipient status for tracking dashboard
 app.get('/api/esign/agreement-status', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const esignActor = await getAuthenticatedUser(req, res);
-    if (!esignActor) return; // 401 already sent
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+    const isAdmin = await hasApprovalAdminAccess(authUser);
     // Exclude inline PDF blobs (file_data / signed_file_data can be MBs each) — dashboard reads metadata only.
-    const docs = await db.collection('esign_documents')
+    const allDocs = await db.collection('esign_documents')
       .find({}, { projection: { file_data: 0, signed_file_data: 0 } })
       .sort({ created_at: -1 })
       .toArray();
-    const docIds = docs.map((d) => d._id);
+    const docIds = allDocs.map((d) => d._id);
     const docIdStrings = docIds.map((id) => id.toString());
     const workflowsLinked = await db.collection('approval_workflows')
       .find({ esignDocumentId: { $in: docIdStrings } })
       .toArray();
     const requestedByFromWorkflow = {};
+    const workflowsByDoc = {};
     workflowsLinked.forEach((w) => {
       const eid = w.esignDocumentId != null ? String(w.esignDocumentId) : '';
       if (!eid) return;
+      (workflowsByDoc[eid] = workflowsByDoc[eid] || []).push(w);
       const label = (w.creatorName && String(w.creatorName).trim()) || (w.creatorEmail && String(w.creatorEmail).trim()) || '';
       if (label && !requestedByFromWorkflow[eid]) requestedByFromWorkflow[eid] = label;
     });
@@ -11492,6 +11400,9 @@ app.get('/api/esign/agreement-status', async (req, res) => {
         forwarded_from_email: r.forwarded_from_email || null,
         forwarded_from_name: r.forwarded_from_name || null,
       });
+    });
+    const docs = filterEsignDocsForCaller({
+      docs: allDocs, workflowsByDoc, recipientsByDoc: byDocId, userEmail: authUser.email, isAdmin,
     });
     const agreements = docs.map((d) => {
       const recs = (byDocId[d._id.toString()] || []).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
@@ -11746,6 +11657,9 @@ app.post('/api/documents/test', async (req, res) => {
       });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     console.log('📄 Creating test documents...');
 
     const testDocuments = [
@@ -11981,6 +11895,8 @@ Answer concisely and helpfully. If you do not know a specific detail about this 
 app.get('/api/chat/logs', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res, 'Only approval admins can view chat logs');
+    if (!authUser) return;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50;
     const skip = (page - 1) * limit;
@@ -12001,6 +11917,8 @@ app.get('/api/chat/logs', async (req, res) => {
 app.get('/api/chat/analytics', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res, 'Only approval admins can view chat analytics');
+    if (!authUser) return;
 
     const limit = parseInt(req.query.limit) || 20;
 
@@ -12109,8 +12027,9 @@ app.post('/api/approval-workflows', async (req, res) => {
   }
 });
 
-// Get all approval workflows
+// Get approval workflows visible to the caller (login JWT, else approval-portal token)
 app.get('/api/approval-workflows', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   try {
     if (!db) {
       return res.status(500).json({
@@ -12120,59 +12039,10 @@ app.get('/api/approval-workflows', async (req, res) => {
       });
     }
 
-    console.log('📄 Fetching approval workflows from MongoDB...');
-    
-    // Sort by createdAt (most recent first) - descending order
-    const workflows = await db.collection('approval_workflows')
-      .find({})
-      .sort({ createdAt: -1 })
-      .toArray();
-    
-    console.log(`✅ Found ${workflows.length} workflows in database`);
-    
-    // Re-evaluate workflows that might be incorrectly marked as 'in_progress'
-    // when all approval steps (Team, Tech, Legal) are actually complete
-    const workflowsToUpdate = [];
-    for (const workflow of workflows) {
-      if (workflow.status === 'in_progress' || workflow.status === 'pending') {
-        if (areAllApprovalStepsComplete(workflow.workflowSteps)) {
-          workflowsToUpdate.push(workflow.id);
-        }
-      }
-    }
-    
-    // Update workflows that should be marked as approved
-    if (workflowsToUpdate.length > 0) {
-      console.log(`🔄 Updating ${workflowsToUpdate.length} workflows to 'approved' status (all approval steps complete)`);
-      await db.collection('approval_workflows').updateMany(
-        { id: { $in: workflowsToUpdate } },
-        { 
-          $set: { 
-            status: 'approved',
-            updatedAt: new Date().toISOString()
-          }
-        }
-      );
-      
-      // Refresh the workflows after update
-      const updatedWorkflows = await db.collection('approval_workflows')
-        .find({})
-        .sort({ createdAt: -1 })
-        .toArray();
-      
-      res.json({
-        success: true,
-        workflows: updatedWorkflows,
-        count: updatedWorkflows.length
-      });
-    } else {
-      res.json({
-        success: true,
-        workflows: workflows,
-        count: workflows.length
-      });
-    }
-    
+    const user = await getOptionalAuthenticatedUser(req);
+    const isAdmin = user ? await hasApprovalAdminAccess(user) : false;
+    const { status, body } = await listApprovalWorkflowsForCaller({ db, user, isAdmin, query: req.query });
+    res.status(status).json(body);
   } catch (error) {
     console.error('❌ Error fetching approval workflows:', error);
     res.status(500).json({
@@ -12192,53 +12062,19 @@ app.get('/api/approval-workflows/verify-access', async (req, res) => {
       });
     }
 
-    const { workflowId, role, token } = req.query;
-    if (!workflowId || !role || !token) {
+    const access = await verifyApprovalPortalToken(db, req.query);
+    if (!access.ok) {
       return res.status(403).json({
         success: false,
         error: 'Access Denied',
-        message: 'Missing workflowId, role, or token'
-      });
-    }
-
-    const normalizedRole = String(role).toLowerCase();
-    const validRoles = ['teamlead', 'technical', 'legal'];
-    if (!validRoles.includes(normalizedRole)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access Denied',
-        message: 'Invalid role'
-      });
-    }
-
-    const record = await db.collection('approval_access_tokens').findOne({
-      workflowId: String(workflowId),
-      role: normalizedRole,
-      token: String(token)
-    });
-
-    if (!record) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access Denied',
-        message: 'Invalid or unknown token'
-      });
-    }
-
-    const now = new Date();
-    const expiresAt = record.expiresAt instanceof Date ? record.expiresAt : new Date(record.expiresAt);
-    if (expiresAt < now) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access Denied',
-        message: 'Token has expired'
+        message: access.message
       });
     }
 
     res.json({
       success: true,
-      workflowId: record.workflowId,
-      role: normalizedRole
+      workflowId: access.workflowId,
+      role: access.role
     });
   } catch (error) {
     console.error('❌ Error verifying approval access:', error);
@@ -13335,9 +13171,6 @@ async function startServer() {
       console.log(`   - DELETE /api/quotes/:id`);
       console.log(`   - GET  /api/pricing-tiers`);
       console.log(`   - POST /api/pricing-tiers`);
-      console.log(`   - GET  /api/hubspot/contacts`);
-      console.log(`   - GET  /api/hubspot/deals`);
-      console.log(`   - POST /api/hubspot/contacts`);
       console.log(`   - POST /api/templates`);
       console.log(`   - GET  /api/templates`);
       console.log(`   - GET  /api/templates/:id/file`);
@@ -13399,6 +13232,9 @@ app.get('/api/team-approval-settings', async (req, res) => {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     const settingsCollection = db.collection('team_approval_settings');
     
     // Get settings (there should be only one document)
@@ -13440,6 +13276,10 @@ app.put('/api/team-approval-settings', async (req, res) => {
     if (!db) {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
+
+    // These settings hold approver emails and the Technical sign-in allow-list
+    const authUser = await getApprovalAdminUser(req, res, 'Only approval admins can change team approval settings');
+    if (!authUser) return;
 
     const settingsCollection = db.collection('team_approval_settings');
     const newSettings = req.body;
@@ -13483,6 +13323,9 @@ app.get('/api/team-approval-settings/team/:teamName', async (req, res) => {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
 
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     const teamName = req.params.teamName.toUpperCase();
     const settingsCollection = db.collection('team_approval_settings');
     const settings = await settingsCollection.findOne({ _id: 'main' });
@@ -13509,6 +13352,9 @@ app.get('/api/team-approval-settings/team/:teamName', async (req, res) => {
 // POST /api/send-authorization-request - Send authorization request email to team lead and save to MongoDB
 app.post('/api/send-authorization-request', async (req, res) => {
   try {
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     if (!isEmailConfigured) {
       return res.status(500).json({
         success: false,
@@ -13604,6 +13450,9 @@ app.get('/api/authorization-requests', async (req, res) => {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
 
+    const authUser = await getApprovalAdminUser(req, res, 'Only approval admins can view authorization requests');
+    if (!authUser) return;
+
     const { teamLeadEmail, requesterEmail, status, teamName } = req.query;
     const requestsCollection = db.collection('authorization_requests');
     
@@ -13633,6 +13482,9 @@ app.put('/api/authorization-requests/:id/status', async (req, res) => {
     if (!db) {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
+
+    const authUser = await getApprovalAdminUser(req, res);
+    if (!authUser) return;
 
     const { id } = req.params;
     const { status } = req.body; // 'pending', 'approved', 'rejected'

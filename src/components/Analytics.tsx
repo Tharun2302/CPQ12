@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { TrendingUp, Users, DollarSign, FileText, Star, MessageCircle, RefreshCw } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from '../utils/authUtils';
 
 interface ChatQuestion {
   question: string;
@@ -28,7 +29,7 @@ const Analytics: React.FC = () => {
   const fetchChatAnalytics = async () => {
     setChatLoading(true);
     try {
-      const res = await fetch(`${API_URL}/chat/analytics?limit=15`);
+      const res = await fetch(`${API_URL}/chat/analytics?limit=15`, { headers: getAuthHeaders() });
       const data = await res.json();
       if (data.success) {
         setChatQuestions(data.data.topQuestions);
@@ -44,7 +45,7 @@ const Analytics: React.FC = () => {
   const fetchChatLogs = async () => {
     setLogsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/chat/logs?limit=100`);
+      const res = await fetch(`${API_URL}/chat/logs?limit=100`, { headers: getAuthHeaders() });
       const data = await res.json();
       if (data.success) {
         setChatLogs(data.data.logs);

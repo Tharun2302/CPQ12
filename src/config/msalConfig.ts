@@ -1,10 +1,14 @@
 import { Configuration, PopupRequest } from '@azure/msal-browser';
+import { getMicrosoftAuthority } from '../utils/microsoftAuthority';
 
 // MSAL configuration for port 5173
 export const msalConfig: Configuration = {
   auth: {
     clientId: import.meta.env.VITE_MSAL_CLIENT_ID as string,
-    authority: 'https://login.microsoftonline.com/common', // Changed to common for multi-tenant support
+    // Getter so a missing tenant fails when MSAL reads it, not when this module is imported
+    get authority() {
+      return getMicrosoftAuthority();
+    },
     redirectUri: (import.meta.env.VITE_MSAL_REDIRECT_URI as string) || (window.location.origin + '/auth/microsoft/callback'),
   },
   cache: {

@@ -10,8 +10,18 @@
 # If not set, Microsoft sign-in is disabled; users can still sign in with email/password.
 VITE_MSAL_CLIENT_ID=your-microsoft-client-id-here
 VITE_MSAL_REDIRECT_URI=
+# The Azure/Entra app registration is SINGLE tenant, so the browser must sign in against the
+# tenant-specific authority. Build-time (baked into the bundle): changing it needs a rebuild.
+# A production build with this unset or malformed refuses Microsoft sign-in ("Microsoft sign-in is
+# not configured"); dev/test builds fall back to the multi-tenant "common" endpoint.
+# MUST be the SAME tenant id as AZURE_TENANT_ID below (GUID or verified domain name).
+VITE_MSAL_TENANT_ID=your-azure-tenant-id-here
+# RUNTIME: the server verifies the Microsoft token against these, so the app container must
+# receive them at runtime (deploymentgigitaldocker/.env is loaded into the container via env_file).
+# AZURE_CLIENT_ID may be omitted only if VITE_MSAL_CLIENT_ID is set in that same .env file.
+AZURE_CLIENT_ID=
 
-# Technical approval sign-in: approvers must sign in with this Microsoft tenant (CloudFuze = 66d8848d-26b6-4147-8124-127624d7b3a6).
+# Server-side (runtime) tenant check for Microsoft sign-in and Technical approval sign-in. Must equal VITE_MSAL_TENANT_ID above.
 # Without it, Technical approve/deny is refused while enforcement is on. Approvers come from team_approval_settings.technicalEmails.
 AZURE_TENANT_ID=
 # Set to false to turn the Technical sign-in check off without a code rollback (on by default).

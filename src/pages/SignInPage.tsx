@@ -1,13 +1,17 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Calculator } from 'lucide-react';
 import SignInForm from '../components/auth/SignInForm';
 
 const SignInPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleSuccess = () => {
-    navigate('/deal');
+    const from = (location.state as { from?: { pathname?: string; search?: string; hash?: string } } | null)?.from;
+    const path = from?.pathname;
+    const canReturn = !!path && path.startsWith('/') && !path.startsWith('//') && path !== '/' && path !== '/signin';
+    navigate(canReturn ? `${path}${from?.search ?? ''}${from?.hash ?? ''}` : '/deal');
   };
 
   const handleError = (message: string) => {

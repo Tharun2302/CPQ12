@@ -1,5 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { getMicrosoftTokenUrl } from '../utils/microsoftAuthority';
+import { microsoftCallbackErrorMessage } from '../utils/microsoftSignInErrors';
 
 // Function to exchange authorization code for real user data
 async function exchangeCodeForUserData(code: string) {
@@ -25,7 +27,8 @@ async function exchangeCodeForUserData(code: string) {
       code_verifier: codeVerifier ? 'present' : 'missing'
     });
     
-    const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
+    const tokenUrl = getMicrosoftTokenUrl();
+    const tokenResponse = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -43,7 +46,7 @@ async function exchangeCodeForUserData(code: string) {
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
       console.error('❌ Token exchange failed:', tokenResponse.status, errorText);
-      console.error('❌ Token exchange URL:', 'https://login.microsoftonline.com/common/oauth2/v2.0/token');
+      console.error('❌ Token exchange URL:', tokenUrl);
       console.error('❌ Request parameters:', {
         client_id: clientId,
         scope: 'openid profile email User.Read',
@@ -58,24 +61,6 @@ async function exchangeCodeForUserData(code: string) {
     const tokenData = await tokenResponse.json();
     const accessToken = tokenData.access_token;
     console.log('Token exchange successful, access token received');
-
-    // Decode ID token claims — always present in the token response.
-    // This gives us the real email even if the Graph API call below fails.
-    let emailFromIdToken = '';
-    let nameFromIdToken = '';
-    try {
-      if (tokenData.id_token) {
-        const parts = tokenData.id_token.split('.');
-        if (parts.length === 3) {
-          const claims = JSON.parse(atob(parts[1]));
-          emailFromIdToken = claims.preferred_username || claims.email || claims.upn || '';
-          nameFromIdToken = claims.name || claims.given_name || '';
-          console.log('🔍 ID token claims — email:', emailFromIdToken, 'name:', nameFromIdToken);
-        }
-      }
-    } catch (e) {
-      console.warn('Could not decode id_token:', e);
-    }
 
     // Get user profile from Microsoft Graph
     console.log('🔍 Fetching user profile from Microsoft Graph...');
@@ -114,11 +99,7 @@ async function exchangeCodeForUserData(code: string) {
         console.error('🔍 Could not decode token:', e);
       }
       
-      // Attach whatever we decoded from the id_token so the outer catch can use it
-      const err = new Error(`Profile fetch failed: ${profileResponse.status} - ${errorText}`) as Error & { idTokenEmail?: string; idTokenName?: string };
-      err.idTokenEmail = emailFromIdToken;
-      err.idTokenName = nameFromIdToken;
-      throw err;
+      throw new Error(`Profile fetch failed: ${profileResponse.status} - ${errorText}`);
     }
 
     const profile = await profileResponse.json();
@@ -131,8 +112,8 @@ async function exchangeCodeForUserData(code: string) {
     console.log('🔍 Profile surname:', profile.surname);
 
     // Validate email format and restrict to cloudfuze.com domain only
-    const userEmail = profile.mail || profile.userPrincipalName || 'user@microsoft.com';
-    if (!userEmail || !userEmail.includes('@')) {
+    const userEmail: string = profile.mail || profile.userPrincipalName || '';
+    if (!profile.id || !userEmail.includes('@')) {
       throw new Error('Access denied: Invalid email address format');
     }
     
@@ -143,8 +124,8 @@ async function exchangeCodeForUserData(code: string) {
 
     // Return user data in the expected format
     const userData = {
-      id: profile.id || 'microsoft_' + Date.now(),
-      name: profile.displayName || profile.givenName + ' ' + profile.surname || 'Microsoft User',
+      id: profile.id,
+      name: profile.displayName || [profile.givenName, profile.surname].filter(Boolean).join(' ') || userEmail,
       email: userEmail,
       accessToken: accessToken,
       provider: 'microsoft',
@@ -173,6 +154,7 @@ const MicrosoftCallback: React.FC = () => {
   const [searchParams] = useSearchParams();
   const hasProcessedCode = useRef(false);
   const processedCode = useRef<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     // Only process once - extract code and error from URL params
@@ -193,6 +175,7 @@ const MicrosoftCallback: React.FC = () => {
 
       if (error) {
         console.error('Microsoft OAuth error:', error);
+        setErrorMessage(microsoftCallbackErrorMessage(null));
         window.opener?.postMessage({
           type: 'MICROSOFT_AUTH_ERROR',
           error: error
@@ -259,44 +242,11 @@ const MicrosoftCallback: React.FC = () => {
             fullError: error.toString()
           }));
           
-          // Check if error is due to code already being redeemed
-          if (error.message && error.message.includes('already redeemed')) {
-            console.error('❌ Authorization code was already redeemed. This usually means the code was processed twice.');
-            window.opener?.postMessage({
-              type: 'MICROSOFT_AUTH_ERROR',
-              error: 'Authorization code already used. Please try signing in again.'
-            }, targetOrigin);
-            return;
-          }
-          
-          // Fallback when Graph API fails — use the real email from the ID token
-          // claims (always present in the token response) so the user is identified
-          // correctly even if Microsoft Graph is temporarily unavailable.
-          const idTokenEmail = (error as Error & { idTokenEmail?: string }).idTokenEmail || '';
-          const idTokenName = (error as Error & { idTokenName?: string }).idTokenName || '';
-          const fallbackEmail = idTokenEmail && idTokenEmail.endsWith('@cloudfuze.com')
-            ? idTokenEmail
-            : 'user@cloudfuze.com';
-          const fallbackName = idTokenName || fallbackEmail
-            .split('@')[0]
-            .split(/[._\-+]+/)
-            .filter(Boolean)
-            .map((part: string) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-            .join(' ') || 'User';
-          const fallbackUser = {
-            id: 'microsoft_' + Date.now(),
-            name: fallbackName,
-            email: fallbackEmail,
-            accessToken: 'fallback_token_' + Date.now(),
-            provider: 'microsoft',
-            createdAt: new Date().toISOString()
-          };
-          
-          console.log('⚠️ Using fallback user because Graph API failed:', fallbackUser);
-          console.log('⚠️ This allows authentication to continue even if Microsoft Graph API is unavailable');
+          const message = microsoftCallbackErrorMessage(error);
+          setErrorMessage(message);
           window.opener?.postMessage({
-            type: 'MICROSOFT_AUTH_SUCCESS',
-            user: fallbackUser
+            type: 'MICROSOFT_AUTH_ERROR',
+            error: message
           }, targetOrigin);
         });
       }
@@ -305,6 +255,17 @@ const MicrosoftCallback: React.FC = () => {
     handleCallback();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount - URL params won't change
+
+  if (errorMessage) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center px-4" role="alert">
+          <h2 className="text-xl font-semibold text-red-700 mb-2">{errorMessage}</h2>
+          <p className="text-gray-500">You can close this window and try again.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { templateService } from '../utils/templateService';
+import { downloadBlob } from '../utils/docxToPdfLight';
 import { useAuth } from '../hooks/useAuth';
 import { SUPPRESS_PII } from '../analytics/privacy';
 
@@ -103,7 +104,7 @@ const CombinationManager: React.FC = () => {
     setPreviewUrl(null);
     setIsPreviewLoading(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/combinations/${c.id}/file`);
+      const res = await fetch(`${BACKEND_URL}/api/combinations/${c.id}/file`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error('Could not load the template file.');
       const blob = await res.blob();
       const isDocx =
@@ -119,6 +120,17 @@ const CombinationManager: React.FC = () => {
     }
   };
 
+  // A plain link cannot send the login header, so the file is fetched and saved from a blob
+  const downloadFile = async (c: Combination) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/combinations/${c.id}/file`, { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error('Could not download the template file.');
+      downloadBlob(await res.blob(), c.fileName || `combination-${c.id}.docx`);
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : 'Could not download the template file.');
+    }
+  };
+
   const closePreview = () => {
     setPreviewCombo(null);
     setPreviewUrl(null);
@@ -131,7 +143,7 @@ const CombinationManager: React.FC = () => {
       setIsLoading(true);
       // Always load all combinations - filter on client side
       const url = `${BACKEND_URL}/api/combinations`;
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: getAuthHeaders() });
       const data = await res.json();
       if (data.success) {
         setCombinations(data.combinations || []);
@@ -211,7 +223,7 @@ const CombinationManager: React.FC = () => {
       if (editingCombo) {
         const res = await fetch(`${BACKEND_URL}/api/combinations/${editingCombo.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ value, label, migrationType, displayOrder, requiresUsers })
         });
         const data = await res.json();
@@ -225,6 +237,7 @@ const CombinationManager: React.FC = () => {
           fd.append('file', formFile);
           const fileRes = await fetch(`${BACKEND_URL}/api/combinations/${editingCombo.id}/file`, {
             method: 'POST',
+            headers: getAuthHeaders(),
             body: fd
           });
           const fileData = await fileRes.json();
@@ -247,6 +260,7 @@ const CombinationManager: React.FC = () => {
           fd.append('file', formFile);
           const res = await fetch(`${BACKEND_URL}/api/combinations`, {
             method: 'POST',
+            headers: getAuthHeaders(),
             body: fd
           });
           const data = await res.json();
@@ -260,7 +274,7 @@ const CombinationManager: React.FC = () => {
         } else {
           const res = await fetch(`${BACKEND_URL}/api/combinations`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ value, label, migrationType, displayOrder, requiresUsers })
           });
           const data = await res.json();
@@ -391,15 +405,14 @@ const CombinationManager: React.FC = () => {
                     <td className="py-3 px-4">
                       {c.hasFile ? (
                         <span className="flex items-center gap-3">
-                          <a
-                            href={`${BACKEND_URL}/api/combinations/${c.id}/file`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => downloadFile(c)}
                             className="inline-flex items-center gap-1 text-indigo-600 hover:underline text-sm"
                           >
                             <Download className="w-4 h-4" />
                             {c.fileName || 'Download'}
-                          </a>
+                          </button>
                           <button
                             type="button"
                             onClick={() => openPreview(c)}
@@ -616,15 +629,14 @@ const CombinationManager: React.FC = () => {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <a
-                  href={`${BACKEND_URL}/api/combinations/${previewCombo.id}/file`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={() => downloadFile(previewCombo)}
                   className="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm text-indigo-600 hover:bg-indigo-50"
                 >
                   <Download className="w-4 h-4" />
                   Download
-                </a>
+                </button>
                 <button
                   type="button"
                   onClick={closePreview}

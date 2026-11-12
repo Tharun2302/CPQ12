@@ -4,7 +4,7 @@ import { Rnd } from 'react-rnd';
 import { v4 as uuidv4 } from 'uuid';
 import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, FileText, BookOpen, CheckCircle2, UserPlus, Trash2, ArrowUp, ArrowDown, ArrowLeft, Circle } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
-import { esignFetch, fetchEsignFileObjectUrl } from '../utils/esignAccess';
+import { fetchEsignFileObjectUrl } from '../utils/esignAccess';
 import { getAuthHeaders } from '../utils/authUtils';
 import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
 import {
@@ -319,7 +319,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
     if (!documentId) return;
     (async () => {
       try {
-        const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${documentId}`);
+        const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}`, { headers: getAuthHeaders() });
         const data = await res.json();
         if (data.success) {
           setDoc(data.document);
@@ -338,8 +338,8 @@ const EsignPlaceFieldsPage: React.FC = () => {
     if (!documentId) return;
     (async () => {
       const [fieldsRes, recipientsRes] = await Promise.all([
-        esignFetch(`${BACKEND_URL}/api/esign/signature-fields/${documentId}`),
-        esignFetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`),
+        fetch(`${BACKEND_URL}/api/esign/signature-fields/${documentId}`, { headers: getAuthHeaders() }),
+        fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`, { headers: getAuthHeaders() }),
       ]);
       const fieldsData = await fieldsRes.json();
       const recipientsData = await recipientsRes.json();
@@ -451,9 +451,9 @@ const EsignPlaceFieldsPage: React.FC = () => {
     setRecipientError(null);
     let data: { success?: boolean; recipients?: EsignRecipient[]; error?: string } = { success: false };
     try {
-      const res = await esignFetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`, {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           recipients: list.map((r) => ({
             name: r.name,
@@ -545,9 +545,9 @@ const EsignPlaceFieldsPage: React.FC = () => {
     setSignatureFields((prev) => prev.map((f) => (f.recipient_id === id ? { ...f, recipient_id: null } : f)));
     if (newList.length) await saveRecipientsAndSet(newList);
     else if (documentId) {
-      await esignFetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`, {
+      await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ recipients: [] }),
       });
       setRecipients([]);
@@ -669,9 +669,9 @@ const EsignPlaceFieldsPage: React.FC = () => {
       if (!documentId || !fieldsToSave.length) return;
       const payload = fieldsToApiPayload(fieldsToSave);
       try {
-        await esignFetch(`${BACKEND_URL}/api/esign/signature-fields`, {
+        await fetch(`${BACKEND_URL}/api/esign/signature-fields`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ document_id: documentId, fields: payload }),
         });
       } catch (err) {
@@ -828,9 +828,9 @@ const EsignPlaceFieldsPage: React.FC = () => {
     setSaving(true);
     try {
       const fields = fieldsToApiPayload(signatureFields);
-      const fieldsRes = await esignFetch(`${BACKEND_URL}/api/esign/signature-fields`, {
+      const fieldsRes = await fetch(`${BACKEND_URL}/api/esign/signature-fields`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ document_id: documentId, fields }),
       });
       const fieldsData = await fieldsRes.json();
@@ -882,9 +882,9 @@ const EsignPlaceFieldsPage: React.FC = () => {
       // Persist current signature fields before creating workflow so approvers/signers see them
       const fieldsPayload = fieldsToApiPayload(signatureFields);
       if (fieldsPayload.length) {
-        await esignFetch(`${BACKEND_URL}/api/esign/signature-fields`, {
+        await fetch(`${BACKEND_URL}/api/esign/signature-fields`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ document_id: documentId, fields: fieldsPayload }),
         });
       }

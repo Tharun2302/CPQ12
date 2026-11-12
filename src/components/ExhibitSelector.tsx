@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Check, ChevronRight, Search, ArrowRight, RefreshCw, X } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from '../utils/authUtils';
 import { sprawlExhibitFolder } from '../utils/sprawlGroups';
 import { scopeExhibitsForCombination, DEFAULT_EXHIBIT_COMBINATION, withPairCombinations, exhibitFolderLabel } from '../utils/exhibitCombination';
 
@@ -85,7 +86,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/combinations`);
+        const res = await fetch(`${BACKEND_URL}/api/combinations`, { headers: getAuthHeaders() });
         if (!res.ok) return;
         const data = await res.json();
         if (cancelled || !data?.success || !Array.isArray(data.combinations)) return;
@@ -159,7 +160,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       
       // Fetch ALL exhibits without filtering by combination
       const response = await fetch(
-        `${BACKEND_URL}/api/exhibits`
+        `${BACKEND_URL}/api/exhibits`, { headers: getAuthHeaders() }
       );
       
       if (response.ok) {

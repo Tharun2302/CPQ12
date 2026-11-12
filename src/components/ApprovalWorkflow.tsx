@@ -4,7 +4,7 @@ import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import ApprovalDashboard from './ApprovalDashboard';
 import { BACKEND_URL } from '../config/api';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { getCurrentUser } from '../utils/authUtils';
+import { getAuthHeaders, getCurrentUser } from '../utils/authUtils';
 import { useAuth } from '../hooks/useAuth';
 import { SUPPRESS_PII } from '../analytics/privacy';
 import { getQuoteTotals } from '../utils/discount';
@@ -95,7 +95,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         setIsLoadingSettings(true);
         setSettingsError(null);
         
-        const response = await fetch(`${BACKEND_URL}/api/team-approval-settings`);
+        const response = await fetch(`${BACKEND_URL}/api/team-approval-settings`, { headers: getAuthHeaders() });
         if (!response.ok) {
           throw new Error(`Server error: ${response.status}`);
         }
@@ -163,6 +163,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
+            ...getAuthHeaders(),
           },
           body: JSON.stringify(teamApprovalSettings),
         });
@@ -491,7 +492,8 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       const response = await fetch(`${backendUrl}/api/documents`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
         },
         body: JSON.stringify(documentPayload)
       });
