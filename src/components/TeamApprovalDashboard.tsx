@@ -5,6 +5,8 @@ import { getApprovalLinkNotice, ApprovalLinkNotice, APPROVAL_DELETED_NOTICE } fr
 import ApprovalLinkNoticeBox from './ApprovalLinkNoticeBox';
 import type { ApprovalWorkflow } from '../types/approval';
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from '../utils/authUtils';
+import { withApprovalPortalQuery } from '../utils/approvalPortalParams';
 import { esignFetch } from '../utils/esignAccess';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import { FileText, X, Loader2, ThumbsUp, ThumbsDown, MessageCircle, User, BarChart3, Clock, CheckCircle, AlertCircle, Eye, PenLine } from 'lucide-react';
@@ -483,7 +485,7 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
     console.log('🔄 Fetching specific workflow from API:', workflowId);
     (async () => {
       try {
-        const resp = await fetch(`${BACKEND_URL}/api/approval-workflows/${workflowId}`);
+        const resp = await fetch(withApprovalPortalQuery(`${BACKEND_URL}/api/approval-workflows/${workflowId}`), { headers: getAuthHeaders() });
         if (resp.ok) {
           const result = await resp.json();
           if (result.success && result.workflow) {

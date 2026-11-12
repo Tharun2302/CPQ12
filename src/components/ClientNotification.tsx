@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle, X, MessageCircle, FileText, DollarSign, User, Eye, Download } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from '../utils/authUtils';
+import { withApprovalPortalQuery } from '../utils/approvalPortalParams';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import PdfCanvasViewer from './PdfCanvasViewer';
 import { track } from '../analytics/clarity';
@@ -58,7 +60,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     try {
       setLoadingWorkflow(true);
       console.log('📄 Fetching specific workflow from API:', workflowId);
-      const response = await fetch(`${BACKEND_URL}/api/approval-workflows/${workflowId}`);
+      const response = await fetch(withApprovalPortalQuery(`${BACKEND_URL}/api/approval-workflows/${workflowId}`), { headers: getAuthHeaders() });
       
       console.log('📄 API Response status:', response.status);
       console.log('📄 API Response ok:', response.ok);

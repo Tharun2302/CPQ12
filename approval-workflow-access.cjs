@@ -4,8 +4,15 @@
 
 const { areAllApprovalStepsComplete } = require('./approval-step-guard.cjs');
 const { normalizeEmail } = require('./onlyoffice-redline.cjs');
+const { isOverageTechnicalSkip } = require('./technical-approver-guard.cjs');
 
 const PORTAL_ROLES = ['teamlead', 'technical', 'legal'];
+
+// Read-only link for the customer page and the emailed download link; never an approver portal.
+const CLIENT_LINK_ROLE = 'client';
+const LINK_ROLES = [...PORTAL_ROLES, CLIENT_LINK_ROLE];
+
+const STEP_ROLE_BY_LINK_ROLE = { teamlead: 'Team Approval', technical: 'Technical Team', legal: 'Legal Team' };
 
 const deny = (message) => ({ ok: false, message });
 
@@ -14,12 +21,12 @@ const deny = (message) => ({ ok: false, message });
  * Returns { ok: true, workflowId, role } or { ok: false, message }.
  * Shared by verify-access and the workflow list so they cannot drift.
  */
-async function verifyApprovalPortalToken(db, query) {
+async function verifyApprovalPortalToken(db, query, { roles = PORTAL_ROLES } = {}) {
   const { workflowId, role, token } = query || {};
   if (!workflowId || !role || !token) return deny('Missing workflowId, role, or token');
 
   const normalizedRole = String(role).toLowerCase();
-  if (!PORTAL_ROLES.includes(normalizedRole)) return deny('Invalid role');
+  if (!roles.includes(normalizedRole)) return deny('Invalid role');
 
   const record = await db.collection('approval_access_tokens').findOne({
     workflowId: String(workflowId),
@@ -104,9 +111,72 @@ async function listApprovalWorkflowsForCaller({ db, user, isAdmin, query }) {
   return { status: 200, body: { success: true, workflows, count: workflows.length } };
 }
 
+/**
+ * Who is calling a route about ONE workflow; `user` is the verified login or null.
+ * A staff login wins; otherwise the link's role + token must belong to `workflowId`
+ * (the id from the route or body, never the one in the query string).
+ * Returns { ok: true, kind: 'staff', user } or { ok: true, kind: 'link', role },
+ * else { ok: false, httpStatus: 401, error }.
+ */
+async function resolveApprovalCaller({ db, user, query, workflowId }) {
+  if (user) return { ok: true, kind: 'staff', user };
+  const { role, token } = query || {};
+  const access = await verifyApprovalPortalToken(db, { workflowId, role, token }, { roles: LINK_ROLES });
+  if (!access.ok) return { ok: false, httpStatus: 401, error: 'Authentication required' };
+  return { ok: true, kind: 'link', role: access.role };
+}
+
+function forbid(code, error) {
+  return { ok: false, httpStatus: 403, code, error };
+}
+
+// A link could otherwise rewrite status and steps here and sidestep the per-role step rule.
+function checkWorkflowUpdateCaller(caller) {
+  if (caller && caller.ok && caller.kind === 'staff') return { ok: true };
+  return forbid('SIGN_IN_REQUIRED', 'Sign in to CPQ to change this approval.');
+}
+
+function findStep(workflow, stepNumber) {
+  const steps = Array.isArray(workflow && workflow.workflowSteps) ? workflow.workflowSteps : [];
+  return steps.find((s) => s && Number(s.step) === stepNumber) || null;
+}
+
+function linkMayDecideStep(role, workflow, step, updates) {
+  if (STEP_ROLE_BY_LINK_ROLE[role] === step.role) return true;
+  // The Team Lead portal skips Technical on overage deals right after approving.
+  if (role === 'teamlead' && step.role === 'Technical Team') return isOverageTechnicalSkip(workflow, updates);
+  // The Legal portal marks Deal Desk "Notified" once the deal is approved.
+  return role === 'legal' && step.role === 'Deal Desk' && (!updates || updates.status !== 'denied');
+}
+
+/**
+ * May this caller decide or comment on step `stepNumber`? Staff may (the Technical sign-in
+ * rule is applied separately); a link only on the step its role was emailed for.
+ * A step that does not exist is left to the step guard to report.
+ */
+function checkStepDecisionCaller({ caller, workflow, stepNumber, updates }) {
+  if (!caller || !caller.ok) return forbid('NOT_YOUR_STEP', 'This link cannot act on this approval step.');
+  if (caller.kind === 'staff') return { ok: true };
+  const step = findStep(workflow, stepNumber);
+  if (!step) return { ok: true };
+  if (linkMayDecideStep(caller.role, workflow, step, updates)) return { ok: true };
+  return forbid('NOT_YOUR_STEP', 'This link cannot act on this approval step.');
+}
+
+// Staff may see a workflow's link or nudge its approver only when the workflow is theirs.
+function canManageWorkflow(workflow, user, isAdmin) {
+  return Boolean(user) && (isAdmin === true || isWorkflowVisibleToUser(workflow, user.email));
+}
+
 module.exports = {
   PORTAL_ROLES,
+  CLIENT_LINK_ROLE,
+  LINK_ROLES,
   verifyApprovalPortalToken,
   isWorkflowVisibleToUser,
   listApprovalWorkflowsForCaller,
+  resolveApprovalCaller,
+  checkWorkflowUpdateCaller,
+  checkStepDecisionCaller,
+  canManageWorkflow,
 };

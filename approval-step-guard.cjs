@@ -182,10 +182,12 @@ async function applyStepUpdate(collection, workflow, stepNum, updates, now = new
 const LOCKED_WORKFLOW_FIELDS = [
   '_id', 'id', 'documentId', 'creatorEmail', 'createdBy', 'createdAt', 'creatorVerified',
   'hasRedlineEdit', 'redlineEditedAt', 'redlineDocumentId', 'redlineForked', 'redlineEdits',
+  // isOverage skips the Technical sign-in and esignDocumentId opens that agreement to portal links.
+  'isOverage', 'esignDocumentId',
 ];
 
 // Drops locked fields, including dotted paths into them and Mongo operator keys.
-// `allow` lets creation keep fields that are only locked once the workflow exists (documentId).
+// `allow` lets creation keep fields that are only locked once the workflow exists (documentId, isOverage).
 function stripLockedWorkflowFields(body, { allow = [] } = {}) {
   const updates = {};
   const stripped = [];

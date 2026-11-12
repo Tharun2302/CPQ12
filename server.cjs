@@ -25,7 +25,10 @@ const esignAccess = require('./esign-access.cjs');
 const microsoftLogin = require('./microsoft-login.cjs');
 const passwordLogin = require('./password-login.cjs');
 const jwtSecretCheck = require('./jwt-secret.cjs');
-const { verifyApprovalPortalToken, listApprovalWorkflowsForCaller } = require('./approval-workflow-access.cjs');
+const {
+  verifyApprovalPortalToken, listApprovalWorkflowsForCaller, resolveApprovalCaller,
+  checkWorkflowUpdateCaller, checkStepDecisionCaller, canManageWorkflow, CLIENT_LINK_ROLE,
+} = require('./approval-workflow-access.cjs');
 const {
   DISCOUNT_POLICY_SETTINGS_ID,
   INVALID_MAX_DISCOUNT_ERROR,
@@ -890,6 +893,18 @@ async function createApprovalAccessToken(db, workflowId, role) {
   return token;
 }
 
+// Emailed read-only links carry their own proof, since the page behind them has no login.
+async function createClientLinkQuery(workflowId) {
+  if (!db || !workflowId) return '';
+  try {
+    const token = await createApprovalAccessToken(db, String(workflowId), CLIENT_LINK_ROLE);
+    return `role=${CLIENT_LINK_ROLE}&token=${encodeURIComponent(token)}`;
+  } catch (err) {
+    logger.error('Could not create client link token', { source: 'approval-link', error: err.message });
+    return '';
+  }
+}
+
 // Backfills amount and hasCustomLineItems from the stored workflow so the amount and custom-line-item email banners match on every step.
 async function enrichWorkflowDataFromRecord(workflowData) {
   if (!workflowData || !db || !workflowData.workflowId) return;
@@ -1121,7 +1136,7 @@ function generateLegalTeamEmailHTML(workflowData, token) {
   `;
 }
 
-function generateClientEmailHTML(workflowData) {
+function generateClientEmailHTML(workflowData, linkQuery = '') {
   return `
     <!DOCTYPE html>
     <html>
@@ -1151,7 +1166,7 @@ function generateClientEmailHTML(workflowData) {
           <p>Our team will review your document and get back to you soon.</p>
           
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${workflowData.workflowId}" 
+            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${encodeURIComponent(workflowData.workflowId)}${linkQuery ? `&${linkQuery}` : ''}" 
                style="background: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
               Review & Approve Document
             </a>
@@ -1175,10 +1190,10 @@ function generateClientEmailHTML(workflowData) {
   `;
 }
 
-function generateDealDeskEmailHTML(workflowData) {
+function generateDealDeskEmailHTML(workflowData, linkQuery = '') {
   const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
   const downloadLink = workflowData.workflowId && workflowData.documentId
-    ? `${baseUrl}/api/approval-workflows/${workflowData.workflowId}/document`
+    ? `${baseUrl}/api/approval-workflows/${encodeURIComponent(workflowData.workflowId)}/document${linkQuery ? `?${linkQuery}` : ''}`
     : null;
   return `
     <!DOCTYPE html>
@@ -7023,7 +7038,7 @@ app.post('/api/send-client-email', async (req, res) => {
     sendEmail(
       clientEmail,
       `Document Submitted for Approval: ${workflowData.documentId}`,
-      generateClientEmailHTML(workflowData),
+      generateClientEmailHTML(workflowData, await createClientLinkQuery(workflowData.workflowId)),
       attachments
     )
       .then(result => {
@@ -7127,7 +7142,7 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
     // This endpoint is still the completion trigger: it notifies the creator and auto-sends
     // the e-sign document below, then finalizes the workflow.
     const completionSubject = `Approval Workflow Completed: ${workflowData.documentId}`;
-    const completionHtml = generateDealDeskEmailHTML(workflowData);
+    const completionHtml = generateDealDeskEmailHTML(workflowData, await createClientLinkQuery(workflowData?.workflowId));
 
     // Best-effort notification email to workflow creator (if available)
     if (creatorEmailForNotification) {
@@ -7226,7 +7241,7 @@ app.post('/api/send-approval-emails', async (req, res) => {
       const clientResult = await sendEmail(
         clientEmail,
         `Document Submitted for Approval: ${workflowData.documentId}`,
-        generateClientEmailHTML(workflowData)
+        generateClientEmailHTML(workflowData, await createClientLinkQuery(workflowData.workflowId))
       );
       results.push({ role: 'Client', email: clientEmail, success: clientResult.success });
     } catch (error) {
@@ -11950,6 +11965,25 @@ app.get('/api/chat/analytics', async (req, res) => {
 // APPROVAL WORKFLOW ENDPOINTS
 // ============================================
 
+// Creator of the agreement, or an approval admin; anything else (bad id, missing document) is a no.
+async function actorMayLinkEsignDocument(esignDocumentId, actor) {
+  if (typeof esignDocumentId !== 'string' || !ObjectId.isValid(esignDocumentId)) return false;
+  const esignDoc = await db.collection('esign_documents').findOne({ _id: new ObjectId(esignDocumentId) });
+  if (!esignDoc) return false;
+  return esignActorIsDocumentCreator(esignDoc, actor.email) || await hasApprovalAdminAccess(actor);
+}
+
+// Staff login, else the emailed link's role + token for this workflow. Answers 401 itself.
+async function requireApprovalCaller(req, res, workflowId) {
+  const user = await getOptionalAuthenticatedUser(req);
+  const caller = await resolveApprovalCaller({ db, user, query: req.query, workflowId });
+  if (!caller.ok) {
+    res.status(caller.httpStatus).json({ success: false, error: caller.error });
+    return null;
+  }
+  return caller;
+}
+
 // Create approval workflow
 app.post('/api/approval-workflows', async (req, res) => {
   try {
@@ -11961,8 +11995,16 @@ app.post('/api/approval-workflows', async (req, res) => {
       });
     }
 
+    const actor = await getAuthenticatedUser(req, res);
+    if (!actor) return;
+
     // Server-owned fields (id, status, redline history) are never taken from the body
-    const { updates: workflowData } = stripLockedWorkflowFields(req.body, { allow: ['documentId'] });
+    const { updates: workflowData } = stripLockedWorkflowFields(req.body, { allow: ['documentId', 'isOverage', 'esignDocumentId'] });
+    // Linking an agreement lets this workflow's approval links read it, so it must be the caller's own.
+    if (workflowData.esignDocumentId !== undefined && !(await actorMayLinkEsignDocument(workflowData.esignDocumentId, actor))) {
+      logger.warn('Dropped esignDocumentId on workflow create', { source: 'approval-create', actorEmail: actor.email });
+      delete workflowData.esignDocumentId;
+    }
     // Only the signed-in step route decides the Technical step, so a new workflow cannot arrive with it approved.
     if (technicalApproverGuard.isSigninEnforced(process.env) && Array.isArray(workflowData.workflowSteps)) {
       workflowData.workflowSteps = technicalApproverGuard.withPendingTechnicalStep(workflowData.workflowSteps);
@@ -11976,10 +12018,8 @@ app.post('/api/approval-workflows', async (req, res) => {
     if (Object.prototype.hasOwnProperty.call(workflowData, 'discountPercent')) {
       workflowData.discountPercent = discountCheck.value;
     }
-    // A verified login decides the requester; the body is only trusted when there is none
-    const actor = await getOptionalAuthenticatedUser(req);
-    const bodyCreator = typeof req.body?.creatorEmail === 'string' ? normalizeEmail(req.body.creatorEmail) : '';
-    const creatorEmail = actor?.email ? normalizeEmail(actor.email) : bodyCreator;
+    // The verified login is the requester, never the body
+    const creatorEmail = normalizeEmail(actor.email);
     console.log('📋 Creating approval workflow:', workflowData);
 
     // Generate unique ID
@@ -12156,6 +12196,8 @@ app.get('/api/approval-workflows/:workflowId/document', async (req, res) => {
       return res.status(500).send('Database not available');
     }
     const { workflowId } = req.params;
+    const caller = await requireApprovalCaller(req, res, workflowId);
+    if (!caller) return;
     const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
     if (!workflow || !workflow.documentId) {
       return res.status(404).send('Workflow or document not found');
@@ -12199,6 +12241,8 @@ app.get('/api/approval-workflows/:id', async (req, res) => {
     }
 
     const { id } = req.params;
+    const caller = await requireApprovalCaller(req, res, id);
+    if (!caller) return;
     console.log('📄 Fetching approval workflow:', id);
     console.log('📄 Database available:', !!db);
     console.log('📄 Collection available:', !!db?.collection);
@@ -12240,6 +12284,12 @@ app.put('/api/approval-workflows/:id', async (req, res) => {
     }
 
     const { id } = req.params;
+    const caller = await requireApprovalCaller(req, res, id);
+    if (!caller) return;
+    const mayUpdate = checkWorkflowUpdateCaller(caller);
+    if (!mayUpdate.ok) {
+      return res.status(mayUpdate.httpStatus).json({ success: false, code: mayUpdate.code, error: mayUpdate.error });
+    }
     const { updates: unlocked, stripped } = stripLockedWorkflowFields(req.body);
     if (stripped.length) {
       console.warn('⛔ Ignored locked fields on workflow update:', JSON.stringify(id), stripped);
@@ -12353,6 +12403,8 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
     }
 
     const { id, stepNumber } = req.params;
+    const caller = await requireApprovalCaller(req, res, id);
+    if (!caller) return;
 
     console.log('📝 Updating workflow step:', id, stepNumber, req.body);
 
@@ -12369,6 +12421,16 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
         success: false,
         error: 'Workflow not found'
       });
+    }
+
+    const mayDecide = checkStepDecisionCaller({ caller, workflow, stepNumber: parseStepNumber(stepNumber), updates: stepUpdates });
+    if (!mayDecide.ok) {
+      logger.warn('Step update blocked for link role', { source: 'approval-step', workflowId: id, code: mayDecide.code, linkRole: caller.role || null });
+      return res.status(mayDecide.httpStatus).json({ success: false, code: mayDecide.code, error: mayDecide.error });
+    }
+    // A comment alone is not a decision, so only approve/deny records who acted.
+    if (caller.kind === 'staff' && stepUpdates.status) {
+      stepUpdates.actedBy = { name: caller.user.name || caller.user.email, email: caller.user.email };
     }
 
     const precheck = checkStepUpdateAllowed(workflow, parseStepNumber(stepNumber), stepUpdates);
@@ -12519,10 +12581,16 @@ app.post('/api/approval-workflows/:workflowId/remind', async (req, res) => {
   const { workflowId } = req.params;
 
   try {
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     // 1. Fetch workflow
     const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
     if (!workflow) {
       return res.status(404).json({ success: false, error: 'Workflow not found' });
+    }
+    if (!canManageWorkflow(workflow, authUser, await hasApprovalAdminAccess(authUser))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this approval' });
     }
 
     // 2. Only remind for pending / in_progress workflows
@@ -12575,9 +12643,15 @@ app.get('/api/approval-workflows/:workflowId/portal-link', async (req, res) => {
   const { workflowId } = req.params;
 
   try {
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+
     const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
     if (!workflow) {
       return res.status(404).json({ success: false, error: 'Workflow not found' });
+    }
+    if (!canManageWorkflow(workflow, authUser, await hasApprovalAdminAccess(authUser))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this approval' });
     }
 
     if (!['pending', 'in_progress'].includes(workflow.status)) {

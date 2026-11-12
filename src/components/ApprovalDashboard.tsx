@@ -265,7 +265,7 @@ const ApprovalDashboard: React.FC = () => {
     // portal). Building the URL client-side as /approval?id=.. would just reopen the dashboard,
     // and would lack the role+token the portal requires — so always go through the API.
     try {
-      const res = await fetch(`${BACKEND_URL}/api/approval-workflows/${encodeURIComponent(workflow.id)}/portal-link`);
+      const res = await fetch(`${BACKEND_URL}/api/approval-workflows/${encodeURIComponent(workflow.id)}/portal-link`, { headers: getAuthHeaders() });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success || !data?.link) {
         flashToast(data?.error || 'Could not generate approval link');
@@ -555,7 +555,7 @@ const ApprovalDashboard: React.FC = () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/approval-workflows/${workflowId}/remind`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to send reminder');

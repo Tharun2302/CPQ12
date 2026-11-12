@@ -2,7 +2,7 @@
 import { ApprovalWorkflow, ApprovalStep } from '../types/approval';
 import { BACKEND_URL } from '../config/api';
 import { getAuthHeaders } from '../utils/authUtils';
-import { getApprovalPortalQuery } from '../utils/approvalPortalParams';
+import { getApprovalPortalQuery, withApprovalPortalQuery } from '../utils/approvalPortalParams';
 
 /** Safely read the error message and code from a non-ok response without crashing on empty bodies. */
 async function readErrorBody(response: Response, fallback: string): Promise<{ message: string; code?: string }> {
@@ -98,7 +98,9 @@ class ApprovalWorkflowServiceMongoDB {
     try {
       console.log('📄 Fetching workflow from MongoDB:', workflowId);
 
-      const response = await fetch(`${this.baseUrl}/approval-workflows/${workflowId}`);
+      const response = await fetch(withApprovalPortalQuery(`${this.baseUrl}/approval-workflows/${workflowId}`), {
+        headers: getAuthHeaders(),
+      });
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -125,6 +127,7 @@ class ApprovalWorkflowServiceMongoDB {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          ...getAuthHeaders(),
         },
         body: JSON.stringify(updates)
       });
@@ -145,8 +148,8 @@ class ApprovalWorkflowServiceMongoDB {
     try {
       console.log('📝 Updating workflow step in MongoDB:', workflowId, stepNumber, stepUpdates);
 
-      // The Technical step is authorized against the signed-in approver; other roles ignore the header
-      const response = await fetch(`${this.baseUrl}/approval-workflows/${workflowId}/step/${stepNumber}`, {
+      // Staff are authorized by their login; emailed approvers by their link's role and token
+      const response = await fetch(withApprovalPortalQuery(`${this.baseUrl}/approval-workflows/${workflowId}/step/${stepNumber}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

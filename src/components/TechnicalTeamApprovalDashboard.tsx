@@ -7,6 +7,8 @@ import { getApprovalLinkNotice, ApprovalLinkNotice, APPROVAL_DELETED_NOTICE } fr
 import ApprovalLinkNoticeBox from './ApprovalLinkNoticeBox';
 import type { ApprovalWorkflow } from '../types/approval';
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from '../utils/authUtils';
+import { withApprovalPortalQuery } from '../utils/approvalPortalParams';
 import { esignFetch } from '../utils/esignAccess';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import { track } from '../analytics/clarity';
@@ -94,7 +96,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
   const fetchSpecificWorkflow = async (workflowId: string) => {
     try {
       console.log('📄 Fetching specific workflow from API:', workflowId);
-      const response = await fetch(`${BACKEND_URL}/api/approval-workflows/${workflowId}`);
+      const response = await fetch(withApprovalPortalQuery(`${BACKEND_URL}/api/approval-workflows/${workflowId}`), { headers: getAuthHeaders() });
 
       if (response.ok) {
         const result = await response.json();
