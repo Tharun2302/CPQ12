@@ -172,6 +172,7 @@ module.exports = {
   PORTAL_ROLES,
   CLIENT_LINK_ROLE,
   LINK_ROLES,
+  STEP_ROLE_BY_LINK_ROLE,
   verifyApprovalPortalToken,
   isWorkflowVisibleToUser,
   listApprovalWorkflowsForCaller,

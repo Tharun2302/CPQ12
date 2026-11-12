@@ -158,11 +158,9 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
         const dealDeskEmail = workflow.workflowSteps?.find((step: any) => step.role === 'Deal Desk')?.email || 'salesops@cloudfuze.com';
         console.log('📧 Using Deal Desk email:', dealDeskEmail);
         
-        const response = await fetch(`${BACKEND_URL}/api/send-deal-desk-email`, {
+        const response = await fetch(withApprovalPortalQuery(`${BACKEND_URL}/api/send-deal-desk-email`), {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({
             dealDeskEmail: dealDeskEmail,
             workflowData: {

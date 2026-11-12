@@ -30,6 +30,10 @@ const {
   checkWorkflowUpdateCaller, checkStepDecisionCaller, canManageWorkflow, CLIENT_LINK_ROLE,
 } = require('./approval-workflow-access.cjs');
 const {
+  checkApprovalEmailTrigger, resolveApprovalEmailRecipient, buildApprovalEmailData,
+} = require('./approval-email-access.cjs');
+const { esignSendRefusal } = require('./esign-send-guard.cjs');
+const {
   DISCOUNT_POLICY_SETTINGS_ID,
   INVALID_MAX_DISCOUNT_ERROR,
   validateMaxDiscountPercent,
@@ -928,9 +932,9 @@ function cloudFuzeEmailFooterHTML() {
 function generateTeamEmailHTML(workflowData, token) {
   const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
   const approvalLink = token
-    ? `${baseUrl}/approval/${workflowData.workflowId}?role=teamlead&token=${encodeURIComponent(token)}`
-    : `${baseUrl}/team-approval?workflow=${workflowData.workflowId}`;
-  const teamLabel = (workflowData && workflowData.teamGroup) ? String(workflowData.teamGroup).toUpperCase() : null;
+    ? `${baseUrl}/approval/${encodeURIComponent(workflowData.workflowId)}?role=teamlead&token=${encodeURIComponent(token)}`
+    : `${baseUrl}/team-approval?workflow=${encodeURIComponent(workflowData.workflowId)}`;
+  const teamLabel = (workflowData && workflowData.teamGroup) ? escapeHtml(String(workflowData.teamGroup).toUpperCase()) : null;
   const HIGH_VALUE_THRESHOLD = 30000;
   const amountNum = Number(workflowData.amount) || 0;
   const highValueNote = amountNum > HIGH_VALUE_THRESHOLD
@@ -969,11 +973,11 @@ function generateTeamEmailHTML(workflowData, token) {
           <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>📄 Document Details</h3>
             ${teamLabel ? `<p><strong>Team Group:</strong> ${teamLabel}</p>` : ''}
-            <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
-            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
-            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Requested by:</strong> ${escapeHtml(workflowData.requestedByName || workflowData.creatorEmail || '—')}</p>
+            <p><strong>Document ID:</strong> ${escapeHtml(workflowData.documentId)}</p>
+            <p><strong>Client:</strong> ${escapeHtml(workflowData.clientName)}</p>
             <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
-            <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
+            <p><strong>Workflow ID:</strong> ${escapeHtml(workflowData.workflowId)}</p>
             <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
           </div>
           
@@ -999,8 +1003,8 @@ function generateTeamEmailHTML(workflowData, token) {
 function generateTechnicalTeamEmailHTML(workflowData, token) {
   const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
   const approvalLink = token
-    ? `${baseUrl}/approval/${workflowData.workflowId}?role=technical&token=${encodeURIComponent(token)}`
-    : `${baseUrl}/technical-approval?workflow=${workflowData.workflowId}`;
+    ? `${baseUrl}/approval/${encodeURIComponent(workflowData.workflowId)}?role=technical&token=${encodeURIComponent(token)}`
+    : `${baseUrl}/technical-approval?workflow=${encodeURIComponent(workflowData.workflowId)}`;
   const HIGH_VALUE_THRESHOLD = 30000;
   const amountNum = Number(workflowData.amount) || 0;
   const highValueNote = amountNum > HIGH_VALUE_THRESHOLD
@@ -1038,11 +1042,11 @@ function generateTechnicalTeamEmailHTML(workflowData, token) {
 
           <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>📄 Document Details</h3>
-            <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
-            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
-            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Requested by:</strong> ${escapeHtml(workflowData.requestedByName || workflowData.creatorEmail || '—')}</p>
+            <p><strong>Document ID:</strong> ${escapeHtml(workflowData.documentId)}</p>
+            <p><strong>Client:</strong> ${escapeHtml(workflowData.clientName)}</p>
             <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
-            <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
+            <p><strong>Workflow ID:</strong> ${escapeHtml(workflowData.workflowId)}</p>
             <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
           </div>
           
@@ -1069,8 +1073,8 @@ function generateTechnicalTeamEmailHTML(workflowData, token) {
 function generateLegalTeamEmailHTML(workflowData, token) {
   const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
   const approvalLink = token
-    ? `${baseUrl}/approval/${workflowData.workflowId}?role=legal&token=${encodeURIComponent(token)}`
-    : `${baseUrl}/legal-approval?workflow=${workflowData.workflowId}`;
+    ? `${baseUrl}/approval/${encodeURIComponent(workflowData.workflowId)}?role=legal&token=${encodeURIComponent(token)}`
+    : `${baseUrl}/legal-approval?workflow=${encodeURIComponent(workflowData.workflowId)}`;
   const HIGH_VALUE_THRESHOLD = 30000;
   const amountNum = Number(workflowData.amount) || 0;
   const highValueNote = amountNum > HIGH_VALUE_THRESHOLD
@@ -1108,11 +1112,11 @@ function generateLegalTeamEmailHTML(workflowData, token) {
 
           <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>📄 Document Details</h3>
-            <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
-            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
-            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Requested by:</strong> ${escapeHtml(workflowData.requestedByName || workflowData.creatorEmail || '—')}</p>
+            <p><strong>Document ID:</strong> ${escapeHtml(workflowData.documentId)}</p>
+            <p><strong>Client:</strong> ${escapeHtml(workflowData.clientName)}</p>
             <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
-            <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
+            <p><strong>Workflow ID:</strong> ${escapeHtml(workflowData.workflowId)}</p>
             <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
           </div>
           
@@ -1151,13 +1155,13 @@ function generateClientEmailHTML(workflowData, linkQuery = '') {
         </div>
         
         <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
-          <h2>Hello ${workflowData.clientName},</h2>
+          <h2>Hello ${escapeHtml(workflowData.clientName)},</h2>
           
           <p>Your document has been submitted for approval:</p>
           
           <div style="background: #F0FDF4; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #BBF7D0;">
             <h3>📄 Document Details</h3>
-            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
+            <p><strong>Document ID:</strong> ${escapeHtml(workflowData.documentId)}</p>
             <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
             <p><strong>Status:</strong> Pending Approval</p>
             <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
@@ -1215,8 +1219,8 @@ function generateDealDeskEmailHTML(workflowData, linkQuery = '') {
           
           <div style="background: #EFF6FF; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #93C5FD;">
             <h3>📄 Document Details</h3>
-            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
-            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Document ID:</strong> ${escapeHtml(workflowData.documentId)}</p>
+            <p><strong>Client:</strong> ${escapeHtml(workflowData.clientName)}</p>
             <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
             <p><strong>Status:</strong> All Approvals Complete</p>
             <p><strong>📎 Approved document:</strong> The approved document is attached to this email.</p>
@@ -1261,7 +1265,7 @@ function generateDenialEmailHTML(data) {
     <html>
     <head>
       <meta charset="utf-8">
-      <title>Approval Denied - ${deniedBy}</title>
+      <title>Approval Denied - ${escapeHtml(deniedBy)}</title>
     </head>
     <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
       <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -1269,15 +1273,15 @@ function generateDenialEmailHTML(data) {
           <h1>❌ Approval Denied</h1>
         </div>
         <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
-          <p>Your approval workflow has been <strong>denied</strong> by <strong>${deniedBy}</strong>.</p>
+          <p>Your approval workflow has been <strong>denied</strong> by <strong>${escapeHtml(deniedBy)}</strong>.</p>
           <div style="background: #FEF2F2; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #FCA5A5;">
             <h3>📄 Document Details</h3>
-            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
-            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Document ID:</strong> ${escapeHtml(workflowData.documentId)}</p>
+            <p><strong>Client:</strong> ${escapeHtml(workflowData.clientName)}</p>
             <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
-            <p><strong>Workflow ID:</strong> ${workflowData.workflowId || workflowData.id || ''}</p>
+            <p><strong>Workflow ID:</strong> ${escapeHtml(workflowData.workflowId || workflowData.id || '')}</p>
           </div>
-          ${comments ? `<p><strong>Reason:</strong> ${comments}</p>` : ''}
+          ${comments ? `<p><strong>Reason:</strong> ${escapeHtml(comments)}</p>` : ''}
           <p>You can review and take action by visiting your dashboard.</p>
         </div>
         <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
@@ -6696,49 +6700,15 @@ app.post('/api/send-manager-email', async (req, res) => {
       });
     }
 
-    const { managerEmail, workflowData } = req.body;
+    const emailRequest = await resolveApprovalEmailRequest(req, res, 'technical', 'managerEmail');
+    if (!emailRequest) return;
+    const { workflowData, attachments } = emailRequest;
     await enrichWorkflowDataFromRecord(workflowData);
-    const resolvedManagerEmail = managerEmail || process.env.TECHNICAL_TEAM_EMAIL || 'cpq.zenop.ai.technical@cloudfuze.com';
+    const resolvedManagerEmail = emailRequest.recipient;
     
     console.log('📧 Sending email to Manager only (sequential approval)...');
     console.log('Manager:', resolvedManagerEmail);
     console.log('Workflow Data:', workflowData);
-
-    // Fetch document attachment
-    let attachments = [];
-    if (workflowData.documentId && db) {
-      try {
-        console.log('📄 Fetching document for attachment:', workflowData.documentId);
-        const documentsCollection = db.collection('documents');
-        const document = await documentsCollection.findOne({ id: workflowData.documentId });
-        
-        if (document && document.fileData) {
-          // Convert document data to attachment
-          let fileBuffer;
-          if (Buffer.isBuffer(document.fileData)) {
-            fileBuffer = document.fileData;
-          } else if (document.fileData.buffer) {
-            fileBuffer = Buffer.from(document.fileData.buffer);
-          } else if (document.fileData.data) {
-            fileBuffer = Buffer.from(document.fileData.data);
-          }
-          
-          if (fileBuffer) {
-            attachments.push({
-              filename: document.fileName || `${workflowData.documentId}.pdf`,
-              content: fileBuffer,
-              contentType: 'application/pdf'
-            });
-            console.log('✅ Document attachment prepared:', document.fileName);
-          }
-        } else {
-          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
-        }
-      } catch (docError) {
-        console.error('❌ Error fetching document for attachment:', docError);
-        // Continue without attachment rather than failing
-      }
-    }
 
     // Create secure token for role-based portal link
     let token = null;
@@ -6754,7 +6724,7 @@ app.post('/api/send-manager-email', async (req, res) => {
     const sendStartedAt = Date.now();
     sendEmail(
       resolvedManagerEmail,
-      `CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+      sanitizeEmailSubject(`CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`),
       generateTechnicalTeamEmailHTML(workflowData, token),
       attachments
     )
@@ -6793,50 +6763,16 @@ app.post('/api/send-team-email', async (req, res) => {
       });
     }
 
-    const { teamEmail, workflowData } = req.body;
+    const emailRequest = await resolveApprovalEmailRequest(req, res, 'team', 'teamEmail');
+    if (!emailRequest) return;
+    const { workflowData, attachments } = emailRequest;
     await enrichWorkflowDataFromRecord(workflowData);
-    const resolvedTeamEmail = teamEmail || process.env.TEAM_APPROVAL_EMAIL || 'abhilasha.kandakatla@cloudfuze.com';
+    const resolvedTeamEmail = emailRequest.recipient;
     const teamLabel = (workflowData && workflowData.teamGroup) ? String(workflowData.teamGroup).toUpperCase() : null;
     
     console.log('📧 Sending email to Team (first approval step)...');
     console.log('Team:', resolvedTeamEmail);
     console.log('Workflow Data:', workflowData);
-
-    // Fetch document attachment
-    let attachments = [];
-    if (workflowData.documentId && db) {
-      try {
-        console.log('📄 Fetching document for attachment:', workflowData.documentId);
-        const documentsCollection = db.collection('documents');
-        const document = await documentsCollection.findOne({ id: workflowData.documentId });
-        
-        if (document && document.fileData) {
-          // Convert document data to attachment
-          let fileBuffer;
-          if (Buffer.isBuffer(document.fileData)) {
-            fileBuffer = document.fileData;
-          } else if (document.fileData.buffer) {
-            fileBuffer = Buffer.from(document.fileData.buffer);
-          } else if (document.fileData.data) {
-            fileBuffer = Buffer.from(document.fileData.data);
-          }
-          
-          if (fileBuffer) {
-            attachments.push({
-              filename: document.fileName || `${workflowData.documentId}.pdf`,
-              content: fileBuffer,
-              contentType: 'application/pdf'
-            });
-            console.log('✅ Document attachment prepared:', document.fileName);
-          }
-        } else {
-          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
-        }
-      } catch (docError) {
-        console.error('❌ Error fetching document for attachment:', docError);
-        // Continue without attachment rather than failing
-      }
-    }
 
     // Create secure token for role-based portal link
     let token = null;
@@ -6852,7 +6788,7 @@ app.post('/api/send-team-email', async (req, res) => {
     const sendStartedAt = Date.now();
     sendEmail(
       resolvedTeamEmail,
-      `${teamLabel ? `[${teamLabel}] ` : ''}CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+      sanitizeEmailSubject(`${teamLabel ? `[${teamLabel}] ` : ''}CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`),
       generateTeamEmailHTML(workflowData, token),
       attachments
     )
@@ -6891,49 +6827,15 @@ app.post('/api/send-ceo-email', async (req, res) => {
       });
     }
 
-    const { ceoEmail, workflowData } = req.body;
+    const emailRequest = await resolveApprovalEmailRequest(req, res, 'legal', 'ceoEmail');
+    if (!emailRequest) return;
+    const { workflowData, attachments } = emailRequest;
     await enrichWorkflowDataFromRecord(workflowData);
-    const resolvedCeoEmail = ceoEmail || process.env.LEGAL_TEAM_EMAIL || 'cpq.zenop.ai.legal@cloudfuze.com';
+    const resolvedCeoEmail = emailRequest.recipient;
     
     console.log('📧 Sending email to CEO (after Technical Team approval)...');
     console.log('CEO:', resolvedCeoEmail);
     console.log('Workflow Data:', workflowData);
-
-    // Fetch document attachment
-    let attachments = [];
-    if (workflowData.documentId && db) {
-      try {
-        console.log('📄 Fetching document for attachment:', workflowData.documentId);
-        const documentsCollection = db.collection('documents');
-        const document = await documentsCollection.findOne({ id: workflowData.documentId });
-        
-        if (document && document.fileData) {
-          // Convert document data to attachment
-          let fileBuffer;
-          if (Buffer.isBuffer(document.fileData)) {
-            fileBuffer = document.fileData;
-          } else if (document.fileData.buffer) {
-            fileBuffer = Buffer.from(document.fileData.buffer);
-          } else if (document.fileData.data) {
-            fileBuffer = Buffer.from(document.fileData.data);
-          }
-          
-          if (fileBuffer) {
-            attachments.push({
-              filename: document.fileName || `${workflowData.documentId}.pdf`,
-              content: fileBuffer,
-              contentType: 'application/pdf'
-            });
-            console.log('✅ Document attachment prepared:', document.fileName);
-          }
-        } else {
-          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
-        }
-      } catch (docError) {
-        console.error('❌ Error fetching document for attachment:', docError);
-        // Continue without attachment rather than failing
-      }
-    }
 
     // Create secure token for role-based portal link
     let token = null;
@@ -6949,7 +6851,7 @@ app.post('/api/send-ceo-email', async (req, res) => {
     const sendStartedAt = Date.now();
     sendEmail(
       resolvedCeoEmail,
-      `CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+      sanitizeEmailSubject(`CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`),
       generateLegalTeamEmailHTML(workflowData, token),
       attachments
     )
@@ -6991,53 +6893,20 @@ app.post('/api/send-client-email', async (req, res) => {
       });
     }
 
-    const { clientEmail, workflowData } = req.body;
+    const emailRequest = await resolveApprovalEmailRequest(req, res, 'client', 'clientEmail');
+    if (!emailRequest) return;
+    const { workflowData, attachments } = emailRequest;
+    const clientEmail = emailRequest.recipient;
     
     console.log('📧 Queuing email to Client (after Legal Team approval)...');
     console.log('Client:', clientEmail);
     console.log('Workflow Data:', workflowData);
 
-    // Fetch document attachment
-    let attachments = [];
-    if (workflowData.documentId && db) {
-      try {
-        console.log('📄 Fetching document for attachment:', workflowData.documentId);
-        const documentsCollection = db.collection('documents');
-        const document = await documentsCollection.findOne({ id: workflowData.documentId });
-        
-        if (document && document.fileData) {
-          // Convert document data to attachment
-          let fileBuffer;
-          if (Buffer.isBuffer(document.fileData)) {
-            fileBuffer = document.fileData;
-          } else if (document.fileData.buffer) {
-            fileBuffer = Buffer.from(document.fileData.buffer);
-          } else if (document.fileData.data) {
-            fileBuffer = Buffer.from(document.fileData.data);
-          }
-          
-          if (fileBuffer) {
-            attachments.push({
-              filename: document.fileName || `${workflowData.documentId}.pdf`,
-              content: fileBuffer,
-              contentType: 'application/pdf'
-            });
-            console.log('✅ Document attachment prepared:', document.fileName);
-          }
-        } else {
-          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
-        }
-      } catch (docError) {
-        console.error('❌ Error fetching document for attachment:', docError);
-        // Continue without attachment rather than failing
-      }
-    }
-
     // Send email to Client only with attachment (fire-and-forget)
     const sendStartedAt = Date.now();
     sendEmail(
       clientEmail,
-      `Document Submitted for Approval: ${workflowData.documentId}`,
+      sanitizeEmailSubject(`Document Submitted for Approval: ${workflowData.documentId}`),
       generateClientEmailHTML(workflowData, await createClientLinkQuery(workflowData.workflowId)),
       attachments
     )
@@ -7077,72 +6946,20 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
       });
     }
 
-    const { dealDeskEmail, workflowData } = req.body;
-    const resolvedDealDeskEmail = dealDeskEmail || process.env.DEAL_DESK_EMAIL || 'salesops@cloudfuze.com';
+    const emailRequest = await resolveApprovalEmailRequest(req, res, 'dealDesk');
+    if (!emailRequest) return;
+    const { workflowData, attachments, workflow: storedWorkflow } = emailRequest;
     
     console.log('📧 Sending notification email to Deal Desk (after client approval)...');
-    console.log('Deal Desk:', resolvedDealDeskEmail);
     console.log('Workflow Data:', workflowData);
 
-    // Fetch document attachment
-    let attachments = [];
-    if (workflowData.documentId && db) {
-      try {
-        console.log('📄 Fetching document for attachment:', workflowData.documentId);
-        const documentsCollection = db.collection('documents');
-        const document = await documentsCollection.findOne({ id: workflowData.documentId });
-        
-        if (document && document.fileData) {
-          // Convert document data to attachment
-          let fileBuffer;
-          if (Buffer.isBuffer(document.fileData)) {
-            fileBuffer = document.fileData;
-          } else if (document.fileData.buffer) {
-            fileBuffer = Buffer.from(document.fileData.buffer);
-          } else if (document.fileData.data) {
-            fileBuffer = Buffer.from(document.fileData.data);
-          }
-          
-          if (fileBuffer) {
-            attachments.push({
-              filename: document.fileName || `${workflowData.documentId}.pdf`,
-              content: fileBuffer,
-              contentType: 'application/pdf'
-            });
-            console.log('✅ Document attachment prepared:', document.fileName);
-          }
-        } else {
-          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
-        }
-      } catch (docError) {
-        console.error('❌ Error fetching document for attachment:', docError);
-        // Continue without attachment rather than failing
-      }
-    }
-
-    // Look up workflow to find creator email (approval initiator)
-    let creatorEmailForNotification = null;
-    if (workflowData && workflowData.workflowId && db) {
-      try {
-        const workflowRecord = await db
-          .collection('approval_workflows')
-          .findOne({ id: workflowData.workflowId });
-        if (workflowRecord && workflowRecord.creatorEmail) {
-          creatorEmailForNotification = workflowRecord.creatorEmail;
-          console.log('📧 Found workflow creator email for completion notification:', creatorEmailForNotification);
-        } else {
-          console.log('ℹ️ No creatorEmail found on workflow; skipping creator completion email.');
-        }
-      } catch (creatorLookupError) {
-        console.error('❌ Error fetching workflow for creator completion email:', creatorLookupError);
-      }
-    }
+    const creatorEmailForNotification = storedWorkflow.creatorEmail || null;
 
     // Deal Desk notification email is disabled — the approval workflow now ends at Legal.
     // This endpoint is still the completion trigger: it notifies the creator and auto-sends
     // the e-sign document below, then finalizes the workflow.
-    const completionSubject = `Approval Workflow Completed: ${workflowData.documentId}`;
-    const completionHtml = generateDealDeskEmailHTML(workflowData, await createClientLinkQuery(workflowData?.workflowId));
+    const completionSubject = sanitizeEmailSubject(`Approval Workflow Completed: ${workflowData.documentId}`);
+    const completionHtml = generateDealDeskEmailHTML(workflowData, await createClientLinkQuery(workflowData.workflowId));
 
     // Best-effort notification email to workflow creator (if available)
     if (creatorEmailForNotification) {
@@ -7152,17 +6969,14 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
     }
 
     // Auto-send e-sign document to signers when workflow has esignDocumentId (no creator action needed)
-    if (workflowData && workflowData.workflowId && db) {
+    const esignId = storedWorkflow.esignDocumentId;
+    if (esignId) {
       try {
-        const workflowRecord = await db.collection('approval_workflows').findOne({ id: workflowData.workflowId });
-        const esignId = workflowRecord && workflowRecord.esignDocumentId;
-        if (esignId) {
-          const autoSendResult = await sendDocumentForSignatureInternal(esignId, { uploadedBy: 'approval-auto-send' });
-          if (autoSendResult.success && autoSendResult.emails_sent > 0) {
-            console.log('✅ Auto-sent e-sign document to', autoSendResult.emails_sent, 'recipient(s) after approval');
-          } else if (autoSendResult.success && !autoSendResult.already_sent) {
-            console.log('📧 E-sign document marked as sent (no SENDGRID or no recipients)');
-          }
+        const autoSendResult = await sendDocumentForSignatureInternal(esignId, { uploadedBy: 'approval-auto-send' });
+        if (autoSendResult.success && autoSendResult.emails_sent > 0) {
+          console.log('✅ Auto-sent e-sign document to', autoSendResult.emails_sent, 'recipient(s) after approval');
+        } else if (autoSendResult.success && !autoSendResult.already_sent) {
+          console.log('📧 E-sign document marked as sent (no SENDGRID or no recipients)');
         }
       } catch (autoSendErr) {
         console.error('❌ Auto-send to signers after approval failed:', autoSendErr);
@@ -7200,7 +7014,10 @@ app.post('/api/send-approval-emails', async (req, res) => {
       });
     }
 
-    const { managerEmail, ceoEmail, clientEmail, workflowData } = req.body;
+    const emailRequest = await resolveApprovalEmailRequest(req, res, 'legacyAll');
+    if (!emailRequest) return;
+    const { workflowData } = emailRequest;
+    const { managerEmail, ceoEmail, clientEmail } = req.body;
     
     console.log('📧 Sending approval workflow emails (legacy - all at once)...');
     console.log('Manager:', managerEmail);
@@ -7214,7 +7031,7 @@ app.post('/api/send-approval-emails', async (req, res) => {
     try {
       const managerResult = await sendEmail(
         managerEmail,
-        `CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+        sanitizeEmailSubject(`CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`),
         generateTechnicalTeamEmailHTML(workflowData)
       );
       results.push({ role: 'Manager', email: managerEmail, success: managerResult.success });
@@ -7227,7 +7044,7 @@ app.post('/api/send-approval-emails', async (req, res) => {
     try {
       const ceoResult = await sendEmail(
         ceoEmail,
-        `CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+        sanitizeEmailSubject(`CloudFuze Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`),
         generateLegalTeamEmailHTML(workflowData)
       );
       results.push({ role: 'CEO', email: ceoEmail, success: ceoResult.success });
@@ -7240,7 +7057,7 @@ app.post('/api/send-approval-emails', async (req, res) => {
     try {
       const clientResult = await sendEmail(
         clientEmail,
-        `Document Submitted for Approval: ${workflowData.documentId}`,
+        sanitizeEmailSubject(`Document Submitted for Approval: ${workflowData.documentId}`),
         generateClientEmailHTML(workflowData, await createClientLinkQuery(workflowData.workflowId))
       );
       results.push({ role: 'Client', email: clientEmail, success: clientResult.success });
@@ -8877,6 +8694,8 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
   }
   const doc = await db.collection('esign_documents').findOne({ _id: docId });
   if (!doc) return { success: false, error: 'Document not found' };
+  const sendRefusal = esignSendRefusal(doc);
+  if (sendRefusal) return { success: false, error: sendRefusal, not_sendable: true };
   const signingOrderEnforced = resolveEsignSigningOrderEnforced(doc, options.signingOrderEnforced);
   if (doc.status === 'sent') {
     console.log('📧 E-sign document already sent, skipping auto-send');
@@ -11755,6 +11574,8 @@ app.post('/api/documents/test', async (req, res) => {
 // Simple email test endpoint (no attachment)
 app.post('/api/email/test', async (req, res) => {
   try {
+    const admin = await getApprovalAdminUser(req, res, 'Only approval admins can send a test email');
+    if (!admin) return;
     if (!isEmailConfigured) {
       return res.status(500).json({
         success: false,
@@ -11982,6 +11803,37 @@ async function requireApprovalCaller(req, res, workflowId) {
     return null;
   }
   return caller;
+}
+
+function refuseApprovalEmail(res, httpStatus, error, code) {
+  res.status(httpStatus).json({ success: false, error, ...(code ? { code } : {}) });
+  return null;
+}
+
+// One gate for every approval-email route: proof of access for the stored workflow, then the
+// trigger rule. The recipient, details and attachment it returns are the only ones to use.
+async function resolveApprovalEmailRequest(req, res, kind, recipientField) {
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const workflowId = body.workflowData && body.workflowData.workflowId;
+  // Anything but a string could become a MongoDB operator in the lookup below.
+  if (typeof workflowId !== 'string' || !workflowId) return refuseApprovalEmail(res, 400, 'workflowData.workflowId is required');
+  if (!db) return refuseApprovalEmail(res, 503, 'Database not available');
+
+  const caller = await requireApprovalCaller(req, res, workflowId);
+  if (!caller) return null;
+  const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+  if (!workflow) return refuseApprovalEmail(res, 404, 'Workflow not found');
+  const verdict = checkApprovalEmailTrigger({ kind, caller, workflow });
+  if (!verdict.ok) return refuseApprovalEmail(res, verdict.httpStatus, verdict.error, verdict.code);
+
+  return {
+    workflow,
+    workflowData: buildApprovalEmailData({ caller, workflow, bodyData: body.workflowData }),
+    recipient: resolveApprovalEmailRecipient({
+      kind, caller, workflow, requested: recipientField ? body[recipientField] : '', env: process.env,
+    }),
+    attachments: await loadDocumentPdfAttachment(workflow.documentId),
+  };
 }
 
 // Create approval workflow
@@ -12374,7 +12226,7 @@ function notifyCreatorOfDenial(workflow, deniedStep, comments) {
       documentId: workflow.documentId
     });
     if (toEmail && isEmailConfigured) {
-      const subject = `Approval Denied by ${deniedStep.role || 'Approver'} - ${workflow.documentId}`;
+      const subject = sanitizeEmailSubject(`Approval Denied by ${deniedStep.role || 'Approver'} - ${workflow.documentId}`);
       const html = generateDenialEmailHTML({
         workflowData: { ...workflow, workflowId: workflow.id },
         deniedBy: deniedStep.role || 'Approver',
@@ -13744,7 +13596,7 @@ async function runAutoReminderJob() {
           baseHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#333">
             <div style="max-width:600px;margin:0 auto;padding:20px">
               <p>Hello,</p>
-              <p>Your approval is still pending for <strong>${workflow.documentId}</strong> (${workflow.clientName}).</p>
+              <p>Your approval is still pending for <strong>${escapeHtml(workflow.documentId)}</strong> (${escapeHtml(workflow.clientName)}).</p>
               <div style="text-align:center;margin:30px 0">
                 <a href="${approvalLink}" style="background:#0ea5e9;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold">Review &amp; Approve</a>
               </div>

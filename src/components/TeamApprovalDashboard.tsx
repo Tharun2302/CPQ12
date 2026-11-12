@@ -125,9 +125,9 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
 
         if (legalEmail) {
           try {
-            await fetch(`${BACKEND_URL}/api/send-ceo-email`, {
+            await fetch(withApprovalPortalQuery(`${BACKEND_URL}/api/send-ceo-email`), {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
               body: JSON.stringify({
                 ceoEmail: legalEmail,
                 workflowData: {
@@ -154,9 +154,9 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
 
         if (technicalEmail) {
           try {
-            await fetch(`${BACKEND_URL}/api/send-manager-email`, {
+            await fetch(withApprovalPortalQuery(`${BACKEND_URL}/api/send-manager-email`), {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
               body: JSON.stringify({
                 managerEmail: technicalEmail,
                 workflowData: {

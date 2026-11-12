@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Clock, User, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, Eye, FileText, Loader2, Server, TestTube } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import { getAuthHeaders } from '../utils/authUtils';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import PdfCanvasViewer from './PdfCanvasViewer';
 import { track } from '../analytics/clarity';
@@ -208,7 +209,7 @@ const InfrateamDashboard: React.FC<InfrateamDashboardProps> = ({
         try {
           await fetch(`${BACKEND_URL}/api/send-manager-email`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({
               managerEmail: migrationStep.email,
               workflowData: {

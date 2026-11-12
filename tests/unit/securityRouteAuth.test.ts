@@ -45,6 +45,7 @@ const LOCKED: Array<{ method: string; path: string; helper: Helper }> = [
   { method: 'get', path: '/api/authorization-requests', helper: 'getApprovalAdminUser' },
   { method: 'put', path: '/api/team-approval-settings', helper: 'getApprovalAdminUser' },
   { method: 'get', path: '/api/test-mongodb', helper: 'getApprovalAdminUser' },
+  { method: 'post', path: '/api/email/test', helper: 'getApprovalAdminUser' },
 
   { method: 'post', path: '/api/templates', helper: 'getExhibitAdminUser' },
   { method: 'put', path: '/api/templates/:id', helper: 'getExhibitAdminUser' },
@@ -102,12 +103,6 @@ describe('routes that must stay open are unchanged', () => {
     ['get', '/api/database/health'],
     ['get', '/api/convert/test'],
     ['get', '/api/libreoffice/health'],
-    ['post', '/api/send-manager-email'],
-    ['post', '/api/send-team-email'],
-    ['post', '/api/send-ceo-email'],
-    ['post', '/api/send-client-email'],
-    ['post', '/api/send-deal-desk-email'],
-    ['post', '/api/send-approval-emails'],
   ];
 
   it.each(OPEN)('%s %s calls no auth helper', (method, routePath) => {

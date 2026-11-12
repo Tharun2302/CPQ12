@@ -249,11 +249,9 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
       if (workflow) {
         // Send email to Deal Desk (next step)
         console.log('📧 Sending email to Deal Desk after Legal Team approval...');
-        const response = await fetch(`${BACKEND_URL}/api/send-deal-desk-email`, {
+        const response = await fetch(withApprovalPortalQuery(`${BACKEND_URL}/api/send-deal-desk-email`), {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({
             dealDeskEmail: workflow.workflowSteps?.find(step => step.role === 'Deal Desk')?.email || 'salesops@cloudfuze.com',
             workflowData: {

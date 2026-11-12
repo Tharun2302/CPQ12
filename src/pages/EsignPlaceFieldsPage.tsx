@@ -916,7 +916,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
       }
       const teamRes = await fetch(`${BACKEND_URL}/api/send-team-email`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           teamEmail: pendingApproval.teamEmail,
           additionalRecipients: pendingApproval.additionalRecipients ?? [],
