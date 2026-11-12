@@ -120,6 +120,27 @@ describe('routes that must stay open are unchanged', () => {
   });
 });
 
+describe('open HubSpot demo and lookup routes are gone', () => {
+  const REMOVED: Array<[string, string]> = [
+    ['get', '/api/hubspot/contacts'],
+    ['get', '/api/hubspot/deals'],
+    ['post', '/api/hubspot/contacts'],
+    ['get', '/api/hubspot/contacts/:contactId'],
+    ['get', '/api/hubspot/test'],
+  ];
+
+  it.each(REMOVED)('%s %s no longer exists in server.cjs', (method, routePath) => {
+    const escaped = routePath.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+    expect(serverSrc).not.toMatch(new RegExp(`app\\.${method}\\(\\s*['"\`]${escaped}['"\`]`));
+  });
+
+  it('GET /api/hubspot/deals/:dealId still exists and still calls getAuthenticatedUser', () => {
+    const route = routeSource('get', '/api/hubspot/deals/:dealId');
+    expect(route).toContain('createDealDetailsHandler');
+    expect(route).toContain('getAuthenticatedUser');
+  });
+});
+
 describe('GET /api/auth/daily-logins behaviour', () => {
   const route = routeSource('get', '/api/auth/daily-logins');
   const helperStart = serverSrc.indexOf('const DEFAULT_APPROVAL_ADMINS');

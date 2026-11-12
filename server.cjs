@@ -1646,25 +1646,43 @@ async function sendZohoSignCompletionEmailToCreator(doc, at) {
 
 // NOTE: Static files are already served above with cache-safe headers (do not duplicate express.static).
 
+// Query values are attacker-controlled: keep strings only, cap the length, escape for HTML text
+function landingText(value) {
+  if (typeof value !== 'string') return '';
+  return value
+    .slice(0, 200)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // HubSpot redirect handler - only when deal/contact params present; otherwise SPA handles /
 app.get('/hubspot-landing', (req, res) => {
-  const dealId = req.query.dealId;
-  const dealName = req.query.dealName;
-  const amount = req.query.amount;
-  const closeDate = req.query.closeDate;
-  const stage = req.query.stage;
-  const ownerId = req.query.ownerId;
-  const contactEmail = req.query.ContactEmail;
-  const contactFirstName = req.query.ContactFirstName;
-  const contactLastName = req.query.ContactLastName;
-  const companyName = req.query.CompanyName;
-  const companyByContact = req.query.CompanyByContact || req.query.CompanyFromContact;
+  const dealId = landingText(req.query.dealId);
+  const dealName = landingText(req.query.dealName);
+  const amount = landingText(req.query.amount);
+  const closeDate = landingText(req.query.closeDate);
+  const stage = landingText(req.query.stage);
+  const ownerId = landingText(req.query.ownerId);
+  const contactEmail = landingText(req.query.ContactEmail);
+  const contactFirstName = landingText(req.query.ContactFirstName);
+  const contactLastName = landingText(req.query.ContactLastName);
+  const companyName = landingText(req.query.CompanyName);
+  const companyByContact = landingText(req.query.CompanyByContact) || landingText(req.query.CompanyFromContact);
   console.log({
     deal: { dealId, dealName, amount, closeDate, stage, ownerId },
     contact: { email: contactEmail, firstName: contactFirstName, lastName: contactLastName },
     company: { name: companyName, byContact: companyByContact }
   });
   const fullContactName = `${contactFirstName} ${contactLastName}`.trim();
+  res.set({
+    'Content-Type': 'text/html; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
+    // The page has no script, style or image, so everything can be denied
+    'Content-Security-Policy': "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+  });
   res.send(`
     <h2>Deal Information</h2>
     <p><strong>Deal:</strong> ${dealName} (ID: ${dealId})</p>
@@ -6258,46 +6276,6 @@ app.put('/api/templates/:id', async (req, res) => {
   }
 });
 
-// HubSpot API endpoints for authentication
-// Get HubSpot contact by ID
-app.get('/api/hubspot/contacts/:contactId', async (req, res) => {
-  try {
-    const { contactId } = req.params;
-    
-    if (!HUBSPOT_API_KEY) {
-      return res.status(500).json({
-        success: false,
-        error: 'HubSpot API key not configured'
-      });
-    }
-
-    const response = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/${contactId}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${HUBSPOT_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`HubSpot API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    res.json({
-      success: true,
-      data: data
-    });
-  } catch (error) {
-    console.error('❌ Error fetching HubSpot contact:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
 // Get HubSpot deal by ID, with its associated contact and company resolved
 // Contact/company PII is returned, so callers must be signed in and the route is capped
 const hubspotDealLimiter = rateLimit({
@@ -6352,114 +6330,6 @@ app.get('/api/test-mongodb', async (req, res) => {
       error: error.message,
       database: DB_NAME,
       message: 'MongoDB connection failed'
-    });
-  }
-});
-
-// HubSpot API endpoints
-app.get('/api/hubspot/contacts', async (req, res) => {
-  try {
-    console.log('🔍 HubSpot contacts endpoint called');
-    
-    // For now, return demo data since we don't have real HubSpot integration
-    const demoContacts = [
-      {
-        id: 'contact_1',
-        email: 'john.doe@example.com',
-        firstName: 'John',
-        lastName: 'Doe',
-        company: 'Example Corp',
-        phone: '+1-555-0123'
-      },
-      {
-        id: 'contact_2', 
-        email: 'jane.smith@example.com',
-        firstName: 'Jane',
-        lastName: 'Smith',
-        company: 'Tech Solutions',
-        phone: '+1-555-0456'
-      }
-    ];
-    
-    res.json({
-      success: true,
-      data: demoContacts,
-      isDemo: true,
-      message: 'Demo HubSpot contacts data'
-    });
-  } catch (error) {
-    console.error('❌ Error fetching HubSpot contacts:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch contacts',
-      message: error.message
-    });
-  }
-});
-
-app.get('/api/hubspot/deals', async (req, res) => {
-  try {
-    console.log('🔍 HubSpot deals endpoint called');
-    
-    // For now, return demo data since we don't have real HubSpot integration
-    const demoDeals = [
-      {
-        id: 'deal_1',
-        dealName: 'Cloud Migration Project',
-        amount: '$25,000',
-        stage: 'Proposal',
-        closeDate: '2024-12-31',
-        ownerId: 'owner_1'
-      },
-      {
-        id: 'deal_2',
-        dealName: 'Digital Transformation',
-        amount: '$50,000', 
-        stage: 'Negotiation',
-        closeDate: '2024-11-15',
-        ownerId: 'owner_2'
-      }
-    ];
-    
-    res.json({
-      success: true,
-      data: demoDeals,
-      isDemo: true,
-      message: 'Demo HubSpot deals data'
-    });
-  } catch (error) {
-    console.error('❌ Error fetching HubSpot deals:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch deals',
-      message: error.message
-    });
-  }
-});
-
-app.post('/api/hubspot/contacts', async (req, res) => {
-  try {
-    console.log('🔍 Creating HubSpot contact:', req.body);
-    
-    // For now, simulate contact creation
-    const newContact = {
-      id: `contact_${Date.now()}`,
-      ...req.body,
-      createdAt: new Date().toISOString()
-    };
-    
-    res.json({
-      success: true,
-      contact: newContact,
-      isDemo: true,
-      message: 'Demo contact created successfully'
-    });
-  } catch (error) {
-    console.error('❌ Error creating HubSpot contact:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to create contact',
-      message: error.message
     });
   }
 });
@@ -13265,9 +13135,6 @@ async function startServer() {
       console.log(`   - DELETE /api/quotes/:id`);
       console.log(`   - GET  /api/pricing-tiers`);
       console.log(`   - POST /api/pricing-tiers`);
-      console.log(`   - GET  /api/hubspot/contacts`);
-      console.log(`   - GET  /api/hubspot/deals`);
-      console.log(`   - POST /api/hubspot/contacts`);
       console.log(`   - POST /api/templates`);
       console.log(`   - GET  /api/templates`);
       console.log(`   - GET  /api/templates/:id/file`);
