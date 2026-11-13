@@ -872,13 +872,22 @@ function readBearerToken(req) {
 }
 
 // Every login-protected route goes through here, so an idle or signed-out session is refused everywhere.
-// Returns { decoded, idleRemainingMs } or null. Tokens issued before sessions existed carry no sid and are refused.
+// Returns { decoded, session } or null. Tokens issued before sessions existed carry no sid and are refused.
 async function verifyLoginToken(token) {
   const decoded = decodeLoginToken(token);
   if (!decoded || !decoded.sid || !decoded.userId) return null;
   const session = await loginSessions.checkSession(decoded.sid, decoded.userId);
   if (!session.ok) return null;
-  return { decoded, idleRemainingMs: session.idleRemainingMs };
+  return { decoded, session };
+}
+
+// The browser warns before whichever limit comes first: 60 idle minutes or the 12-hour cap
+function sessionTimesForClient(times) {
+  return {
+    idleRemainingMs: times.idleRemainingMs,
+    maxAgeRemainingMs: times.maxAgeRemainingMs,
+    idleTimeoutMs: sessionActivity.IDLE_TIMEOUT_MS,
+  };
 }
 const GOTENBERG_URL = process.env.GOTENBERG_URL || '';
 const LIBREOFFICE_SERVICE_URL = process.env.LIBREOFFICE_SERVICE_URL || 'http://localhost:3002';
@@ -1889,7 +1898,7 @@ app.get('/api/auth/me', async (req, res) => {
     res.json({
       success: true,
       user: userResponse,
-      session: { idleRemainingMs: login.idleRemainingMs, idleTimeoutMs: sessionActivity.IDLE_TIMEOUT_MS }
+      session: sessionTimesForClient(login.session)
     });
   } catch (error) {
     console.error('Get user error:', error);
@@ -1922,7 +1931,7 @@ app.post('/api/auth/activity', sessionActivityLimiter, async (req, res) => {
     }
     const result = await loginSessions.touchSession(decoded.sid, decoded.userId);
     if (!result.ok) return res.status(401).json({ success: false, error: 'Session expired' });
-    res.json({ success: true, session: { idleRemainingMs: result.idleRemainingMs, idleTimeoutMs: sessionActivity.IDLE_TIMEOUT_MS } });
+    res.json({ success: true, session: sessionTimesForClient(result) });
   } catch (error) {
     logger.error('Session activity update failed', { source: 'session-activity', error: error.message });
     res.status(500).json({ success: false, error: 'Could not update session' });
@@ -1972,7 +1981,7 @@ app.post('/api/auth/microsoft', async (req, res) => {
     const user = result.user;
 
     const session = await loginSessions.createSession({ userId: user.id, email: user.email });
-    const token = jwt.sign({ ...result.jwtPayload, sid: session.sid }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ ...result.jwtPayload, sid: session.sid }, JWT_SECRET, { expiresIn: '12h' });
 
     // Track daily login
     await trackDailyLogin(user.id, 'microsoft', user.email);
@@ -1990,7 +1999,7 @@ app.post('/api/auth/microsoft', async (req, res) => {
       message: 'Microsoft authentication successful',
       user: userResponse,
       token: token,
-      session: { idleRemainingMs: session.idleRemainingMs, idleTimeoutMs: sessionActivity.IDLE_TIMEOUT_MS }
+      session: sessionTimesForClient(session)
     });
   } catch (error) {
     logger.error('Microsoft auth failed', { source: 'microsoft-login', error: error.message });

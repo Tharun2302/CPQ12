@@ -12,7 +12,9 @@ import {
 } from '../../src/utils/sessionGuard';
 
 const MINUTE = 60 * 1000;
-const ok = (idleRemainingMs = SESSION_IDLE_TIMEOUT_MS): SessionCallResult => ({ status: 'ok', idleRemainingMs });
+const ok = (idleRemainingMs = SESSION_IDLE_TIMEOUT_MS, maxAgeRemainingMs?: number): SessionCallResult => (
+  maxAgeRemainingMs === undefined ? { status: 'ok', idleRemainingMs } : { status: 'ok', idleRemainingMs, maxAgeRemainingMs }
+);
 
 function setup(overrides: Partial<Parameters<typeof startSessionGuard>[0]> = {}) {
   const sendActivity = vi.fn(async () => ok());
@@ -49,7 +51,7 @@ describe('sessionGuard', () => {
     await vi.advanceTimersByTimeAsync(SESSION_IDLE_TIMEOUT_MS - SESSION_WARNING_MS - 1000);
     expect(onWarningChange).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1000);
-    expect(onWarningChange).toHaveBeenCalledWith(true, expect.any(Number));
+    expect(onWarningChange).toHaveBeenCalledWith(true, expect.any(Number), 'idle');
     await vi.advanceTimersByTimeAsync(SESSION_WARNING_MS);
     expect(checkSession).toHaveBeenCalledTimes(1);
     expect(onExpire).toHaveBeenCalledTimes(1);
@@ -114,7 +116,7 @@ describe('sessionGuard', () => {
     const later = Date.now() + 110 * 1000;
     localStorage.setItem(SESSION_DEADLINE_KEY, String(later));
     await vi.advanceTimersByTimeAsync(1000);
-    expect(onWarningChange).toHaveBeenLastCalledWith(true, later);
+    expect(onWarningChange).toHaveBeenLastCalledWith(true, later, 'idle');
     guard.stop();
   });
 
@@ -162,14 +164,14 @@ describe('sessionGuard', () => {
   it('ignores ambient activity while the warning is open; Stay signed in extends', async () => {
     const { guard, sendActivity, onWarningChange, onExpire } = setup();
     await vi.advanceTimersByTimeAsync(SESSION_IDLE_TIMEOUT_MS - SESSION_WARNING_MS);
-    expect(onWarningChange).toHaveBeenLastCalledWith(true, expect.any(Number));
+    expect(onWarningChange).toHaveBeenLastCalledWith(true, expect.any(Number), 'idle');
     press();
     await vi.advanceTimersByTimeAsync(1000);
     expect(sendActivity).not.toHaveBeenCalled();
 
     await expect(guard.staySignedIn()).resolves.toBe(true);
     expect(sendActivity).toHaveBeenCalledTimes(1);
-    expect(onWarningChange).toHaveBeenLastCalledWith(false, expect.any(Number));
+    expect(onWarningChange).toHaveBeenLastCalledWith(false, expect.any(Number), 'idle');
     await vi.advanceTimersByTimeAsync(30 * MINUTE);
     expect(onExpire).not.toHaveBeenCalled();
     guard.stop();
@@ -208,10 +210,10 @@ describe('sessionGuard', () => {
   it('closes the warning when another tab extends the session', async () => {
     const { guard, onWarningChange } = setup();
     await vi.advanceTimersByTimeAsync(SESSION_IDLE_TIMEOUT_MS - SESSION_WARNING_MS);
-    expect(onWarningChange).toHaveBeenLastCalledWith(true, expect.any(Number));
+    expect(onWarningChange).toHaveBeenLastCalledWith(true, expect.any(Number), 'idle');
     localStorage.setItem(SESSION_DEADLINE_KEY, String(Date.now() + SESSION_IDLE_TIMEOUT_MS));
     await vi.advanceTimersByTimeAsync(1000);
-    expect(onWarningChange).toHaveBeenLastCalledWith(false, expect.any(Number));
+    expect(onWarningChange).toHaveBeenLastCalledWith(false, expect.any(Number), 'idle');
     guard.stop();
   });
 
@@ -240,6 +242,41 @@ describe('sessionGuard', () => {
     expect(sendActivity).not.toHaveBeenCalled();
     expect(onExpire).not.toHaveBeenCalled();
     await expect(guard.staySignedIn()).resolves.toBe(false);
+  });
+
+  it('reports an idle sign-out as idle', async () => {
+    const { guard, onWarningChange, onExpire } = setup();
+    await vi.advanceTimersByTimeAsync(SESSION_IDLE_TIMEOUT_MS - SESSION_WARNING_MS);
+    expect(onWarningChange).toHaveBeenLastCalledWith(true, expect.any(Number), 'idle');
+    await vi.advanceTimersByTimeAsync(SESSION_WARNING_MS);
+    expect(onExpire).toHaveBeenCalledWith('idle');
+    guard.stop();
+  });
+
+  it('warns about and ends at the 12-hour cap even for a busy user', async () => {
+    const { guard, onWarningChange, onExpire } = setup({
+      initialMaxAgeRemainingMs: 10 * MINUTE,
+      sendActivity: vi.fn(async () => ok()),
+    });
+    for (let i = 0; i < 8; i += 1) {
+      press();
+      await vi.advanceTimersByTimeAsync(MINUTE);
+    }
+    expect(onWarningChange).toHaveBeenLastCalledWith(true, expect.any(Number), 'limit');
+    await vi.advanceTimersByTimeAsync(2 * MINUTE);
+    expect(onExpire).toHaveBeenCalledWith('limit');
+    guard.stop();
+  });
+
+  it('takes the cap from the server on every response', async () => {
+    const sendActivity = vi.fn(async () => ok(SESSION_IDLE_TIMEOUT_MS, 3 * MINUTE));
+    const { guard, onWarningChange } = setup({ sendActivity });
+    press();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onWarningChange).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(MINUTE);
+    expect(onWarningChange).toHaveBeenLastCalledWith(true, expect.any(Number), 'limit');
+    guard.stop();
   });
 
   it('formats the countdown as m:ss', () => {

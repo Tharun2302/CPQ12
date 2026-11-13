@@ -5,7 +5,7 @@ import { track, identify } from '../analytics/clarity';
 import { identifyHotjarUser } from '../analytics/hotjar';
 import { BACKEND_URL } from '../config/api';
 import { clearUserSessionData, clearDataIfDifferentUser, getAuthHeaders } from '../utils/authUtils';
-import { SESSION_IDLE_TIMEOUT_MS, SessionCallResult, SessionGuard, startSessionGuard } from '../utils/sessionGuard';
+import { SESSION_IDLE_TIMEOUT_MS, SessionCallResult, SessionEndKind, SessionGuard, startSessionGuard } from '../utils/sessionGuard';
 import SessionTimeoutWarning from '../components/SessionTimeoutWarning';
 import { getMicrosoftAuthorizeUrl, getMicrosoftTenantId } from '../utils/microsoftAuthority';
 import { microsoftBackendErrorMessage, microsoftPopupErrorMessage, createMicrosoftServerError } from '../utils/microsoftSignInErrors';
@@ -20,21 +20,51 @@ interface AuthProviderComponentProps {
   children: ReactNode;
 }
 
-type SessionEndReason = 'user' | 'idle' | 'other-tab';
+type SessionEndReason = 'user' | SessionEndKind;
 
-const readIdleRemaining = (data: any): number => {
-  const remaining = Number(data?.session?.idleRemainingMs);
-  return Number.isFinite(remaining) && remaining > 0 ? remaining : SESSION_IDLE_TIMEOUT_MS;
+interface SessionTimes {
+  idleRemainingMs: number;
+  maxAgeRemainingMs?: number;
+}
+
+const DEFAULT_SESSION_TIMES: SessionTimes = { idleRemainingMs: SESSION_IDLE_TIMEOUT_MS };
+
+const readSessionTimes = (data: any): SessionTimes | null => {
+  const idle = Number(data?.session?.idleRemainingMs);
+  if (!Number.isFinite(idle)) return null;
+  const maxAge = Number(data?.session?.maxAgeRemainingMs);
+  return Number.isFinite(maxAge) ? { idleRemainingMs: idle, maxAgeRemainingMs: maxAge } : { idleRemainingMs: idle };
 };
+
+// Lets the other open tabs show why they were signed out; only honoured briefly so a stale value is never shown
+const SIGN_OUT_REASON_KEY = 'cpq_signout_reason';
+const SIGN_OUT_REASON_MAX_AGE_MS = 15 * 1000;
+
+function shareSignOutReason(reason: SessionEndReason): void {
+  try {
+    localStorage.setItem(SIGN_OUT_REASON_KEY, JSON.stringify({ reason, at: Date.now() }));
+  } catch {
+    // Other tabs then sign out without the explanation
+  }
+}
+
+function readSharedSignOutReason(): SessionEndReason | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SIGN_OUT_REASON_KEY) || 'null');
+    if (!parsed || Date.now() - Number(parsed.at) > SIGN_OUT_REASON_MAX_AGE_MS) return null;
+    return ['user', 'idle', 'limit'].includes(parsed.reason) ? parsed.reason : null;
+  } catch {
+    return null;
+  }
+}
 
 async function callSessionEndpoint(path: string, method: 'GET' | 'POST'): Promise<SessionCallResult> {
   try {
     const response = await fetch(`${BACKEND_URL}${path}`, { method, headers: getAuthHeaders() });
     if (response.status === 401) return { status: 'expired' };
     if (!response.ok) return { status: 'error' };
-    const data = await response.json();
-    const remaining = Number(data?.session?.idleRemainingMs);
-    return Number.isFinite(remaining) ? { status: 'ok', idleRemainingMs: remaining } : { status: 'error' };
+    const times = readSessionTimes(await response.json());
+    return times ? { status: 'ok', ...times } : { status: 'error' };
   } catch {
     return { status: 'error' };
   }
@@ -49,7 +79,7 @@ function endServerSession(token: string): void {
   }).catch(() => undefined);
 }
 
-const SIGN_OUT_MESSAGES: Record<'user' | 'idle', { title: string; body: string; autoCloseMs: number | null }> = {
+const SIGN_OUT_MESSAGES: Record<SessionEndReason, { title: string; body: string; autoCloseMs: number | null }> = {
   user: {
     title: 'Thank you for visiting CloudFuze CPQ Quote!',
     body: 'We hope to see you again soon for your quoting needs.',
@@ -61,6 +91,11 @@ const SIGN_OUT_MESSAGES: Record<'user' | 'idle', { title: string; body: string; 
     body: 'For security, you were signed out after 60 minutes of inactivity. Please sign in again.',
     autoCloseMs: null,
   },
+  limit: {
+    title: 'You were signed out',
+    body: 'For security, each sign-in lasts at most 12 hours. Please sign in again.',
+    autoCloseMs: null,
+  },
 };
 
 export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children }) => {
@@ -68,8 +103,8 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [warningDeadline, setWarningDeadline] = useState<number | null>(null);
-  const sessionRemainingRef = useRef<number>(SESSION_IDLE_TIMEOUT_MS);
+  const [warning, setWarning] = useState<{ deadline: number; kind: SessionEndKind } | null>(null);
+  const sessionTimesRef = useRef<SessionTimes>(DEFAULT_SESSION_TIMES);
   const guardRef = useRef<SessionGuard | null>(null);
 
   // Single identify point covering every auth path (restored session, Microsoft, HubSpot):
@@ -99,7 +134,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
             if (response.ok) {
               const data = await response.json();
               if (data.success) {
-                sessionRemainingRef.current = readIdleRemaining(data);
+                sessionTimesRef.current = readSessionTimes(data) ?? DEFAULT_SESSION_TIMES;
                 // Sync the refreshed user (with isApprovalAdmin and effective role) back to localStorage
                 localStorage.setItem('cpq_user', JSON.stringify(data.user));
                 setUser(data.user);
@@ -362,7 +397,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                
                 if (data.success) {
                   clearDataIfDifferentUser(data.user);
-                  sessionRemainingRef.current = readIdleRemaining(data);
+                  sessionTimesRef.current = readSessionTimes(data) ?? DEFAULT_SESSION_TIMES;
                   // Store user and token from backend
                   localStorage.setItem('cpq_user', JSON.stringify(data.user));
                   localStorage.setItem('cpq_token', data.token);
@@ -443,14 +478,14 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
     }
   };
  
-  const endSession = (reason: SessionEndReason) => {
+  // fromOtherTab: another tab already ended the server session and cleared storage
+  const endSession = (reason: SessionEndReason, fromOtherTab = false) => {
     const token = localStorage.getItem('cpq_token');
-    // The tab that signed out already ended the server session
-    if (reason !== 'other-tab' && token) endServerSession(token);
+    if (!fromOtherTab && token) endServerSession(token);
 
     guardRef.current?.stop();
     guardRef.current = null;
-    setWarningDeadline(null);
+    setWarning(null);
 
     const showSignOutMessage = ({ title, body, autoCloseMs }: { title: string; body: string; autoCloseMs: number | null }) => {
       // Create a custom modal for better UX
@@ -530,7 +565,11 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
       }
     };
 
-    if (reason !== 'other-tab') showSignOutMessage(SIGN_OUT_MESSAGES[reason]);
+    // A tab closed by another tab's sign-out only explains timeouts; the user who clicked Sign out saw it there
+    if (!fromOtherTab || reason !== 'user') showSignOutMessage(SIGN_OUT_MESSAGES[reason]);
+
+    // Written before the token is removed so other tabs can read it when they react to the removal
+    if (!fromOtherTab) shareSignOutReason(reason);
 
     // Shared PCs: the next person must not find this user's quotes or client details.
     // Removing cpq_token here is also what signs out the other open tabs.
@@ -551,17 +590,18 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
   useEffect(() => {
     if (!isAuthenticated) return undefined;
     const guard = startSessionGuard({
-      initialRemainingMs: sessionRemainingRef.current,
+      initialRemainingMs: sessionTimesRef.current.idleRemainingMs,
+      initialMaxAgeRemainingMs: sessionTimesRef.current.maxAgeRemainingMs,
       sendActivity: () => callSessionEndpoint('/api/auth/activity', 'POST'),
       checkSession: () => callSessionEndpoint('/api/auth/me', 'GET'),
-      onWarningChange: (open, deadline) => setWarningDeadline(open ? deadline : null),
-      onExpire: () => endSessionRef.current('idle'),
+      onWarningChange: (open, deadline, kind) => setWarning(open ? { deadline, kind } : null),
+      onExpire: (kind) => endSessionRef.current(kind),
     });
     guardRef.current = guard;
     return () => {
       guard.stop();
       if (guardRef.current === guard) guardRef.current = null;
-      setWarningDeadline(null);
+      setWarning(null);
     };
   }, [isAuthenticated]);
 
@@ -570,7 +610,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
       // key is null when another tab cleared storage wholesale
       if (event.key !== 'cpq_token' && event.key !== null) return;
       const token = localStorage.getItem('cpq_token');
-      if (!token && isAuthenticated) endSessionRef.current('other-tab');
+      if (!token && isAuthenticated) endSessionRef.current(readSharedSignOutReason() ?? 'user', true);
       // Covers a sign-in in another tab, including as a different user
       else if (token && event.key === 'cpq_token' && event.oldValue !== token) restoreSession();
     };
@@ -593,8 +633,13 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
   return (
     <AuthContext.Provider value={value}>
       {children}
-      {warningDeadline !== null && (
-        <SessionTimeoutWarning deadline={warningDeadline} onStaySignedIn={staySignedIn} onSignOut={logout} />
+      {warning !== null && (
+        <SessionTimeoutWarning
+          deadline={warning.deadline}
+          kind={warning.kind}
+          onStaySignedIn={staySignedIn}
+          onSignOut={logout}
+        />
       )}
     </AuthContext.Provider>
   );

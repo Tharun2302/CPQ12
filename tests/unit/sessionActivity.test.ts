@@ -24,6 +24,12 @@ function createFakeCollection() {
     async createIndex(spec: Doc, options?: Doc) { indexes.push([spec, options]); },
     async insertOne(doc: Doc) { docs.push({ ...doc }); },
     async findOne(filter: Doc) { return docs.find((d) => matches(d, filter)) ?? null; },
+    async findOneAndUpdate(filter: Doc, update: { $set: Doc }) {
+      const doc = docs.find((d) => matches(d, filter));
+      if (!doc) return null;
+      Object.assign(doc, update.$set);
+      return { ...doc };
+    },
     async updateOne(filter: Doc, update: { $set: Doc }) {
       const doc = docs.find((d) => matches(d, filter));
       if (!doc) return { matchedCount: 0, modifiedCount: 0 };
@@ -56,9 +62,13 @@ describe('session-activity', () => {
     expect(sessionActivity.IDLE_TIMEOUT_MS).toBe(60 * MINUTE);
   });
 
+  it('caps every sign-in at 12 hours', () => {
+    expect(sessionActivity.SESSION_MAX_AGE_MS).toBe(12 * 60 * MINUTE);
+  });
+
   it('creates a session with a full idle window and a TTL expiry', async () => {
     const created = await store.createSession({ userId: 'u1', email: 'a@cloudfuze.com' });
-    expect(created).toEqual({ sid: 'sid-1', idleRemainingMs: 60 * MINUTE });
+    expect(created).toEqual({ sid: 'sid-1', idleRemainingMs: 60 * MINUTE, maxAgeRemainingMs: 12 * 60 * MINUTE });
     const doc = collection.docs[0];
     expect(doc.revokedAt).toBeNull();
     expect(doc.expiresAt.getTime() - START).toBe(sessionActivity.SESSION_MAX_AGE_MS);
@@ -73,9 +83,23 @@ describe('session-activity', () => {
   it('accepts an active session and reports the time left without extending it', async () => {
     const { sid } = await store.createSession({ userId: 'u1' });
     clock += 20 * MINUTE;
-    expect(await store.checkSession(sid, 'u1')).toEqual({ ok: true, idleRemainingMs: 40 * MINUTE });
+    expect(await store.checkSession(sid, 'u1')).toEqual({ ok: true, idleRemainingMs: 40 * MINUTE, maxAgeRemainingMs: 700 * MINUTE });
     clock += 20 * MINUTE;
-    expect(await store.checkSession(sid, 'u1')).toEqual({ ok: true, idleRemainingMs: 20 * MINUTE });
+    expect(await store.checkSession(sid, 'u1')).toEqual({ ok: true, idleRemainingMs: 20 * MINUTE, maxAgeRemainingMs: 680 * MINUTE });
+  });
+
+  it('an active user is still signed out at the 12-hour cap, and pings cannot extend past it', async () => {
+    const { sid } = await store.createSession({ userId: 'u1' });
+    for (let i = 0; i < 14; i += 1) {
+      clock += 50 * MINUTE;
+      await store.touchSession(sid, 'u1');
+    }
+    expect((await store.checkSession(sid, 'u1')).ok).toBe(true);
+    clock += 19 * MINUTE;
+    expect(await store.touchSession(sid, 'u1')).toEqual({ ok: true, idleRemainingMs: 60 * MINUTE, maxAgeRemainingMs: MINUTE });
+    clock += MINUTE;
+    expect(await store.checkSession(sid, 'u1')).toEqual({ ok: false, reason: 'MAX_AGE' });
+    expect((await store.touchSession(sid, 'u1')).ok).toBe(false);
   });
 
   it('refuses a session idle for exactly 60 minutes', async () => {
@@ -87,7 +111,7 @@ describe('session-activity', () => {
   it('activity resets the idle clock', async () => {
     const { sid } = await store.createSession({ userId: 'u1' });
     clock += 59 * MINUTE;
-    expect(await store.touchSession(sid, 'u1')).toEqual({ ok: true, idleRemainingMs: 60 * MINUTE });
+    expect(await store.touchSession(sid, 'u1')).toEqual({ ok: true, idleRemainingMs: 60 * MINUTE, maxAgeRemainingMs: 661 * MINUTE });
     clock += 59 * MINUTE;
     expect((await store.checkSession(sid, 'u1')).ok).toBe(true);
   });
@@ -131,7 +155,7 @@ describe('server.cjs login session wiring', () => {
   });
 
   it('puts the session id in every issued login token', () => {
-    expect(server).toMatch(/jwt\.sign\(\{ \.\.\.result\.jwtPayload, sid: session\.sid \}, JWT_SECRET/);
+    expect(server).toMatch(/jwt\.sign\(\{ \.\.\.result\.jwtPayload, sid: session\.sid \}, JWT_SECRET, \{ expiresIn: '12h' \}\)/);
     expect(server.match(/jwt\.sign\(.*?(?<![A-Z_])JWT_SECRET\b/g)).toHaveLength(1);
   });
 

@@ -10,16 +10,20 @@ export const EXPIRY_CHECK_GRACE_MS = 30 * 1000;
 const ACTIVITY_DOM_EVENTS = ['keydown', 'mousedown', 'mousemove', 'touchstart', 'wheel'] as const;
 
 export type SessionCallResult =
-  | { status: 'ok'; idleRemainingMs: number }
+  | { status: 'ok'; idleRemainingMs: number; maxAgeRemainingMs?: number }
   | { status: 'expired' }
   | { status: 'error' };
 
+// 'idle' can be extended by activity; 'limit' is the absolute sign-in cap and cannot
+export type SessionEndKind = 'idle' | 'limit';
+
 export interface SessionGuardOptions {
   initialRemainingMs: number;
+  initialMaxAgeRemainingMs?: number;
   sendActivity: () => Promise<SessionCallResult>;
   checkSession: () => Promise<SessionCallResult>;
-  onWarningChange: (open: boolean, deadline: number) => void;
-  onExpire: () => void;
+  onWarningChange: (open: boolean, deadline: number, kind: SessionEndKind) => void;
+  onExpire: (kind: SessionEndKind) => void;
   now?: () => number;
   target?: Window;
   storage?: Storage;
@@ -83,7 +87,9 @@ export function startSessionGuard(options: SessionGuardOptions): SessionGuard {
   const storage = options.storage ?? safeLocalStorage(target);
   const tickMs = options.tickMs ?? 1000;
 
-  let deadline = now() + options.initialRemainingMs;
+  // The idle deadline is shared across tabs; the cap is fixed for the session, so each tab knows it from the server
+  let idleDeadline = now() + options.initialRemainingMs;
+  let capDeadline = now() + (options.initialMaxAgeRemainingMs ?? Number.POSITIVE_INFINITY);
   let lastPingAt = Number.NEGATIVE_INFINITY;
   let pendingActivity = false;
   let pingInFlight = false;
@@ -91,30 +97,35 @@ export function startSessionGuard(options: SessionGuardOptions): SessionGuard {
   let warningOpen = false;
   let stopped = false;
 
-  writeSharedDeadline(storage, deadline);
+  const deadline = () => Math.min(idleDeadline, capDeadline);
+  const kind = (): SessionEndKind => (capDeadline <= idleDeadline ? 'limit' : 'idle');
 
-  const setWarning = (open: boolean) => {
-    if (open === warningOpen) return;
+  writeSharedDeadline(storage, idleDeadline);
+
+  // Also re-sent while open so the countdown and message follow a moved deadline
+  const refreshWarning = () => {
+    const open = deadline() - now() <= SESSION_WARNING_MS;
+    if (!open && !warningOpen) return;
     warningOpen = open;
-    options.onWarningChange(open, deadline);
+    options.onWarningChange(open, deadline(), kind());
   };
 
-  // Keeps an open warning's countdown on the current deadline, or closes it once outside the window
-  const moveDeadline = (next: number) => {
-    deadline = next;
-    if (deadline - now() > SESSION_WARNING_MS) setWarning(false);
-    else if (warningOpen) options.onWarningChange(true, deadline);
+  const moveIdleDeadline = (next: number) => {
+    idleDeadline = next;
+    if (warningOpen) refreshWarning();
   };
 
-  const adoptRemaining = (idleRemainingMs: number) => {
-    moveDeadline(now() + idleRemainingMs);
-    writeSharedDeadline(storage, deadline);
+  const adoptRemaining = (result: { idleRemainingMs: number; maxAgeRemainingMs?: number }) => {
+    if (typeof result.maxAgeRemainingMs === 'number') capDeadline = now() + result.maxAgeRemainingMs;
+    moveIdleDeadline(now() + result.idleRemainingMs);
+    writeSharedDeadline(storage, idleDeadline);
   };
 
   const expire = () => {
     if (stopped) return;
+    const endKind = kind();
     stop();
-    options.onExpire();
+    options.onExpire(endKind);
   };
 
   const ping = async (): Promise<boolean> => {
@@ -125,7 +136,7 @@ export function startSessionGuard(options: SessionGuardOptions): SessionGuard {
       const result = await options.sendActivity();
       if (stopped) return false;
       if (result.status === 'ok') {
-        adoptRemaining(result.idleRemainingMs);
+        adoptRemaining(result);
         return true;
       }
       if (result.status === 'expired') {
@@ -158,8 +169,8 @@ export function startSessionGuard(options: SessionGuardOptions): SessionGuard {
     try {
       const result = await options.checkSession();
       if (stopped) return;
-      if (result.status === 'ok' && result.idleRemainingMs > 0) adoptRemaining(result.idleRemainingMs);
-      else if (result.status === 'error' && now() - deadline < EXPIRY_CHECK_GRACE_MS) return;
+      if (result.status === 'ok' && result.idleRemainingMs > 0 && (result.maxAgeRemainingMs ?? 1) > 0) adoptRemaining(result);
+      else if (result.status === 'error' && now() - deadline() < EXPIRY_CHECK_GRACE_MS) return;
       else expire();
     } finally {
       checkingExpiry = false;
@@ -169,14 +180,14 @@ export function startSessionGuard(options: SessionGuardOptions): SessionGuard {
   const tick = () => {
     if (stopped) return;
     const shared = readSharedDeadline(storage);
-    if (shared > deadline) moveDeadline(shared);
+    if (shared > idleDeadline) moveIdleDeadline(shared);
     flushIfDue();
-    const remaining = deadline - now();
+    const remaining = deadline() - now();
     if (remaining <= 0) {
       if (!checkingExpiry) void confirmExpiry();
       return;
     }
-    if (remaining <= SESSION_WARNING_MS) setWarning(true);
+    if (remaining <= SESSION_WARNING_MS && !warningOpen) refreshWarning();
   };
 
   const onStorage = (event: StorageEvent) => {

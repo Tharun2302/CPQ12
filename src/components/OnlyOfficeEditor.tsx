@@ -93,5 +93,38 @@ export default function OnlyOfficeEditor({ editorUrl, config, onReady, onError }
     };
   }, [editorUrl, config, onError, onReady]);
 
-  return <div id={containerId.current} ref={containerRef} className="w-full h-full" />;
+  // The editor iframe is cross-origin, so reading and scrolling inside it are invisible to this page.
+  // What the page can see: focus moving into the editor (a click in it) and the mouse crossing its edge.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+    const editorHasFocus = () => {
+      const active = document.activeElement;
+      return !!active && active.tagName === 'IFRAME' && container.contains(active);
+    };
+    const onWindowBlur = (event: FocusEvent) => {
+      // blur fires before activeElement settles on the iframe
+      if (event.isTrusted) window.setTimeout(() => { if (editorHasFocus()) reportUserActivity(); }, 0);
+    };
+    const onEdgeCrossed = (event: MouseEvent) => {
+      const crossedIframe = (event.target as Element | null)?.tagName === 'IFRAME'
+        || (event.relatedTarget as Element | null)?.tagName === 'IFRAME';
+      if (event.isTrusted && crossedIframe) reportUserActivity();
+    };
+    window.addEventListener('blur', onWindowBlur);
+    container.addEventListener('mouseover', onEdgeCrossed);
+    container.addEventListener('mouseout', onEdgeCrossed);
+    return () => {
+      window.removeEventListener('blur', onWindowBlur);
+      container.removeEventListener('mouseover', onEdgeCrossed);
+      container.removeEventListener('mouseout', onEdgeCrossed);
+    };
+  }, []);
+
+  // DocsAPI replaces the inner placeholder with its iframe, so listeners live on the wrapper that stays
+  return (
+    <div ref={containerRef} className="w-full h-full">
+      <div id={containerId.current} className="w-full h-full" />
+    </div>
+  );
 }
