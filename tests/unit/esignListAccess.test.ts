@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { fakeLoginSessions, loginSessionSrc, withSession } from '../helpers/loginSessionHarness';
 
 const require = createRequire(import.meta.url);
 const {
@@ -214,12 +215,12 @@ describe('e-sign list routes (real route source against fakes)', () => {
     let handler: (req: unknown, res: unknown) => Promise<void> = async () => {};
     const app = { get: (_p: string, h: typeof handler) => { handler = h; } };
     new Function(
-      'app', 'db', 'jwt', 'JWT_SECRET', 'console', 'hasApprovalAdminAccess', 'loadEsignAccessLinks', 'filterEsignDocsForCaller',
-      `${helperSrc}\n${routeSource(routePath)}`,
+      'app', 'db', 'jwt', 'JWT_SECRET', 'console', 'hasApprovalAdminAccess', 'loadEsignAccessLinks', 'filterEsignDocsForCaller', 'loginSessions',
+      `${loginSessionSrc}\n${helperSrc}\n${routeSource(routePath)}`,
     )(
-      app, db, jwt, 'test-secret', { error: () => {}, log: () => {} },
+      app, db, withSession(jwt), 'test-secret', { error: () => {}, log: () => {} },
       async (u: { email: string }) => u.email === 'boss@test.example',
-      loadEsignAccessLinks, filterEsignDocsForCaller,
+      loadEsignAccessLinks, filterEsignDocsForCaller, fakeLoginSessions(),
     );
     const call = async (headers: Record<string, string>) => {
       const res = {

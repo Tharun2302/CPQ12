@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { reportUserActivity } from '../utils/sessionGuard';
 
 interface OnlyOfficeEditorProps {
   editorUrl: string; // e.g. http://localhost:3003
@@ -39,6 +40,10 @@ export default function OnlyOfficeEditor({ editorUrl, config, onReady, onError }
           height: '100%',
           events: {
             onAppReady: () => onReady?.(),
+            // Keystrokes in the iframe never reach this page; data is true only for the user's own edits, not saves
+            onDocumentStateChange: (e: any) => {
+              if (e?.data === true) reportUserActivity();
+            },
             onError: (e: any) => {
               const msg = e?.data?.errorDescription || e?.data?.message || 'OnlyOffice error';
               console.error('❌ OnlyOffice editor error:', e);

@@ -1,13 +1,33 @@
 // Browser-side safety net and session setup shared by the explorer, dry runs and the recorder.
+import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import jwt from 'jsonwebtoken';
-import { APP_URL, BACKEND_URL, DEMO_JWT_SECRET, FORBIDDEN_PORTS, PEOPLE } from './demo-env.mjs';
+import { MongoClient } from 'mongodb';
+import { APP_URL, BACKEND_URL, DB_NAME, DEMO_JWT_SECRET, FORBIDDEN_PORTS, MONGO_URI, PEOPLE, assertLocalMongo } from './demo-env.mjs';
+
+const sessionActivity = createRequire(import.meta.url)('../../session-activity.cjs');
+
+// The server refuses login tokens without a live auth_sessions record, so the demo registers one
+async function createDemoSession(userId, email) {
+  assertLocalMongo(MONGO_URI);
+  const client = await MongoClient.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 });
+  try {
+    const store = sessionActivity.createSessionStore({
+      getCollection: () => client.db(DB_NAME).collection(sessionActivity.COLLECTION_NAME),
+    });
+    return (await store.createSession({ userId, email })).sid;
+  } finally {
+    await client.close();
+  }
+}
 
 // Minimal session token (no Microsoft claims, so Technical approval sign-in stays off in the demo); ids come from setup-demo.mjs.
 export async function apiLogin(email) {
   const key = Object.keys(PEOPLE).find((k) => PEOPLE[k].email === email);
   if (!key) throw new Error(`Not a demo user: ${email}`);
-  const token = jwt.sign({ userId: `user_demo_${key}`, email }, DEMO_JWT_SECRET, { algorithm: 'HS256', expiresIn: '1d' });
+  const userId = `user_demo_${key}`;
+  const sid = await createDemoSession(userId, email);
+  const token = jwt.sign({ userId, email, sid }, DEMO_JWT_SECRET, { algorithm: 'HS256', expiresIn: '1d' });
   const res = await fetch(`${BACKEND_URL}/api/auth/me`, { headers: { authorization: `Bearer ${token}` } });
   const data = await res.json();
   if (!data.success) throw new Error(`Demo login failed for ${email}: ${data.message || res.status}`);

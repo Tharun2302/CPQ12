@@ -1,10 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, AuthContextType } from '../types/auth';
 import { track, identify } from '../analytics/clarity';
 import { identifyHotjarUser } from '../analytics/hotjar';
 import { BACKEND_URL } from '../config/api';
-import { clearUserSessionData, clearDataIfDifferentUser } from '../utils/authUtils';
+import { clearUserSessionData, clearDataIfDifferentUser, getAuthHeaders } from '../utils/authUtils';
+import { SESSION_IDLE_TIMEOUT_MS, SessionCallResult, SessionGuard, startSessionGuard } from '../utils/sessionGuard';
+import SessionTimeoutWarning from '../components/SessionTimeoutWarning';
 import { getMicrosoftAuthorizeUrl, getMicrosoftTenantId } from '../utils/microsoftAuthority';
 import { microsoftBackendErrorMessage, microsoftPopupErrorMessage, createMicrosoftServerError } from '../utils/microsoftSignInErrors';
 
@@ -17,12 +19,58 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 interface AuthProviderComponentProps {
   children: ReactNode;
 }
- 
+
+type SessionEndReason = 'user' | 'idle' | 'other-tab';
+
+const readIdleRemaining = (data: any): number => {
+  const remaining = Number(data?.session?.idleRemainingMs);
+  return Number.isFinite(remaining) && remaining > 0 ? remaining : SESSION_IDLE_TIMEOUT_MS;
+};
+
+async function callSessionEndpoint(path: string, method: 'GET' | 'POST'): Promise<SessionCallResult> {
+  try {
+    const response = await fetch(`${BACKEND_URL}${path}`, { method, headers: getAuthHeaders() });
+    if (response.status === 401) return { status: 'expired' };
+    if (!response.ok) return { status: 'error' };
+    const data = await response.json();
+    const remaining = Number(data?.session?.idleRemainingMs);
+    return Number.isFinite(remaining) ? { status: 'ok', idleRemainingMs: remaining } : { status: 'error' };
+  } catch {
+    return { status: 'error' };
+  }
+}
+
+// keepalive lets the request finish even when the page is closing
+function endServerSession(token: string): void {
+  fetch(`${BACKEND_URL}/api/auth/logout`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    keepalive: true,
+  }).catch(() => undefined);
+}
+
+const SIGN_OUT_MESSAGES: Record<'user' | 'idle', { title: string; body: string; autoCloseMs: number | null }> = {
+  user: {
+    title: 'Thank you for visiting CloudFuze CPQ Quote!',
+    body: 'We hope to see you again soon for your quoting needs.',
+    autoCloseMs: 3000,
+  },
+  // Stays up until dismissed: the user was away and needs to see why they are signed out
+  idle: {
+    title: 'You were signed out',
+    body: 'For security, you were signed out after 60 minutes of inactivity. Please sign in again.',
+    autoCloseMs: null,
+  },
+};
+
 export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children }) => {
   const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [warningDeadline, setWarningDeadline] = useState<number | null>(null);
+  const sessionRemainingRef = useRef<number>(SESSION_IDLE_TIMEOUT_MS);
+  const guardRef = useRef<SessionGuard | null>(null);
 
   // Single identify point covering every auth path (restored session, Microsoft, HubSpot):
   // the first render where `user` is set is the first moment the app knows who this is.
@@ -30,65 +78,63 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
     if (user) identifyHotjarUser(user);
   }, [user?.email, user?.role]);
  
-  // Check for existing authentication on app load
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const storedUser = localStorage.getItem('cpq_user');
-        const storedToken = localStorage.getItem('cpq_token');
-       
-        if (storedUser && storedToken) {
-          // Only server-issued JWTs are trusted; fake tokens from older builds must sign in again
-          if (storedToken.split('.').length !== 3) {
-            clearUserSessionData();
-          } else {
-            const backendUrl = BACKEND_URL;
-            try {
-              const response = await fetch(`${backendUrl}/api/auth/me`, {
-                headers: {
-                  'Authorization': `Bearer ${storedToken}`
-                }
-              });
- 
-              if (response.ok) {
-                const data = await response.json();
-                if (data.success) {
-                  // Sync the refreshed user (with isApprovalAdmin and effective role) back to localStorage
-                  localStorage.setItem('cpq_user', JSON.stringify(data.user));
-                  setUser(data.user);
-                  setIsAuthenticated(true);
+  // Restores a saved login; also re-run when another tab signs in
+  const restoreSession = useCallback(async () => {
+    try {
+      const storedUser = localStorage.getItem('cpq_user');
+      const storedToken = localStorage.getItem('cpq_token');
 
-                  // Identify user in Clarity (for already logged-in users)
-                  identify(data.user.email, {
-                    name: data.user.name,
-                    email: data.user.email,
-                    userId: data.user.id
-                  });
-                } else {
-                  // Token invalid, clear storage
-                  clearUserSessionData();
-                }
+      if (storedUser && storedToken) {
+        // Only server-issued JWTs are trusted; fake tokens from older builds must sign in again
+        if (storedToken.split('.').length !== 3) {
+          clearUserSessionData();
+        } else {
+          try {
+            const response = await fetch(`${BACKEND_URL}/api/auth/me`, {
+              headers: {
+                'Authorization': `Bearer ${storedToken}`
+              }
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              if (data.success) {
+                sessionRemainingRef.current = readIdleRemaining(data);
+                // Sync the refreshed user (with isApprovalAdmin and effective role) back to localStorage
+                localStorage.setItem('cpq_user', JSON.stringify(data.user));
+                setUser(data.user);
+                setIsAuthenticated(true);
+
+                // Identify user in Clarity (for already logged-in users)
+                identify(data.user.email, {
+                  name: data.user.name,
+                  email: data.user.email,
+                  userId: data.user.id
+                });
               } else {
-                // Token invalid, clear storage
                 clearUserSessionData();
               }
-            } catch (backendError) {
-              // Stored user data is unverified, so an unreachable server must not count as signed in
-              console.error('Backend auth check failed:', backendError);
+            } else if (response.status === 401) {
+              // Expired, idle, signed out, or issued before server sessions existed
+              clearUserSessionData();
             }
+          } catch (backendError) {
+            // Stored user data is unverified, so an unreachable server must not count as signed in
+            console.error('Backend auth check failed:', backendError);
           }
         }
-      } catch (error) {
-        console.error('Error checking authentication:', error);
-        // Clear invalid data
-        clearUserSessionData();
-      } finally {
-        setLoading(false);
       }
-    };
- 
-    checkAuth();
+    } catch (error) {
+      console.error('Error checking authentication:', error);
+      clearUserSessionData();
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    restoreSession();
+  }, [restoreSession]);
  
   // PKCE helpers for Microsoft OAuth (S256)
   const generateRandomString = (length: number): string => {
@@ -316,6 +362,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                
                 if (data.success) {
                   clearDataIfDifferentUser(data.user);
+                  sessionRemainingRef.current = readIdleRemaining(data);
                   // Store user and token from backend
                   localStorage.setItem('cpq_user', JSON.stringify(data.user));
                   localStorage.setItem('cpq_token', data.token);
@@ -396,9 +443,16 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
     }
   };
  
-  const logout = () => {
-    // Show thank you message with a more elegant approach
-    const showThankYouMessage = () => {
+  const endSession = (reason: SessionEndReason) => {
+    const token = localStorage.getItem('cpq_token');
+    // The tab that signed out already ended the server session
+    if (reason !== 'other-tab' && token) endServerSession(token);
+
+    guardRef.current?.stop();
+    guardRef.current = null;
+    setWarningDeadline(null);
+
+    const showSignOutMessage = ({ title, body, autoCloseMs }: { title: string; body: string; autoCloseMs: number | null }) => {
       // Create a custom modal for better UX
       const modal = document.createElement('div');
       modal.style.cssText = `
@@ -436,17 +490,17 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
             margin: 0 auto 1rem;
             font-size: 24px;
           ">✓</div>
-          <h3 style="
+          <h3 data-sign-out-title style="
             color: #1F2937;
             margin: 0 0 0.5rem;
             font-size: 1.25rem;
             font-weight: 600;
-          ">Thank you for visiting CloudFuze CPQ Quote!</h3>
-          <p style="
+          "></h3>
+          <p data-sign-out-body style="
             color: #6B7280;
             margin: 0 0 1.5rem;
             font-size: 0.875rem;
-          ">We hope to see you again soon for your quoting needs.</p>
+          "></p>
           <button onclick="this.closest('div').parentElement.remove()" style="
             background: #3B82F6;
             color: white;
@@ -460,30 +514,74 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
         </div>
       `;
      
+      const titleEl = modal.querySelector('[data-sign-out-title]');
+      const bodyEl = modal.querySelector('[data-sign-out-body]');
+      if (titleEl) titleEl.textContent = title;
+      if (bodyEl) bodyEl.textContent = body;
+
       document.body.appendChild(modal);
-     
-      // Auto-remove after 3 seconds
-      setTimeout(() => {
-        if (modal.parentElement) {
-          modal.remove();
-        }
-      }, 3000);
+
+      if (autoCloseMs !== null) {
+        setTimeout(() => {
+          if (modal.parentElement) {
+            modal.remove();
+          }
+        }, autoCloseMs);
+      }
     };
-   
-    // Show the message
-    showThankYouMessage();
-   
-    // Shared PCs: the next person must not find this user's quotes or client details
+
+    if (reason !== 'other-tab') showSignOutMessage(SIGN_OUT_MESSAGES[reason]);
+
+    // Shared PCs: the next person must not find this user's quotes or client details.
+    // Removing cpq_token here is also what signs out the other open tabs.
     clearUserSessionData();
 
-    // Update state
     setUser(null);
     setIsAuthenticated(false);
-   
-    // Navigate to home page after logout
+
     navigate('/');
   };
- 
+
+  const logout = () => endSession('user');
+
+  // Timers and listeners below must always call the latest endSession, not the one from their first render
+  const endSessionRef = useRef(endSession);
+  endSessionRef.current = endSession;
+
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    const guard = startSessionGuard({
+      initialRemainingMs: sessionRemainingRef.current,
+      sendActivity: () => callSessionEndpoint('/api/auth/activity', 'POST'),
+      checkSession: () => callSessionEndpoint('/api/auth/me', 'GET'),
+      onWarningChange: (open, deadline) => setWarningDeadline(open ? deadline : null),
+      onExpire: () => endSessionRef.current('idle'),
+    });
+    guardRef.current = guard;
+    return () => {
+      guard.stop();
+      if (guardRef.current === guard) guardRef.current = null;
+      setWarningDeadline(null);
+    };
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      // key is null when another tab cleared storage wholesale
+      if (event.key !== 'cpq_token' && event.key !== null) return;
+      const token = localStorage.getItem('cpq_token');
+      if (!token && isAuthenticated) endSessionRef.current('other-tab');
+      // Covers a sign-in in another tab, including as a different user
+      else if (token && event.key === 'cpq_token' && event.oldValue !== token) restoreSession();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [isAuthenticated, restoreSession]);
+
+  const staySignedIn = () => {
+    guardRef.current?.staySignedIn();
+  };
+
   const value: AuthContextType = {
     isAuthenticated,
     user,
@@ -495,6 +593,9 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
   return (
     <AuthContext.Provider value={value}>
       {children}
+      {warningDeadline !== null && (
+        <SessionTimeoutWarning deadline={warningDeadline} onStaySignedIn={staySignedIn} onSignOut={logout} />
+      )}
     </AuthContext.Provider>
   );
 };

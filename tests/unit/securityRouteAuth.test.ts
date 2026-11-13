@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fakeLoginSessions, loginSessionSrc, withSession } from '../helpers/loginSessionHarness';
 
 const serverSrc = fs.readFileSync(path.resolve(process.cwd(), 'server.cjs'), 'utf8');
 
@@ -190,7 +191,8 @@ describe('GET /api/auth/daily-logins behaviour', () => {
     else process.env.APPROVAL_ADMIN_EMAILS = originalAdmins;
   });
 
-  function setup() {
+  function setup(sessionState: 'active' | 'idle' = 'active') {
+    const loginSessions = fakeLoginSessions(sessionState);
     process.env.APPROVAL_ADMIN_EMAILS = 'admin@test.example';
     const touched: string[] = [];
     const finds: Array<{ query: unknown; limit?: number }> = [];
@@ -229,8 +231,8 @@ describe('GET /api/auth/daily-logins behaviour', () => {
     };
     let handler: (req: unknown, res: unknown) => Promise<void> = async () => {};
     const app = { get: (_p: string, h: typeof handler) => { handler = h; } };
-    new Function('app', 'db', 'jwt', 'JWT_SECRET', 'console', `${helperSrc}\n${route}`)(
-      app, db, jwt, 'test-secret', { error: () => {}, log: () => {} },
+    new Function('app', 'db', 'jwt', 'JWT_SECRET', 'console', 'loginSessions', `${loginSessionSrc}\n${helperSrc}\n${route}`)(
+      app, db, withSession(jwt), 'test-secret', { error: () => {}, log: () => {} }, loginSessions,
     );
     const call = async (headers: Record<string, string>, query: Record<string, unknown> = {}) => {
       const res = {
@@ -308,7 +310,8 @@ describe('GET /api/combinations behaviour', () => {
   const helperEnd = serverSrc.indexOf('async function getApprovalAdminUser');
   const helperSrc = serverSrc.slice(helperStart, helperEnd);
 
-  function setup() {
+  function setup(sessionState: 'active' | 'idle' = 'active') {
+    const loginSessions = fakeLoginSessions(sessionState);
     const touched: string[] = [];
     const rows = [
       { id: 'c1', label: 'A', fileName: 'a.docx', displayOrder: 1 },
@@ -337,8 +340,8 @@ describe('GET /api/combinations behaviour', () => {
     };
     let handler: (req: unknown, res: unknown) => Promise<void> = async () => {};
     const app = { get: (_p: string, h: typeof handler) => { handler = h; } };
-    new Function('app', 'db', 'jwt', 'JWT_SECRET', 'console', `${helperSrc}\n${route}`)(
-      app, db, jwt, 'test-secret', { error: () => {}, log: () => {} },
+    new Function('app', 'db', 'jwt', 'JWT_SECRET', 'console', 'loginSessions', `${loginSessionSrc}\n${helperSrc}\n${route}`)(
+      app, db, withSession(jwt), 'test-secret', { error: () => {}, log: () => {} }, loginSessions,
     );
     const call = async (headers: Record<string, string>) => {
       const res = {
@@ -368,6 +371,14 @@ describe('GET /api/combinations behaviour', () => {
     expect(touched).not.toContain('combinations');
   });
 
+  it('validly signed token whose session went idle: 401 and nothing is read', async () => {
+    const { call, touched } = setup('idle');
+    const res = await call({ authorization: 'Bearer aaa.user.ccc' });
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toEqual({ success: false, error: 'Session expired' });
+    expect(touched).toEqual([]);
+  });
+
   it('valid token: 200 with the unchanged response shape', async () => {
     const { call } = setup();
     const res = await call({ authorization: 'Bearer aaa.user.ccc' });
@@ -389,7 +400,8 @@ describe('GET /api/quotes behaviour', () => {
   const helperEnd = serverSrc.indexOf('async function getApprovalAdminUser');
   const helperSrc = serverSrc.slice(helperStart, helperEnd);
 
-  function setup() {
+  function setup(sessionState: 'active' | 'idle' = 'active') {
+    const loginSessions = fakeLoginSessions(sessionState);
     const touched: string[] = [];
     const db = {
       collection(name: string) {
@@ -417,8 +429,8 @@ describe('GET /api/quotes behaviour', () => {
     };
     let handler: (req: unknown, res: unknown) => Promise<void> = async () => {};
     const app = { get: (_p: string, h: typeof handler) => { handler = h; } };
-    new Function('app', 'db', 'jwt', 'JWT_SECRET', 'console', `${helperSrc}\n${route}`)(
-      app, db, jwt, 'test-secret', { error: () => {}, log: () => {} },
+    new Function('app', 'db', 'jwt', 'JWT_SECRET', 'console', 'loginSessions', `${loginSessionSrc}\n${helperSrc}\n${route}`)(
+      app, db, withSession(jwt), 'test-secret', { error: () => {}, log: () => {} }, loginSessions,
     );
     const call = async (headers: Record<string, string>) => {
       const res = {

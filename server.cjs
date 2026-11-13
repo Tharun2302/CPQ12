@@ -40,6 +40,7 @@ const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const AdmZip = require('adm-zip');
 const rateLimit = require('express-rate-limit');
+const sessionActivity = require('./session-activity.cjs');
 
 // --- simple in-memory cache (no external deps) ---
 const _cache = {
@@ -530,6 +531,11 @@ async function initializeDatabase() {
     await documentsCollection.createIndex({ status: 1 });
     console.log('✅ Documents collection ready with indexes');
     await db.collection('document_versions').createIndex({ documentId: 1, createdAt: -1 });
+    try {
+      await loginSessions.ensureIndexes();
+    } catch (indexError) {
+      logger.error('auth_sessions index setup failed', { source: 'session-activity', error: indexError.message });
+    }
 
     // E-Signature collections
     const esignDocumentsCollection = db.collection('esign_documents');
@@ -846,6 +852,34 @@ if (String(process.env.NODE_ENV).trim().toLowerCase() === 'production' && jwtSec
   logger.error('JWT_SECRET is missing or weak; set a strong secret', { source: 'jwt-secret' });
 }
 // Every jwt.verify below pins algorithms so a token's own header can never choose how it is checked.
+
+const loginSessions = sessionActivity.createSessionStore({
+  getCollection: () => db.collection(sessionActivity.COLLECTION_NAME),
+});
+
+// Signature and expiry only; the session check is what enforces the 60-minute idle rule.
+function decodeLoginToken(token) {
+  if (!token || typeof token !== 'string' || token.split('.').length !== 3) return null;
+  try {
+    return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+  } catch {
+    return null;
+  }
+}
+
+function readBearerToken(req) {
+  return req.headers.authorization?.replace('Bearer ', '');
+}
+
+// Every login-protected route goes through here, so an idle or signed-out session is refused everywhere.
+// Returns { decoded, idleRemainingMs } or null. Tokens issued before sessions existed carry no sid and are refused.
+async function verifyLoginToken(token) {
+  const decoded = decodeLoginToken(token);
+  if (!decoded || !decoded.sid || !decoded.userId) return null;
+  const session = await loginSessions.checkSession(decoded.sid, decoded.userId);
+  if (!session.ok) return null;
+  return { decoded, idleRemainingMs: session.idleRemainingMs };
+}
 const GOTENBERG_URL = process.env.GOTENBERG_URL || '';
 const LIBREOFFICE_SERVICE_URL = process.env.LIBREOFFICE_SERVICE_URL || 'http://localhost:3002';
 
@@ -1823,7 +1857,7 @@ app.get('/api/auth/me', async (req, res) => {
       });
     }
 
-    const token = req.headers.authorization?.replace('Bearer ', '');
+    const token = readBearerToken(req);
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -1831,15 +1865,12 @@ app.get('/api/auth/me', async (req, res) => {
       });
     }
 
-    // Only verify server-issued JWTs (tokens with 3 parts)
-    if (token.split('.').length !== 3) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid token format'
-      });
+    // Deliberately does not extend the session: a page reload is not user activity.
+    const login = await verifyLoginToken(token);
+    if (!login) {
+      return res.status(401).json({ success: false, message: 'Session expired' });
     }
-    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-    const user = await db.collection('users').findOne({ id: decoded.userId });
+    const user = await db.collection('users').findOne({ id: login.decoded.userId });
     
     if (!user) {
       return res.status(401).json({
@@ -1857,15 +1888,64 @@ app.get('/api/auth/me', async (req, res) => {
 
     res.json({
       success: true,
-      user: userResponse
+      user: userResponse,
+      session: { idleRemainingMs: login.idleRemainingMs, idleTimeoutMs: sessionActivity.IDLE_TIMEOUT_MS }
     });
   } catch (error) {
     console.error('Get user error:', error);
-    res.status(401).json({
+    res.status(500).json({
       success: false,
-      message: 'Invalid token',
-      error: error.message
+      message: 'Could not verify sign-in'
     });
+  }
+});
+
+// Keyed by the signature-checked session id so one office IP shared by many users is not throttled as one.
+const sessionActivityLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const decoded = decodeLoginToken(readBearerToken(req));
+    return decoded && decoded.sid ? `sid:${decoded.sid}` : `ip:${rateLimit.ipKeyGenerator(req.ip || '')}`;
+  },
+});
+
+// The only call that resets the idle clock; the browser sends it on real keyboard, mouse, touch or editor activity.
+app.post('/api/auth/activity', sessionActivityLimiter, async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const decoded = decodeLoginToken(readBearerToken(req));
+    if (!decoded || !decoded.sid || !decoded.userId) {
+      return res.status(401).json({ success: false, error: 'Session expired' });
+    }
+    const result = await loginSessions.touchSession(decoded.sid, decoded.userId);
+    if (!result.ok) return res.status(401).json({ success: false, error: 'Session expired' });
+    res.json({ success: true, session: { idleRemainingMs: result.idleRemainingMs, idleTimeoutMs: sessionActivity.IDLE_TIMEOUT_MS } });
+  } catch (error) {
+    logger.error('Session activity update failed', { source: 'session-activity', error: error.message });
+    res.status(500).json({ success: false, error: 'Could not update session' });
+  }
+});
+
+// Separate and looser than the activity limiter so a sign-out is never refused for pinging
+const logoutLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Accepts an already-idle session too, so signing out always ends it on the server.
+app.post('/api/auth/logout', logoutLimiter, async (req, res) => {
+  try {
+    const decoded = decodeLoginToken(readBearerToken(req));
+    if (db && decoded && decoded.sid) await loginSessions.revokeSession(decoded.sid);
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Sign-out failed', { source: 'session-activity', error: error.message });
+    res.status(500).json({ success: false, error: 'Could not sign out' });
   }
 });
 
@@ -1891,7 +1971,8 @@ app.post('/api/auth/microsoft', async (req, res) => {
     if (!result.ok) return res.status(result.status).json(result.body);
     const user = result.user;
 
-    const token = jwt.sign(result.jwtPayload, JWT_SECRET, { expiresIn: '7d' });
+    const session = await loginSessions.createSession({ userId: user.id, email: user.email });
+    const token = jwt.sign({ ...result.jwtPayload, sid: session.sid }, JWT_SECRET, { expiresIn: '7d' });
 
     // Track daily login
     await trackDailyLogin(user.id, 'microsoft', user.email);
@@ -1908,7 +1989,8 @@ app.post('/api/auth/microsoft', async (req, res) => {
       success: true,
       message: 'Microsoft authentication successful',
       user: userResponse,
-      token: token
+      token: token,
+      session: { idleRemainingMs: session.idleRemainingMs, idleTimeoutMs: sessionActivity.IDLE_TIMEOUT_MS }
     });
   } catch (error) {
     logger.error('Microsoft auth failed', { source: 'microsoft-login', error: error.message });
@@ -3016,31 +3098,13 @@ async function hasExhibitAdminAccess(user) {
 
 // Helper: require JWT and exhibit_admin (from DB role, .env, or settings list). Returns user or sends 401/403 and null.
 async function getExhibitAdminUser(req, res) {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) {
-    res.status(401).json({ success: false, error: 'Authentication required' });
+  const user = await getAuthenticatedUser(req, res);
+  if (!user) return null;
+  if (!(await hasExhibitAdminAccess(user))) {
+    res.status(403).json({ success: false, error: 'Only exhibit admins can add, edit, or delete exhibits' });
     return null;
   }
-  if (token.split('.').length !== 3) {
-    res.status(401).json({ success: false, error: 'Invalid token' });
-    return null;
-  }
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-    const user = await db.collection('users').findOne({ id: decoded.userId });
-    if (!user) {
-      res.status(401).json({ success: false, error: 'User not found' });
-      return null;
-    }
-    if (!(await hasExhibitAdminAccess(user))) {
-      res.status(403).json({ success: false, error: 'Only exhibit admins can add, edit, or delete exhibits' });
-      return null;
-    }
-    return user;
-  } catch (e) {
-    res.status(401).json({ success: false, error: 'Invalid token' });
-    return null;
-  }
+  return user;
 }
 
 // ============================================
@@ -3129,11 +3193,10 @@ async function hasApprovalAdminAccess(user) {
 // Same identity check as getAuthenticatedUser, but never responds: null when there is no
 // valid token, for routes that must keep working for callers whose login has expired.
 async function getOptionalAuthenticatedUser(req) {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token || token.split('.').length !== 3) return null;
   try {
-    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-    return await db.collection('users').findOne({ id: decoded.userId });
+    const login = await verifyLoginToken(readBearerToken(req));
+    if (!login) return null;
+    return await db.collection('users').findOne({ id: login.decoded.userId });
   } catch (e) {
     return null;
   }
@@ -3144,55 +3207,39 @@ async function getOptionalAuthenticatedUser(req) {
 // email must come from the verified token, never from the request body, which is spoofable.
 // Responds 401 and returns null when the token is missing or invalid.
 async function getAuthenticatedUser(req, res) {
-  const token = req.headers.authorization?.replace('Bearer ', '');
+  const token = readBearerToken(req);
   if (!token) {
     res.status(401).json({ success: false, error: 'Authentication required' });
     return null;
   }
-  if (token.split('.').length !== 3) {
-    res.status(401).json({ success: false, error: 'Invalid token' });
-    return null;
-  }
   try {
-    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-    const user = await db.collection('users').findOne({ id: decoded.userId });
+    const login = await verifyLoginToken(token);
+    if (!login) {
+      res.status(401).json({ success: false, error: 'Session expired' });
+      return null;
+    }
+    const user = await db.collection('users').findOne({ id: login.decoded.userId });
     if (!user) {
       res.status(401).json({ success: false, error: 'User not found' });
       return null;
     }
     return user;
   } catch (e) {
-    res.status(401).json({ success: false, error: 'Invalid token' });
+    // A database outage must not look like an expired login to the browser
+    logger.error('Sign-in check failed', { source: 'session-activity', error: e.message });
+    res.status(503).json({ success: false, error: 'Could not verify sign-in, please retry' });
     return null;
   }
 }
 
 async function getApprovalAdminUser(req, res, forbiddenMessage = 'Only approval admins can manage this list') {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) {
-    res.status(401).json({ success: false, error: 'Authentication required' });
+  const user = await getAuthenticatedUser(req, res);
+  if (!user) return null;
+  if (!(await hasApprovalAdminAccess(user))) {
+    res.status(403).json({ success: false, error: forbiddenMessage });
     return null;
   }
-  if (token.split('.').length !== 3) {
-    res.status(401).json({ success: false, error: 'Invalid token' });
-    return null;
-  }
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-    const user = await db.collection('users').findOne({ id: decoded.userId });
-    if (!user) {
-      res.status(401).json({ success: false, error: 'User not found' });
-      return null;
-    }
-    if (!(await hasApprovalAdminAccess(user))) {
-      res.status(403).json({ success: false, error: forbiddenMessage });
-      return null;
-    }
-    return user;
-  } catch (e) {
-    res.status(401).json({ success: false, error: 'Invalid token' });
-    return null;
-  }
+  return user;
 }
 
 app.get('/api/settings/approval-admins', async (req, res) => {
@@ -6196,14 +6243,8 @@ const ALLOWED_CLIENT_LOG_SEVERITIES = new Set(['error', 'warn', 'info']);
 function resolveClientLogUserId(req) {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith('Bearer ')) return 'anonymous';
-  const token = auth.slice(7);
-  if (!token || token.split('.').length !== 3) return 'anonymous';
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-    return (decoded && decoded.userId) || 'anonymous';
-  } catch (e) {
-    return 'anonymous';
-  }
+  const decoded = decodeLoginToken(auth.slice(7));
+  return (decoded && decoded.userId) || 'anonymous';
 }
 
 // Client-side (browser) error reporting. The real size enforcement (immune to a missing
@@ -11722,11 +11763,11 @@ app.get('/api/approval-workflows/verify-access', async (req, res) => {
 });
 
 // Identity comes only from the signed JWT so the recorded actor is exactly the email that was authorised.
-function readTechnicalApproverIdentity(req) {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token || token.split('.').length !== 3) return null;
+async function readTechnicalApproverIdentity(req) {
   try {
-    const claims = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+    const login = await verifyLoginToken(readBearerToken(req));
+    if (!login) return null;
+    const claims = login.decoded;
     return { claims, name: typeof claims.msName === 'string' ? claims.msName : '', email: claims.email };
   } catch {
     return null;
@@ -11747,7 +11788,7 @@ async function loadTechnicalAllowList() {
 let technicalTenantWarningLogged = false;
 
 async function evaluateTechnicalRequest(req) {
-  const identity = readTechnicalApproverIdentity(req);
+  const identity = await readTechnicalApproverIdentity(req);
   const allowList = await loadTechnicalAllowList();
   const tenantId = process.env.AZURE_TENANT_ID;
   const enforced = technicalApproverGuard.isSigninEnforced(process.env);
@@ -12654,6 +12695,8 @@ async function startServer() {
       console.log(`   - GET  /api/test-mongodb`);
       console.log(`   - GET  /api/auth/me`);
       console.log(`   - POST /api/auth/microsoft`);
+      console.log(`   - POST /api/auth/activity`);
+      console.log(`   - POST /api/auth/logout`);
       console.log(`   - GET  /api/quotes`);
       console.log(`   - POST /api/quotes`);
       console.log(`   - PUT  /api/quotes/:id`);

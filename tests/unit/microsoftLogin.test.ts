@@ -584,8 +584,9 @@ describe('source order and route wiring', () => {
     const route = serverSrc.slice(start, end);
     expect(route).toContain('authenticateMicrosoftLogin(req.body)');
     expect(route).toMatch(/if \(!result\.ok\) return res\.status\(result\.status\)\.json\(result\.body\);/);
-    expect(route.indexOf('if (!result.ok)')).toBeLessThan(route.indexOf('jwt.sign'));
-    expect(route).toContain('jwt.sign(result.jwtPayload');
+    expect(route.indexOf('if (!result.ok)')).toBeLessThan(route.indexOf('loginSessions.createSession'));
+    expect(route.indexOf('loginSessions.createSession')).toBeLessThan(route.indexOf('jwt.sign'));
+    expect(route).toContain('jwt.sign({ ...result.jwtPayload, sid: session.sid }');
     expect(route).not.toMatch(/collection\('users'\)|insertOne|updateOne|req\.body\.(id|name|email)/);
     expect(route).not.toMatch(/message: 'Failed to process Microsoft authentication'[^}]*error:/);
   });

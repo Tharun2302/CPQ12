@@ -75,7 +75,7 @@ export function clearAuthData(): void {
 // Auth plus everything that can hold client names, emails, pricing or documents. Tour flags,
 // exhibitUploadGuideHidden, cpq_discount_policy and third-party keys (Hotjar/Clarity) are left alone.
 export const USER_SESSION_STORAGE_KEYS: readonly string[] = [
-  'cpq_user', 'cpq_token',
+  'cpq_user', 'cpq_token', 'cpq_session_deadline',
   'msal_code_verifier', 'msal_client_id', 'msal_tenant_id', 'msal_processed_codes',
   'ms_pkce_verifier', 'microsoft_auth_error',
   'cpq_quotes', 'cpq_client_info', 'cpq_quote_client_info', 'cpq_contact_info', 'cpq_configure_contact_info',
