@@ -112,23 +112,35 @@ async function settleCompletedWorkflows(db, workflows) {
   completed.forEach((w) => { w.status = 'approved'; w.updatedAt = updatedAt; });
 }
 
+/** True when the workflow is still open and its current step is the Technical Team step. */
+function isAwaitingTechnical(workflow) {
+  if (!workflow || (workflow.status !== 'pending' && workflow.status !== 'in_progress')) return false;
+  const steps = Array.isArray(workflow.workflowSteps) ? workflow.workflowSteps : [];
+  const current = steps.find((s) => s && Number(s.step) === Number(workflow.currentStep));
+  return !!current && current.role === 'Technical Team';
+}
+
 function newestFirst(a, b) {
   return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
 }
 
 /**
  * Decides what GET /api/approval-workflows returns; `user` is the verified login or null.
- * Admin: everything. Other users: their own and assigned workflows.
+ * Admin: everything. Other users: their own and assigned workflows. A member of the Technical
+ * team list also sees every workflow waiting at the Technical step, since that step goes to a shared mailbox.
  * A valid portal token adds exactly its one workflow, so emailed links work without a login.
  * Neither proof valid: 401 with no data. Returns { status, body } for the route to send as-is.
  */
-async function listApprovalWorkflowsForCaller({ db, user, isAdmin, query }) {
+async function listApprovalWorkflowsForCaller({ db, user, isAdmin, isTechnicalMember = false, query }) {
   const collection = db.collection('approval_workflows');
   let workflows = [];
 
   if (user) {
     const all = await collection.find({}).sort({ createdAt: -1 }).toArray();
-    workflows = isAdmin ? all : all.filter((w) => isWorkflowVisibleToUser(w, user.email));
+    workflows = isAdmin
+      ? all
+      : all.filter((w) => isWorkflowVisibleToUser(w, user.email)
+        || (isTechnicalMember === true && isAwaitingTechnical(w)));
   }
 
   if (!user || !isAdmin) {
@@ -151,6 +163,7 @@ module.exports = {
   PORTAL_ROLES,
   verifyApprovalPortalToken,
   isWorkflowVisibleToUser,
+  isAwaitingTechnical,
   mayManageApprovalWorkflow,
   checkWorkflowUpdate,
   pendingNewWorkflowSteps,

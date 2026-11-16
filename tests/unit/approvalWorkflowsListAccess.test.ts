@@ -121,6 +121,22 @@ describe('GET /api/approval-workflows access decision', () => {
     expect(noEmail.body.count).toBe(0);
   });
 
+  it('a Technical team member also sees every open workflow waiting at the Technical step', async () => {
+    const atTech = { ...WF_B, id: 'WF-T1', currentStep: 2 };
+    const manualAtTech = { ...WF_NO_CREATOR, id: 'WF-T2', currentStep: 1 };
+    const atLegal = { ...WF_B, id: 'WF-L', currentStep: 3 };
+    const closedAtTech = { ...WF_B, id: 'WF-X', currentStep: 2, status: 'denied' };
+    const { db } = makeDb([atTech, manualAtTech, atLegal, closedAtTech]);
+
+    const member = await listApprovalWorkflowsForCaller({
+      db, user: { email: 'member@x.com' }, isAdmin: false, isTechnicalMember: true, query: {},
+    });
+    expect((ids(member.body) as string[]).sort()).toEqual(['WF-T1', 'WF-T2']);
+
+    const notMember = await listApprovalWorkflowsForCaller({ db, user: { email: 'member@x.com' }, isAdmin: false, query: {} });
+    expect(notMember.body.count).toBe(0);
+  });
+
   it('workflows without creatorEmail are admin-only unless the user is an approver', async () => {
     const { db } = makeDb([WF_NO_CREATOR]);
     const stranger = await listApprovalWorkflowsForCaller({ db, user: { email: 'owner@x.com' }, isAdmin: false, query: {} });
@@ -335,6 +351,11 @@ describe('server.cjs wiring', () => {
     expect(route).not.toContain("collection('approval_workflows')");
   });
 
+  it('Technical membership comes from the verified login and the stored Technical list', () => {
+    expect(route).toContain('technicalApproverGuard.isOnAllowList(user.email, await loadTechnicalAllowList())');
+    expect(route).toMatch(/isTechnicalMember,\s*query: req\.query/);
+  });
+
   function makeRes() {
     const res = {
       statusCode: 200,
@@ -353,12 +374,14 @@ describe('server.cjs wiring', () => {
     const app = { get: (_p: string, h: typeof handler) => { handler = h; } };
     const factory = new Function(
       'app', 'dbValue', 'getOptionalAuthenticatedUser', 'hasApprovalAdminAccess',
-      'listApprovalWorkflowsForCaller', 'console',
+      'listApprovalWorkflowsForCaller', 'console', 'technicalApproverGuard', 'loadTechnicalAllowList',
       `const db = dbValue; ${route}`,
     );
     factory(
       app, dbValue, async () => user, async () => false,
       listApprovalWorkflowsForCaller, { error: () => {} },
+      { isOnAllowList: (email: string, list: string[]) => list.includes(String(email).toLowerCase()) },
+      async () => ['member@x.com'],
     );
     const res = makeRes();
     return handler({ query, headers: {} }, res).then(() => res);

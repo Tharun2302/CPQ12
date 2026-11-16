@@ -11864,7 +11864,12 @@ app.get('/api/approval-workflows', async (req, res) => {
 
     const user = await getOptionalAuthenticatedUser(req);
     const isAdmin = user ? await hasApprovalAdminAccess(user) : false;
-    const { status, body } = await listApprovalWorkflowsForCaller({ db, user, isAdmin, query: req.query });
+    const isTechnicalMember = user && !isAdmin
+      ? technicalApproverGuard.isOnAllowList(user.email, await loadTechnicalAllowList())
+      : false;
+    const { status, body } = await listApprovalWorkflowsForCaller({
+      db, user, isAdmin, isTechnicalMember, query: req.query,
+    });
     res.status(status).json(body);
   } catch (error) {
     console.error('❌ Error fetching approval workflows:', error);
