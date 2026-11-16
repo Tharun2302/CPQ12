@@ -1,8 +1,9 @@
 /**
- * One-off: ARCHIVE (never delete) the two legacy `templates` collection records
+ * One-off: ARCHIVE (never delete) legacy `templates` collection records
  * that were silently overriding Combination Manager uploads for:
  *   - Multi Combination  (combination: 'multi-combination')
  *   - Manage Plan (generic, combination: 'manage-standalone', planType: 'manage')
+ * plus "Data Sprawl", a manual duplicate of the data-sprawl Combination Manager file.
  *
  * Why: GET /api/templates now excludes { archived: true } records (see server.cjs),
  * so once these two are flagged, template selection in src/App.tsx falls through to
@@ -34,6 +35,8 @@ const DB_NAME = process.env.DB_NAME || 'cpq_database';
 const LEGACY_TEMPLATE_IDS = [
   'template-1771420090782-o1b312', // "Multi Combination" — combination: multi-combination
   'template-1779130007103-3ftgeh', // "Manage Plan – SaaS Agreement (3-Month Free Trial)" — planType: manage
+  // Added 2026-11-15: manual upload, byte-identical to the data-sprawl Combination Manager file
+  'template-1791287922523-5rzlt', // "Data Sprawl" — no combination/planType, mislabelled "Box to Google Drive"
 ];
 
 function maskUri(uri) {
