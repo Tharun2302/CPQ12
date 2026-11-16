@@ -180,7 +180,7 @@ async function applyStepUpdate(collection, workflow, stepNum, updates, now = new
 // Ownership and history fields the generic workflow update must never change: rewriting
 // creatorEmail would hand someone else the requester-only actions (Edit for RedLine, delete).
 const LOCKED_WORKFLOW_FIELDS = [
-  '_id', 'id', 'documentId', 'creatorEmail', 'createdBy', 'createdAt', 'creatorVerified',
+  '_id', 'id', 'documentId', 'combination', 'creatorEmail', 'createdBy', 'createdAt', 'creatorVerified',
   'hasRedlineEdit', 'redlineEditedAt', 'redlineDocumentId', 'redlineForked', 'redlineEdits',
 ];
 

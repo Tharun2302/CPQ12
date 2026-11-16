@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { PricingCalculation, ConfigurationData, Quote } from '../types/pricing';
 import { formatCurrency, getInstanceTypeCost, overagePerServerPerMonth, manageDataLineCost, manageUserLineCost, isMultiWithSprawl, migrateAddOnTotal, overageAddOnCost, isDiyConfig } from '../utils/pricing';
 import { migrateAddOnLineItems } from '../utils/migrateSelection';
+import { approvalCombinationLabel } from '../utils/approvalCombinationLabel';
 import { multiSprawlOverageNote } from '../utils/multiSprawl';
 import { buildSprawlAgreementData, sprawlPerDataCost, withDiscountRow } from '../utils/sprawlAgreement';
 import { withPairCombinations, exhibitCombinationKey, restrictExhibitsToCombination, combinedExhibitFamily, inCombinedFamily } from '../utils/exhibitCombination';
@@ -3538,10 +3539,12 @@ Total Price: {{total price}}`;
           } catch {}
           return creatorEmail ? creatorEmail.split('@')[0] : null;
         })();
+        const combinationLabel = approvalCombinationLabel(configuration, getSelectedTemplateDisplayName());
         const workflowData = {
         documentId: documentId,
         documentType: 'PDF Agreement',
         clientName: clientInfo.clientName || 'Unknown Client',
+        ...(combinationLabel ? { combination: combinationLabel } : {}),
         // IMPORTANT: Must match the PDF "Total Price" (post-discount, incl. custom line items)
         amount: Number(finalTotalWithCustomItems) || 0,
         creatorEmail,
@@ -3591,6 +3594,7 @@ Total Price: {{total price}}`;
               amount: Number(finalTotalWithCustomItems) || 0,
               workflowId: newWorkflow.id,
               teamGroup: autoSelectedTeam,
+              combination: workflowData.combination,
               creatorEmail: workflowData.creatorEmail,
               requestedByName: workflowData.creatorName || workflowData.creatorEmail,
               discountPercent: discountPercent || 0

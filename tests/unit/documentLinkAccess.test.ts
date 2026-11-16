@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 // @ts-expect-error - CommonJS helper shared with server.cjs, no type declarations
 import access from '../../document-access.cjs';
+// @ts-expect-error - CommonJS helper shared with server.cjs, no type declarations
+import approvalCombination from '../../approval-combination.cjs';
 
 // Linking a document to an approval or e-sign makes the caller its requester / e-sign creator,
 // which grants read (GET /api/documents/:id) and Edit for RedLine. So only the owner or an admin may link.
@@ -93,6 +95,7 @@ describe('POST /api/approval-workflows only links documents the caller may link'
       'app', 'db', 'getAuthenticatedUser', 'stripLockedWorkflowFields', 'pendingNewWorkflowSteps', 'technicalApproverGuard',
       'parseDocumentIdInput', 'mayLinkDocument', 'hasDocumentAdminAccess', 'hasApprovalAdminAccess', 'logger',
       'hasNestedDiscountKey', 'enforceDiscountCap', 'normalizeEmail', 'ObjectId', 'callerMaySeeRecipientTokens',
+      'parseCombinationInput',
       `${linkHelperSrc}\n${route}`,
     )(
       { post: (_p: string, h: typeof handler) => { handler = h; } },
@@ -105,6 +108,7 @@ describe('POST /api/approval-workflows only links documents the caller may link'
       { warn: () => {}, info: () => {}, error: () => {} },
       () => false, async () => ({ ok: true, value: 0 }), (e: string) => String(e || '').trim().toLowerCase(),
       class {}, () => false,
+      (approvalCombination as any).parseCombinationInput,
     );
     const call = async (user: string, body: Record<string, unknown>) => {
       const res = {
@@ -152,6 +156,25 @@ describe('POST /api/approval-workflows only links documents the caller may link'
     expect((await call('eve', { clientName: 'C' })).statusCode).toBe(200);
     expect(inserted).toHaveLength(1);
   });
+
+  it('stores the combination label trimmed, and drops a blank one', async () => {
+    const { call, inserted } = setup();
+    await call('bob', { documentId: 'Acme_Bob_12345', combination: '  Multi-Combination + Data Sprawl ' });
+    await call('bob', { documentId: 'Acme_Bob_12345', combination: '   ' });
+    expect(inserted[0].combination).toBe('Multi-Combination + Data Sprawl');
+    expect(inserted[1]).not.toHaveProperty('combination');
+  });
+
+  it.each([[['Data Sprawl']], [{ $ne: null }], [42], ['x'.repeat(151)]])(
+    'combination %j: 400 INVALID_COMBINATION and nothing inserted',
+    async (combination) => {
+      const { call, inserted } = setup();
+      const res = await call('bob', { documentId: 'Acme_Bob_12345', combination });
+      expect(res.statusCode).toBe(400);
+      expect(res.body.code).toBe('INVALID_COMBINATION');
+      expect(inserted).toEqual([]);
+    },
+  );
 });
 
 describe('POST /api/esign/documents/from-approval', () => {

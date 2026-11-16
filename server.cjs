@@ -166,6 +166,7 @@ const {
   actorIsWorkflowCreator,
   saveRedlineOverDocument,
 } = require('./onlyoffice-redline.cjs');
+const { parseCombinationInput, combinationRowHtml } = require('./approval-combination.cjs');
 const { createAdminEmailList } = require('./admin-email-lists.cjs');
 const {
   documentListOwnerMatch,
@@ -935,6 +936,8 @@ async function enrichWorkflowDataFromRecord(workflowData) {
     if (!wf) return;
     if (workflowData.amount == null) workflowData.amount = wf.amount;
     if (workflowData.hasCustomLineItems == null) workflowData.hasCustomLineItems = wf.hasCustomLineItems;
+    // The stored, validated label wins over whatever the email request sent
+    workflowData.combination = wf.combination;
   } catch (e) {
     console.error('⚠️ enrichWorkflowDataFromRecord failed:', e.message);
   }
@@ -994,6 +997,7 @@ function generateTeamEmailHTML(workflowData, token) {
             <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
             <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            ${combinationRowHtml(workflowData)}
             <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
             <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
             <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
@@ -1063,6 +1067,7 @@ function generateTechnicalTeamEmailHTML(workflowData, token) {
             <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
             <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            ${combinationRowHtml(workflowData)}
             <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
             <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
             <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
@@ -1133,6 +1138,7 @@ function generateLegalTeamEmailHTML(workflowData, token) {
             <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
             <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            ${combinationRowHtml(workflowData)}
             <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
             <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
             <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
@@ -1185,6 +1191,7 @@ function generateDealDeskEmailHTML(workflowData) {
             <h3>📄 Document Details</h3>
             <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            ${combinationRowHtml(workflowData)}
             <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
             <p><strong>Status:</strong> All Approvals Complete</p>
             <p><strong>📎 Approved document:</strong> The approved document is attached to this email.</p>
@@ -1242,6 +1249,7 @@ function generateDenialEmailHTML(data) {
             <h3>📄 Document Details</h3>
             <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            ${combinationRowHtml(workflowData)}
             <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
             <p><strong>Workflow ID:</strong> ${workflowData.workflowId || workflowData.id || ''}</p>
           </div>
@@ -11749,7 +11757,15 @@ app.post('/api/approval-workflows', async (req, res) => {
     if (!actor) return;
 
     // Server-owned fields (id, status, redline history) are never taken from the body
-    const { updates: workflowData } = stripLockedWorkflowFields(req.body, { allow: ['documentId'] });
+    const { updates: workflowData } = stripLockedWorkflowFields(req.body, { allow: ['documentId', 'combination'] });
+    const combinationInput = parseCombinationInput(workflowData.combination);
+    if (!combinationInput.ok) {
+      return res.status(400).json({
+        success: false, error: 'combination must be a short text label', code: 'INVALID_COMBINATION',
+      });
+    }
+    if (combinationInput.value) workflowData.combination = combinationInput.value;
+    else delete workflowData.combination;
     // Steps are decided only through the step route, so a new workflow cannot arrive with any step approved.
     if (Array.isArray(workflowData.workflowSteps)) {
       workflowData.workflowSteps = pendingNewWorkflowSteps(workflowData.workflowSteps);
