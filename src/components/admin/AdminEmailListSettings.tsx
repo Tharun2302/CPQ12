@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Plus, Trash2, UserCog } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Trash2, UserCog } from 'lucide-react';
 
 import {
   AdminEmailList,
@@ -43,6 +43,7 @@ function AdminEmailListSettings({ kind, title, description, helperText }: AdminE
   const [validationError, setValidationError] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -72,6 +73,8 @@ function AdminEmailListSettings({ kind, title, description, helperText }: AdminE
       if (result.success && result.data) {
         setList(result.data);
         setEmail('');
+        // Open the list so the person just added is visible
+        setIsExpanded(true);
         setStatus({ kind: 'success', message: result.message || 'Email added' });
       } else {
         setStatus({ kind: 'error', message: result.error || 'Failed to add the email' });
@@ -101,6 +104,7 @@ function AdminEmailListSettings({ kind, title, description, helperText }: AdminE
   const headingId = `${kind}-heading`;
   const inputId = `${kind}-email`;
   const errorId = `${inputId}-error`;
+  const listId = `${kind}-list`;
   const envEmails = new Set((list?.envEmails || []).map((e) => e.toLowerCase()));
   const emails = list?.emails || [];
   const isBusy = isLoading || isSaving;
@@ -113,8 +117,27 @@ function AdminEmailListSettings({ kind, title, description, helperText }: AdminE
     if (emails.length === 0) {
       return <p className="text-sm text-gray-500">No one has been added yet.</p>;
     }
+    const Chevron = isExpanded ? ChevronDown : ChevronRight;
     return (
-      <ul className="divide-y divide-gray-100 rounded-xl border border-gray-200" aria-label={`${title} list`}>
+      <div>
+        <button
+          type="button"
+          onClick={() => setIsExpanded((open) => !open)}
+          aria-expanded={isExpanded}
+          aria-controls={listId}
+          className="mb-2 inline-flex items-center gap-1.5 rounded-lg px-1 py-1 text-sm font-semibold text-gray-800 transition-colors hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
+          <Chevron className="h-4 w-4" aria-hidden="true" />
+          {`${emails.length} ${emails.length === 1 ? 'email' : 'emails'}`}
+        </button>
+        {isExpanded && renderRows()}
+      </div>
+    );
+  };
+
+  const renderRows = () => {
+    return (
+      <ul id={listId} className="divide-y divide-gray-100 rounded-xl border border-gray-200" aria-label={`${title} list`}>
         {emails.map((entry) => {
           const isEnv = envEmails.has(entry.toLowerCase());
           return (

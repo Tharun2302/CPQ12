@@ -79,10 +79,39 @@ describe('validateAdminEmailInput', () => {
   });
 });
 
+async function expandList(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: /^\d+ emails?$/ }));
+}
+
 describe('AdminEmailListSettings', () => {
+  it('starts collapsed showing the count, and the arrow toggles the list', async () => {
+    stubFetch(() => respond(200, listBody(['a@example.com', 'b@example.com'])));
+    const user = userEvent.setup();
+    renderList();
+
+    const toggle = await screen.findByRole('button', { name: '2 emails' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('list', { name: 'Exhibit Admins list' })).toBeNull();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+
+    await user.click(toggle);
+    expect(screen.queryByRole('list', { name: 'Exhibit Admins list' })).toBeNull();
+  });
+
+  it('says "1 email" for a single entry', async () => {
+    stubFetch(() => respond(200, listBody(['a@example.com'])));
+    renderList();
+    expect(await screen.findByRole('button', { name: '1 email' })).toBeInTheDocument();
+  });
+
   it('loads the list with the bearer token and marks env emails without a Remove button', async () => {
     stubFetch(() => respond(200, listBody(['env@example.com', 'ui@example.com'], ['env@example.com'])));
+    const user = userEvent.setup();
     renderList();
+    await expandList(user);
 
     const list = await screen.findByRole('list', { name: 'Exhibit Admins list' });
     const [envRow, uiRow] = within(list).getAllByRole('listitem');
@@ -159,6 +188,7 @@ describe('AdminEmailListSettings', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const user = userEvent.setup();
     renderList();
+    await expandList(user);
 
     await user.click(await screen.findByRole('button', { name: 'Remove a+b@example.com' }));
 
@@ -174,6 +204,7 @@ describe('AdminEmailListSettings', () => {
     ));
     const user = userEvent.setup();
     renderList();
+    await expandList(user);
 
     await user.click(await screen.findByRole('button', { name: 'Remove a+b@example.com' }));
 
@@ -191,6 +222,7 @@ describe('AdminEmailListSettings', () => {
     ));
     const user = userEvent.setup();
     renderList();
+    await expandList(user);
 
     await user.click(await screen.findByRole('button', { name: 'Remove ui@example.com' }));
 
