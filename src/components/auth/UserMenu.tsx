@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { LogOut } from 'lucide-react';
+import { LogOut, Settings } from 'lucide-react';
 
 const UserMenu: React.FC = () => {
   const { user, logout } = useAuth();
@@ -104,21 +105,19 @@ const UserMenu: React.FC = () => {
             </div>
           </div>
 
-          {/* Menu Items */}
-          {/* Settings menu item hidden per requirement */}
-          {/* <button
-            onClick={() => {
-              setIsOpen(false);
-              navigate('/deal');
-              setTimeout(() => {
-                window.dispatchEvent(new CustomEvent('navigateToTab', { detail: 'settings' }));
-              }, 0);
-            }}
-            className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-          >
-            <Settings className="w-4 h-4 mr-3" />
-            Settings
-          </button> */}
+          {/* Only approval admins can open it; the page and its API check this again */}
+          {user.isApprovalAdmin && (
+            <Link
+              to="/admin-settings"
+              onClick={() => setIsOpen(false)}
+              className="flex items-center w-full px-5 py-3 text-sm font-medium text-gray-700 hover:bg-blue-50 transition-colors duration-200 group"
+            >
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 group-hover:bg-blue-200 transition-colors duration-200 mr-3">
+                <Settings className="w-4 h-4 text-blue-600" />
+              </div>
+              <span>Admin Settings</span>
+            </Link>
+          )}
 
           <button
             onClick={handleLogout}

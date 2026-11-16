@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { FileText, Upload, Building, Menu, X, CheckCircle, FolderOpen, PenLine, BarChart3, FileCheck, Lock, HelpCircle, Settings } from 'lucide-react';
+import { FileText, Upload, Building, Menu, X, CheckCircle, FolderOpen, PenLine, BarChart3, FileCheck, Lock, HelpCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import UserMenu from './auth/UserMenu';
 import ContactUsModal from './ContactUsModal';
@@ -52,8 +52,6 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
     { id: 'exhibits',  label: 'Exhibits',     icon: FolderOpen, path: '/exhibits' },
     { id: 'documents', label: 'Documents',    icon: FileText,   path: '/documents' },
   ];
-  const adminSettingsTab = { id: 'admin-settings', label: 'Admin Settings', icon: Settings, path: '/admin-settings' };
-  const isApprovalAdmin = Boolean(user?.isApprovalAdmin);
 
   const renderTabLink = (tab: typeof tabs[0], mobile = false) => {
     const Icon = tab.icon;
@@ -138,7 +136,6 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
             {(() => { const t = tabs.find((x) => x.id === 'templates'); return t ? renderTabLink(t) : null; })()}
             {(() => { const t = tabs.find((x) => x.id === 'exhibits'); return t ? renderTabLink(t) : null; })()}
             {(() => { const t = tabs.find((x) => x.id === 'documents'); return t ? renderTabLink(t) : null; })()}
-            {isApprovalAdmin && renderTabLink(adminSettingsTab)}
           </div>
 
           {/* Bottom: Help + User Menu */}
@@ -208,7 +205,6 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
                 {(() => { const t = tabs.find((x) => x.id === 'templates'); return t ? renderTabLink(t, true) : null; })()}
                 {(() => { const t = tabs.find((x) => x.id === 'exhibits'); return t ? renderTabLink(t, true) : null; })()}
                 {(() => { const t = tabs.find((x) => x.id === 'documents'); return t ? renderTabLink(t, true) : null; })()}
-                {isApprovalAdmin && renderTabLink(adminSettingsTab, true)}
 
                 <button
                   type="button"
