@@ -16,8 +16,8 @@ vi.mock('../../src/hooks/useAuth', () => ({
 
 import ExhibitManager from '../../src/components/ExhibitManager';
 
-const { exhibitRedlineAccess } = exhibitRedline as {
-  exhibitRedlineAccess: (args: Record<string, unknown>) => { ok: boolean; via?: string; httpStatus?: number };
+const { exhibitEditorAccess } = exhibitRedline as {
+  exhibitEditorAccess: (args: Record<string, unknown>) => { ok: boolean; via?: string; httpStatus?: number };
 };
 const serverSrc = fs.readFileSync(path.resolve(process.cwd(), 'server.cjs'), 'utf8');
 
@@ -53,82 +53,138 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('ExhibitManager Edit for RedLine button', () => {
-  it('a redline admin sees Edit for RedLine but no other exhibit-admin buttons', async () => {
+describe('ExhibitManager exhibit buttons', () => {
+  it('a redline admin gets Upload, Edit, Edit for RedLine and Delete, but not Exhibit Admins', async () => {
     mockUser = { role: 'viewer', isRedlineAdmin: true };
     await renderExpanded();
-    expect(screen.getByRole('button', { name: /Edit for RedLine/ })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /^Edit$/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^Delete$/ })).toBeNull();
-    expect(screen.getByText('You can redline exhibits. Only exhibit admins can add, edit, or delete.')).toBeTruthy();
-  });
-
-  it('an exhibit admin keeps Edit, Edit for RedLine and Delete', async () => {
-    mockUser = { role: 'exhibit_admin' };
-    await renderExpanded();
+    expect(screen.getByRole('button', { name: /Upload Exhibit/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Edit for RedLine/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^Edit$/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^Delete$/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Exhibit Admins/ })).toBeNull();
+    expect(screen.queryByText(/You can view exhibits only/)).toBeNull();
+    expect(screen.queryByText(/Only exhibit admins can add, edit, or delete/)).toBeNull();
   });
 
-  it('a regular user sees none of them', async () => {
+  it('an exhibit admin keeps everything, including Exhibit Admins', async () => {
+    mockUser = { role: 'exhibit_admin' };
+    await renderExpanded();
+    for (const name of [/Upload Exhibit/, /Edit for RedLine/, /^Edit$/, /^Delete$/, /Exhibit Admins/]) {
+      expect(screen.getByRole('button', { name })).toBeTruthy();
+    }
+  });
+
+  it('a regular user sees none of them and the view-only note', async () => {
     mockUser = { role: 'viewer', isRedlineAdmin: false };
     await renderExpanded();
-    expect(screen.queryByRole('button', { name: /Edit for RedLine/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^Edit$/ })).toBeNull();
+    for (const name of [/Upload Exhibit/, /Edit for RedLine/, /^Edit$/, /^Delete$/, /Exhibit Admins/]) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
     expect(screen.getByText('You can view exhibits only. Only exhibit admins can add, edit, or delete.')).toBeTruthy();
   });
 });
 
-describe('exhibitRedlineAccess', () => {
+describe('exhibitEditorAccess', () => {
   it('allows exhibit admins and redline admins, saying which list granted it', () => {
-    expect(exhibitRedlineAccess({ isExhibitAdmin: true, isRedlineAdmin: true })).toEqual({ ok: true, via: 'exhibit_admin' });
-    expect(exhibitRedlineAccess({ isRedlineAdmin: true })).toEqual({ ok: true, via: 'redline_admin' });
-    expect(exhibitRedlineAccess({})).toMatchObject({ ok: false, httpStatus: 403 });
-    expect(exhibitRedlineAccess({ isRedlineAdmin: 'true' }).ok).toBe(false);
+    expect(exhibitEditorAccess({ isExhibitAdmin: true, isRedlineAdmin: true })).toEqual({ ok: true, via: 'exhibit_admin' });
+    expect(exhibitEditorAccess({ isRedlineAdmin: true })).toEqual({ ok: true, via: 'redline_admin' });
+    expect(exhibitEditorAccess({})).toMatchObject({ ok: false, httpStatus: 403 });
+    expect(exhibitEditorAccess({ isRedlineAdmin: 'true' }).ok).toBe(false);
   });
 });
 
-describe('exhibit redline routes in server.cjs', () => {
-  const route = (opening: string) => {
+describe('exhibit routes in server.cjs', () => {
+  const handler = (opening: string) => {
     const start = serverSrc.indexOf(opening);
     expect(start, opening).toBeGreaterThan(-1);
-    return serverSrc.slice(start, serverSrc.indexOf('\napp.', start + 1));
+    // Cut at the handler's closing line so helpers declared after it are not counted
+    return serverSrc.slice(start, serverSrc.indexOf('\n});', start + 1));
   };
-  const start = route("app.post('/api/onlyoffice/start-session-from-exhibit/:id'");
-  const persist = route("app.post('/api/onlyoffice/persist-to-exhibit/:sessionId'");
-  const helper = serverSrc.slice(
-    serverSrc.indexOf('async function getExhibitRedlineUser'),
-    serverSrc.indexOf("app.post('/api/onlyoffice/start-session-from-exhibit/:id'"),
-  );
+  const fnSource = (opening: string) => {
+    const start = serverSrc.indexOf(opening);
+    expect(start, opening).toBeGreaterThan(-1);
+    const end = serverSrc.slice(start).search(/\n\}\r?\n/);
+    return serverSrc.slice(start, start + end + 2);
+  };
+  const EDITOR_ROUTES = [
+    "app.post('/api/exhibits', upload.single('file')",
+    "app.put('/api/exhibits/:id', upload.single('file')",
+    "app.delete('/api/exhibits/:id'",
+    "app.post('/api/onlyoffice/start-session-from-exhibit/:id'",
+    "app.post('/api/onlyoffice/persist-to-exhibit/:sessionId'",
+  ];
+  const ADMIN_LIST_ROUTES = [
+    "app.get('/api/settings/exhibit-admins'",
+    "app.post('/api/settings/exhibit-admins'",
+    "app.delete('/api/settings/exhibit-admins/:email'",
+  ];
 
-  it('start and save re-check both lists live before reading input or the database', () => {
-    for (const src of [start, persist]) {
-      const authAt = src.indexOf('await getExhibitRedlineUser(req, res)');
-      expect(authAt).toBeGreaterThan(-1);
-      expect(authAt).toBeLessThan(src.indexOf('req.params'));
-      expect(authAt).toBeLessThan(src.search(/db\.collection|saveRedlineOverExhibit\(/));
-      expect(src).toContain("if (access.via === 'redline_admin') logExhibitRedlineViaRedlineList(");
-    }
-    expect(helper).toContain('await hasExhibitAdminAccess(user)');
-    expect(helper).toContain('await hasRedlineAdminAccess(user)');
+  it.each(EDITOR_ROUTES)('%s: exhibit admins or redline admins, checked live before input or database', (opening) => {
+    const src = handler(opening);
+    const authAt = src.indexOf('await getExhibitEditorUser(req, res)');
+    expect(authAt).toBeGreaterThan(-1);
+    expect(src).not.toContain('getExhibitAdminUser');
+    const input = /\breq\.(params|body|file)\b/.exec(src);
+    if (input) expect(authAt).toBeLessThan(input.index);
+    const write = src.search(/db\.collection|saveRedlineOverExhibit\(/);
+    if (write > -1) expect(authAt).toBeLessThan(write);
+    expect(src).toMatch(/if \((editor|access)\.via === 'redline_admin'\) logExhibitEditViaRedlineList\(/);
   });
 
-  it('keeps the session bound to whoever opened it', () => {
-    expect(start).toContain('actorEmail,');
-    expect(persist).toMatch(/normalizeEmail\(authUser\.email\) !== s\.actorEmail/);
+  it.each(ADMIN_LIST_ROUTES)('%s stays exhibit-admin only', (opening) => {
+    const src = handler(opening);
+    expect(src).toContain('await getExhibitAdminUser(req, res)');
+    expect(src).not.toMatch(/getExhibitEditorUser|hasRedlineAdminAccess/);
   });
 
-  it('redline admins gain no other exhibit-admin power', () => {
-    const uses = [...serverSrc.matchAll(/await getExhibitRedlineUser\(req, res\)/g)].length;
-    expect(uses).toBe(3);
-    const exhibitRoutes = [...serverSrc.matchAll(/\napp\.(post|put|delete)\('\/api\/(exhibits|settings\/exhibit-admins)[^']*'/g)];
-    expect(exhibitRoutes.length).toBeGreaterThan(0);
-    for (const m of exhibitRoutes) {
-      // Cut at the handler's closing line so helpers declared after it are not counted
-      const src = serverSrc.slice(m.index! + 1, serverSrc.indexOf('\n});', m.index! + 2));
-      expect(src, m[0]).not.toContain('getExhibitRedlineUser');
-      expect(src, m[0]).not.toContain('hasRedlineAdminAccess');
+  it('heartbeat and release use the same live check', () => {
+    const helper = fnSource('async function getOwnExhibitSession');
+    expect(helper).toContain('await getExhibitEditorUser(req, res)');
+  });
+
+  it('keeps the redline session bound to whoever opened it', () => {
+    expect(handler("app.post('/api/onlyoffice/start-session-from-exhibit/:id'")).toContain('actorEmail,');
+    expect(handler("app.post('/api/onlyoffice/persist-to-exhibit/:sessionId'")).toMatch(/normalizeEmail\(authUser\.email\) !== s\.actorEmail/);
+  });
+
+  describe('getExhibitEditorUser / getExhibitAdminUser behaviour', () => {
+    const editorSrc = fnSource('async function getExhibitEditorUser');
+    const adminSrc = fnSource('async function getExhibitAdminUser');
+    const USERS: Record<string, { email: string }> = {
+      exhibit: { email: 'ex@test.example' }, redline: { email: 'rl@test.example' }, plain: { email: 'p@test.example' },
+    };
+
+    function load() {
+      return new Function(
+        'getAuthenticatedUser', 'hasExhibitAdminAccess', 'hasRedlineAdminAccess', 'exhibitEditorAccess',
+        `${editorSrc}\n${adminSrc}\nreturn { getExhibitEditorUser, getExhibitAdminUser };`,
+      )(
+        async (req: any) => USERS[req.who],
+        async (u: any) => u === USERS.exhibit,
+        async (u: any) => u === USERS.redline,
+        exhibitEditorAccess,
+      );
     }
+    const res = () => {
+      const r = { statusCode: 200, status(c: number) { r.statusCode = c; return r; }, json() { return r; } };
+      return r;
+    };
+
+    it('editor routes: exhibit admin and redline admin pass, others get 403', async () => {
+      const { getExhibitEditorUser } = load();
+      expect(await getExhibitEditorUser({ who: 'exhibit' }, res())).toEqual({ user: USERS.exhibit, via: 'exhibit_admin' });
+      expect(await getExhibitEditorUser({ who: 'redline' }, res())).toEqual({ user: USERS.redline, via: 'redline_admin' });
+      const r = res();
+      expect(await getExhibitEditorUser({ who: 'plain' }, r)).toBeNull();
+      expect(r.statusCode).toBe(403);
+    });
+
+    it('exhibit-admin list routes: a redline admin still gets 403', async () => {
+      const { getExhibitAdminUser } = load();
+      const r = res();
+      expect(await getExhibitAdminUser({ who: 'redline' }, r)).toBeNull();
+      expect(r.statusCode).toBe(403);
+      expect(await getExhibitAdminUser({ who: 'exhibit' }, res())).toBe(USERS.exhibit);
+    });
   });
 });

@@ -25,7 +25,7 @@ function AdminSettingsPage() {
           <AdminEmailListSettings
             kind="redline-admins"
             title="Redline Admins"
-            description="Can use Edit for RedLine on any agreement and on exhibits (Exhibits page). Gives no other exhibit-admin rights."
+            description="Can use Edit for RedLine on any agreement, and add, edit, delete and redline exhibits. Managing Exhibit admins stays with Exhibit admins."
             helperText="To find agreements created by others on the Documents page, also add the person as a Document admin."
           />
           <AdminEmailListSettings

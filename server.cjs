@@ -184,7 +184,7 @@ const {
   applyExhibitDownload,
   statusAfterForceSave,
   saveRedlineOverExhibit,
-  exhibitRedlineAccess,
+  exhibitEditorAccess,
 } = require('./exhibit-redline.cjs');
 
 const {
@@ -3118,6 +3118,27 @@ async function getExhibitAdminUser(req, res) {
   return user;
 }
 
+// Exhibit changes (upload, edit, replace, delete, redline): exhibit admins or redline admins, read
+// live on every call. Managing the exhibit-admin list stays on getExhibitAdminUser.
+async function getExhibitEditorUser(req, res) {
+  const user = await getAuthenticatedUser(req, res);
+  if (!user) return null;
+  const isExhibitAdmin = await hasExhibitAdminAccess(user);
+  const isRedlineAdmin = isExhibitAdmin ? false : await hasRedlineAdminAccess(user);
+  const access = exhibitEditorAccess({ isExhibitAdmin, isRedlineAdmin });
+  if (!access.ok) {
+    res.status(access.httpStatus).json({ success: false, error: access.error });
+    return null;
+  }
+  return { user, via: access.via };
+}
+
+function logExhibitEditViaRedlineList(action, actor, exhibitId) {
+  logger.info('Redline admin override', {
+    source: 'exhibits', action, actor: actor.email, exhibitId: exhibitId || null,
+  });
+}
+
 // ============================================
 // EXHIBIT ADMINS SETTINGS (admin UI to add/remove emails)
 // ============================================
@@ -3584,8 +3605,10 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
       });
     }
 
-    const authUser = await getExhibitAdminUser(req, res);
-    if (!authUser) return;
+    const editor = await getExhibitEditorUser(req, res);
+    if (!editor) return;
+    const authUser = editor.user;
+    if (editor.via === 'redline_admin') logExhibitEditViaRedlineList('upload', authUser, null);
 
     if (!req.file) {
       return res.status(400).json({ 
@@ -3848,8 +3871,10 @@ app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
       });
     }
 
-    const authUser = await getExhibitAdminUser(req, res);
-    if (!authUser) return;
+    const editor = await getExhibitEditorUser(req, res);
+    if (!editor) return;
+    const authUser = editor.user;
+    if (editor.via === 'redline_admin') logExhibitEditViaRedlineList('update', authUser, req.params.id);
 
     const { id } = req.params;
     const { ObjectId } = require('mongodb');
@@ -4076,8 +4101,10 @@ app.delete('/api/exhibits/:id', async (req, res) => {
       });
     }
 
-    const authUser = await getExhibitAdminUser(req, res);
-    if (!authUser) return;
+    const editor = await getExhibitEditorUser(req, res);
+    if (!editor) return;
+    const authUser = editor.user;
+    if (editor.via === 'redline_admin') logExhibitEditViaRedlineList('delete', authUser, req.params.id);
 
     const { id } = req.params;
     const { ObjectId } = require('mongodb');
@@ -6069,33 +6096,12 @@ app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
   }
 });
 
-// "Edit for RedLine" on the Exhibits page: open an exhibit's DOCX in OnlyOffice. Exhibit admins only,
-// and the session is bound to the admin who opened it so nobody else can save it.
-// Exhibit redline only: exhibit admins or redline admins, read live on every call. Redline admins
-// get no other exhibit-admin power, since every other exhibit route still uses getExhibitAdminUser.
-async function getExhibitRedlineUser(req, res) {
-  const user = await getAuthenticatedUser(req, res);
-  if (!user) return null;
-  const isExhibitAdmin = await hasExhibitAdminAccess(user);
-  const isRedlineAdmin = isExhibitAdmin ? false : await hasRedlineAdminAccess(user);
-  const access = exhibitRedlineAccess({ isExhibitAdmin, isRedlineAdmin });
-  if (!access.ok) {
-    res.status(access.httpStatus).json({ success: false, error: access.error });
-    return null;
-  }
-  return { user, via: access.via };
-}
-
-function logExhibitRedlineViaRedlineList(stage, actor, exhibitId) {
-  logger.info('Redline admin override', {
-    source: 'redline', target: 'exhibit', stage, actor: actor.email, exhibitId,
-  });
-}
-
+// "Edit for RedLine" on the Exhibits page: open an exhibit's DOCX in OnlyOffice. The session is
+// bound to whoever opened it so nobody else can save it.
 app.post('/api/onlyoffice/start-session-from-exhibit/:id', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const access = await getExhibitRedlineUser(req, res);
+    const access = await getExhibitEditorUser(req, res);
     if (!access) return;
     const authUser = access.user;
 
@@ -6121,7 +6127,7 @@ app.post('/api/onlyoffice/start-session-from-exhibit/:id', async (req, res) => {
     }
     // The same admin reopening replaces their older editor, which can then no longer save
     if (holder && holder.status !== 'persisting') holder.status = 'closed';
-    if (access.via === 'redline_admin') logExhibitRedlineViaRedlineList('start', authUser, id);
+    if (access.via === 'redline_admin') logExhibitEditViaRedlineList('redline-start', authUser, id);
 
     const sessionId = uuidv4();
     onlyofficeSessions.set(sessionId, {
@@ -6173,7 +6179,7 @@ app.post('/api/onlyoffice/persist-to-exhibit/:sessionId', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
     // Re-checked live, so someone removed from both lists mid-edit is refused here
-    const access = await getExhibitRedlineUser(req, res);
+    const access = await getExhibitEditorUser(req, res);
     if (!access) return;
     const authUser = access.user;
 
@@ -6181,7 +6187,7 @@ app.post('/api/onlyoffice/persist-to-exhibit/:sessionId', async (req, res) => {
     if (!s) return res.status(404).json({ success: false, error: 'Session not found' });
     if (!s.exhibitId) return res.status(400).json({ success: false, error: 'Session is not bound to an exhibit' });
     if (normalizeEmail(authUser.email) !== s.actorEmail) {
-      return res.status(403).json({ success: false, error: 'Only the admin who opened this editor can save it' });
+      return res.status(403).json({ success: false, error: 'Only the person who opened this editor can save it' });
     }
 
     if (s.status === 'closed') {
@@ -6190,7 +6196,7 @@ app.post('/api/onlyoffice/persist-to-exhibit/:sessionId', async (req, res) => {
     if (s.status !== 'ready' || !s.editedDocx) {
       return res.status(409).json({ success: false, error: 'Edited exhibit not ready yet', status: s.status });
     }
-    if (access.via === 'redline_admin') logExhibitRedlineViaRedlineList('save', authUser, s.exhibitId);
+    if (access.via === 'redline_admin') logExhibitEditViaRedlineList('redline-save', authUser, s.exhibitId);
     // Claim the session before the first write so a double-clicked "Done" can't save twice
     s.status = 'persisting';
     // Read once: a late callback must not make MongoDB and the folder copy differ
@@ -6236,7 +6242,7 @@ app.post('/api/onlyoffice/persist-to-exhibit/:sessionId', async (req, res) => {
 
 // Only the admin who opened an exhibit editor may keep its lock alive or release it
 async function getOwnExhibitSession(req, res) {
-  const access = await getExhibitRedlineUser(req, res);
+  const access = await getExhibitEditorUser(req, res);
   if (!access) return null;
   const authUser = access.user;
   const s = onlyofficeSessions.get(req.params.sessionId);

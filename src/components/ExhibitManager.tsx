@@ -264,7 +264,6 @@ export function buildFolderGroups(list: Exhibit[]): ExhibitFolder[] {
 type ExhibitCardProps = {
   exhibit: Exhibit;
   canManageExhibits: boolean;
-  canRedlineExhibits: boolean;
   downloadingExhibitId: string | null;
   onView: (exhibit: Exhibit) => void;
   onDownload: (exhibit: Exhibit) => void;
@@ -273,7 +272,7 @@ type ExhibitCardProps = {
   onDelete: (exhibit: Exhibit) => void;
 };
 
-function ExhibitCard({ exhibit, canManageExhibits, canRedlineExhibits, downloadingExhibitId, onView, onDownload, onEdit, onRedline, onDelete }: ExhibitCardProps) {
+function ExhibitCard({ exhibit, canManageExhibits, downloadingExhibitId, onView, onDownload, onEdit, onRedline, onDelete }: ExhibitCardProps) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
       <div className="flex justify-between items-start mb-2">
@@ -323,7 +322,7 @@ function ExhibitCard({ exhibit, canManageExhibits, canRedlineExhibits, downloadi
             Edit
           </button>
         )}
-        {canRedlineExhibits && (
+        {canManageExhibits && (
           <button
             onClick={() => onRedline(exhibit)}
             className="flex-1 min-w-[90px] flex items-center justify-center gap-2 px-3 py-2 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors text-sm"
@@ -368,9 +367,9 @@ interface Exhibit {
 
 const ExhibitManager: React.FC = () => {
   const { user } = useAuth();
-  const canManageExhibits = user?.role === 'exhibit_admin';
-  // Redline admins may redline exhibits but get no other exhibit-admin buttons; the server re-checks.
-  const canRedlineExhibits = canManageExhibits || Boolean(user?.isRedlineAdmin);
+  const canManageExhibitAdmins = user?.role === 'exhibit_admin';
+  // Redline admins may change exhibits too, but not manage the exhibit-admin list; the server re-checks.
+  const canManageExhibits = canManageExhibitAdmins || Boolean(user?.isRedlineAdmin);
 
   const [exhibits, setExhibits] = useState<Exhibit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -401,7 +400,7 @@ const ExhibitManager: React.FC = () => {
   // Track EXPANDED ids so folders added later default to collapsed
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
-  // Exhibit Admins modal (only used when canManageExhibits)
+  // Exhibit Admins modal (only used when canManageExhibitAdmins)
   const [showExhibitAdminsModal, setShowExhibitAdminsModal] = useState(false);
   const [adminEmails, setAdminEmails] = useState<string[]>([]);
   const [adminEmailsLoading, setAdminEmailsLoading] = useState(false);
@@ -634,11 +633,11 @@ const ExhibitManager: React.FC = () => {
   };
 
   useEffect(() => {
-    if (canManageExhibits) fetchAdminEmails();
-  }, [canManageExhibits]);
+    if (canManageExhibitAdmins) fetchAdminEmails();
+  }, [canManageExhibitAdmins]);
 
   useEffect(() => {
-    if (showExhibitAdminsModal && canManageExhibits) fetchAdminEmails();
+    if (showExhibitAdminsModal && canManageExhibitAdmins) fetchAdminEmails();
   }, [showExhibitAdminsModal]);
 
   // Handle file upload - manual only; no auto-detection from filename
@@ -1498,9 +1497,7 @@ const ExhibitManager: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2">
           {!canManageExhibits && (
             <p className="text-sm text-gray-500">
-              {canRedlineExhibits
-                ? 'You can redline exhibits. Only exhibit admins can add, edit, or delete.'
-                : 'You can view exhibits only. Only exhibit admins can add, edit, or delete.'}
+              You can view exhibits only. Only exhibit admins can add, edit, or delete.
             </p>
           )}
           <DownloadAllButton
@@ -1509,15 +1506,17 @@ const ExhibitManager: React.FC = () => {
             disabled={isLoading || exhibits.length === 0 || bulkProgress !== null}
             onClick={handleDownloadAll}
           />
+          {canManageExhibitAdmins && (
+            <button
+              onClick={() => setShowExhibitAdminsModal(true)}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <Shield className="w-5 h-5" />
+              Exhibit Admins
+            </button>
+          )}
           {canManageExhibits && (
             <>
-              <button
-                onClick={() => setShowExhibitAdminsModal(true)}
-                className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <Shield className="w-5 h-5" />
-                Exhibit Admins
-              </button>
               <button
                 onClick={() => {
                   resetForm();
@@ -1631,7 +1630,6 @@ const ExhibitManager: React.FC = () => {
                         key={exhibit._id || exhibit.id}
                         exhibit={exhibit}
                         canManageExhibits={canManageExhibits}
-                        canRedlineExhibits={canRedlineExhibits}
                         downloadingExhibitId={downloadingExhibitId}
                         onView={handleView}
                         onDownload={handleDownload}
@@ -1649,7 +1647,7 @@ const ExhibitManager: React.FC = () => {
       )}
 
       {/* Exhibit Admins Modal */}
-      {showExhibitAdminsModal && canManageExhibits && (
+      {showExhibitAdminsModal && canManageExhibitAdmins && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
           onClick={() => setShowExhibitAdminsModal(false)}
