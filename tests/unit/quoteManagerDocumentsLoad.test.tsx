@@ -55,7 +55,7 @@ function jsonResponse(body: unknown) {
   } as Response);
 }
 
-function mockFetch() {
+function mockFetch(scope?: 'all' | 'own') {
   const fetchMock = vi.fn<FetchFn>((input) => {
     const url = String(input);
     if (LIST_URL.test(url)) {
@@ -67,6 +67,7 @@ function mockFetch() {
         documents,
         totalCount: documents.length,
         approvalFilter: filter,
+        ...(scope ? { scope } : {}),
       });
     }
     return jsonResponse({ success: true });
@@ -82,8 +83,8 @@ const listRequests = (fetchMock: ReturnType<typeof mockFetch>) => (
 // New [] on every call, like App.tsx handing down quotes and templates as each loads
 const page = () => <QuoteManager quotes={[]} templates={[]} />;
 
-async function renderPage() {
-  const fetchMock = mockFetch();
+async function renderPage(scope?: 'all' | 'own') {
+  const fetchMock = mockFetch(scope);
   const getAll = vi.spyOn(documentServiceMongoDB, 'getAllDocuments');
   const utils = render(page());
   await screen.findByRole('heading', { name: /Saved Documents \(3\)/ });
@@ -133,5 +134,22 @@ describe('QuoteManager saved documents loading', () => {
     rerender(page());
     await screen.findByRole('heading', { name: /Saved Documents \(1\)/ });
     expect(getAll).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('QuoteManager document list scope note', () => {
+  it('tells regular users the list holds only the documents they created', async () => {
+    await renderPage('own');
+    expect(screen.getByTestId('documents-scope-note')).toHaveTextContent('Showing Deal Documents you created');
+  });
+
+  it('tells document admins the list holds every document', async () => {
+    await renderPage('all');
+    expect(screen.getByTestId('documents-scope-note')).toHaveTextContent('Showing all Deal Documents (document admin)');
+  });
+
+  it('keeps the original subtitle when the server sends no scope', async () => {
+    await renderPage();
+    expect(screen.getByTestId('documents-scope-note')).toHaveTextContent('Here you can see all your created Deal Documents');
   });
 });

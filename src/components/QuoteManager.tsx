@@ -33,6 +33,7 @@ import {
   documentServiceMongoDB,
   SavedDocument,
   type DealDocumentsApprovalFilter,
+  type DocumentListScope,
 } from '../services/documentServiceMongoDB';
 import { convertPdfToWord, downloadWordFile } from '../utils/pdfToWordConverter';
 import { SUPPRESS_PII } from '../analytics/privacy';
@@ -80,6 +81,7 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
     useState<DealDocumentsApprovalFilter>('all');
   const [savedDocuments, setSavedDocuments] = useState<SavedDocument[]>([]);
   const [savedDocumentsTotalCount, setSavedDocumentsTotalCount] = useState(0);
+  const [documentListScope, setDocumentListScope] = useState<DocumentListScope | undefined>(undefined);
   // Free-text search over the loaded saved documents (company, contact, email, template).
   const [documentSearchQuery, setDocumentSearchQuery] = useState('');
   const [loadingDocuments, setLoadingDocuments] = useState(false);
@@ -114,10 +116,11 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
     setLoadingDocuments(true);
     setDocumentsLoadError(null);
     try {
-      const { documents: docs, totalCount } =
+      const { documents: docs, totalCount, scope } =
         await documentServiceMongoDB.getAllDocuments(dealDocumentsApprovalFilter);
       setSavedDocuments(docs);
       setSavedDocumentsTotalCount(totalCount);
+      setDocumentListScope(scope);
       console.log('✅ Loaded saved documents from MongoDB:', docs.length, '/', totalCount, 'total');
     } catch (error) {
       console.error('❌ Error loading documents from MongoDB:', error);
@@ -1461,7 +1464,13 @@ ZENOP Pro Solutions Team`;
           </div>
           <h1 className="text-3xl font-bold text-gray-800">Deal Documents Manager</h1>
         </div>
-        <p className="text-gray-600">Here you can see all your created Deal Documents</p>
+        <p className="text-gray-600" data-testid="documents-scope-note">
+          {documentListScope === 'all'
+            ? 'Showing all Deal Documents (document admin)'
+            : documentListScope === 'own'
+              ? 'Showing Deal Documents you created'
+              : 'Here you can see all your created Deal Documents'}
+        </p>
       </div>
 
       {/* Saved Documents Section */}

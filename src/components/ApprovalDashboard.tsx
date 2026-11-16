@@ -179,6 +179,7 @@ const ApprovalDashboard: React.FC = () => {
   const { user } = useAuth();
   const showStandaloneBackLink = location.pathname !== '/approval';
   const userIsApprovalAdmin = Boolean((user as any)?.isApprovalAdmin);
+  const userIsRedlineAdmin = Boolean(user?.isRedlineAdmin);
   const currentUserEmail = String((user as any)?.email || '').trim().toLowerCase();
 
   /** Only the requester (workflow creator) may proceed to e-sign, reset, or send reminders. */
@@ -374,8 +375,8 @@ const ApprovalDashboard: React.FC = () => {
         `${BACKEND_URL}/api/onlyoffice/start-session-from-document/${encodeURIComponent(documentId)}`,
         { method: 'POST', headers: getAuthHeaders() },
       );
-      const data = await resp.json();
-      if (!resp.ok || !data?.success) throw new Error(authAwareError(resp.status, data?.error, 'Failed to open the editor'));
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok || !data?.success) throw new Error(authAwareError(resp.status, data?.error || data?.message, 'Failed to open the editor'));
       setRedlineDocId(documentId);
       setRedlineSessionId(data.sessionId);
       setRedlineEditorUrl(data.editorUrl);
@@ -426,9 +427,9 @@ const ApprovalDashboard: React.FC = () => {
           `${BACKEND_URL}/api/onlyoffice/persist-to-document/${redlineSessionId}`,
           { method: 'POST', headers: getAuthHeaders() },
         );
-        const pdata = await persist.json();
+        const pdata = await persist.json().catch(() => null);
         if (!persist.ok || !pdata?.success) {
-          throw new Error(authAwareError(persist.status, pdata?.error, 'Failed to save the edited document'));
+          throw new Error(authAwareError(persist.status, pdata?.error || pdata?.message, 'Failed to save the edited document'));
         }
         flashToast(redlineSaveMessage(pdata));
         closeRedline();
@@ -957,6 +958,7 @@ const ApprovalDashboard: React.FC = () => {
                 const createdAt = workflow.createdAt ? new Date(workflow.createdAt) : null;
                 const canManage = isWorkflowCreator(workflow);
                 const canCopyLink = canManage || userIsApprovalAdmin;
+                const canRedline = canManage || userIsRedlineAdmin;
 
                 const teamStep = getStep(workflow, 'Team Approval');
                 const technicalStep = getStep(workflow, 'Technical Team');
@@ -1101,9 +1103,9 @@ const ApprovalDashboard: React.FC = () => {
                             <MoreVertical className="h-5 w-5" />
                           </button>
                           {openMenuId === workflow.id && (() => {
-                            const itemCls = canManage
-                              ? 'flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50'
-                              : 'flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-400 hover:bg-gray-50 cursor-not-allowed';
+                            const enabledItemCls = 'flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50';
+                            const lockedItemCls = 'flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-400 hover:bg-gray-50 cursor-not-allowed';
+                            const itemCls = canManage ? enabledItemCls : lockedItemCls;
                             const lock = !canManage ? <Lock className="h-3 w-3 ml-auto shrink-0" /> : null;
                             return (
                               <>
@@ -1151,16 +1153,17 @@ const ApprovalDashboard: React.FC = () => {
                                   {workflow.documentId && (
                                     <button
                                       type="button"
-                                      onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester can edit this document.'); return; } handleOpenRedline(String(workflow.documentId)); }}
-                                      disabled={canManage && isStartingRedline === String(workflow.documentId)}
-                                      className={itemCls}
-                                      title={canManage ? 'Open the Word editor to redline this document' : 'Only the requester can edit this document'}
+                                      onClick={() => { setOpenMenuId(null); if (!canRedline) { alert('Only the requester or a redline admin can edit this document.'); return; } handleOpenRedline(String(workflow.documentId)); }}
+                                      disabled={canRedline && isStartingRedline === String(workflow.documentId)}
+                                      aria-disabled={!canRedline}
+                                      className={canRedline ? enabledItemCls : lockedItemCls}
+                                      title={canRedline ? 'Open the Word editor to redline this document' : 'Only the requester or a redline admin can edit this document'}
                                     >
-                                      {canManage && isStartingRedline === String(workflow.documentId)
+                                      {canRedline && isStartingRedline === String(workflow.documentId)
                                         ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
                                         : <PenLine className="h-4 w-4 shrink-0" />}
                                       Edit for RedLine
-                                      {lock}
+                                      {!canRedline && <Lock className="h-3 w-3 ml-auto shrink-0" />}
                                     </button>
                                   )}
                                   {status === 'approved' && workflow.esignDocumentId && (

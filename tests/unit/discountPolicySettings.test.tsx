@@ -20,6 +20,16 @@ vi.mock('../../src/components/Navigation', () => ({
   default: () => <nav data-testid="sidebar" />,
 }));
 
+// The admin email lists on the same page are covered in adminEmailListSettings.test.tsx
+vi.mock('../../src/services/adminEmailListService', () => {
+  const empty = { success: true, data: { emails: [], envEmails: [], updatedAt: null, updatedBy: null } };
+  return {
+    listAdminEmails: vi.fn(async () => empty),
+    addAdminEmail: vi.fn(async () => empty),
+    removeAdminEmail: vi.fn(async () => empty),
+  };
+});
+
 import DiscountPolicySettings, { validateMaxDiscountInput } from '../../src/components/admin/DiscountPolicySettings';
 import AdminSettingsPage from '../../src/pages/AdminSettingsPage';
 import {

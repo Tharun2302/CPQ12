@@ -1,6 +1,7 @@
 import { ShieldAlert } from 'lucide-react';
 
 import Navigation from '../components/Navigation';
+import AdminEmailListSettings from '../components/admin/AdminEmailListSettings';
 import DiscountPolicySettings from '../components/admin/DiscountPolicySettings';
 import { useAuth } from '../hooks/useAuth';
 
@@ -17,7 +18,24 @@ function AdminSettingsPage() {
         </p>
       );
     }
-    if (isApprovalAdmin) return <DiscountPolicySettings />;
+    if (isApprovalAdmin) {
+      return (
+        <div className="space-y-6">
+          <DiscountPolicySettings />
+          <AdminEmailListSettings
+            kind="redline-admins"
+            title="Redline Admins"
+            description="Can use Edit for RedLine on any agreement and on exhibits (Exhibits page). Gives no other exhibit-admin rights."
+            helperText="To find agreements created by others on the Documents page, also add the person as a Document admin."
+          />
+          <AdminEmailListSettings
+            kind="document-admins"
+            title="Document Admins"
+            description="Can see every document on the Documents page; others see only their own."
+          />
+        </div>
+      );
+    }
     return (
       <div
         role="alert"

@@ -6,6 +6,7 @@ import { BACKEND_URL } from '../config/api';
 import { getAuthHeaders } from '../utils/authUtils';
 
 export type DealDocumentsApprovalFilter = 'all' | 'in_workflow' | 'no_workflow';
+export type DocumentListScope = 'all' | 'own';
 
 export interface SavedDocument {
   id: string;
@@ -85,7 +86,12 @@ class DocumentServiceMongoDB {
    */
   async getAllDocuments(
     approvalFilter: DealDocumentsApprovalFilter = 'all'
-  ): Promise<{ documents: SavedDocument[]; totalCount: number; approvalFilter: DealDocumentsApprovalFilter }> {
+  ): Promise<{
+    documents: SavedDocument[];
+    totalCount: number;
+    approvalFilter: DealDocumentsApprovalFilter;
+    scope?: DocumentListScope;
+  }> {
     try {
       console.log('📥 Fetching documents from MongoDB...');
 
@@ -127,7 +133,9 @@ class DocumentServiceMongoDB {
           : approvalFilter;
 
       console.log('✅ Retrieved documents from MongoDB:', data.documents.length, '/', totalCount, 'total');
-      return { documents: data.documents, totalCount, approvalFilter: resolvedFilter };
+      const scope: DocumentListScope | undefined =
+        data.scope === 'all' || data.scope === 'own' ? data.scope : undefined;
+      return { documents: data.documents, totalCount, approvalFilter: resolvedFilter, scope };
     } catch (error) {
       console.error('❌ Error fetching documents from MongoDB:', error);
       throw error;

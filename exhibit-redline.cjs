@@ -108,8 +108,22 @@ async function saveRedlineOverExhibit(db, { filter, exhibitId, editedDocx, edito
   return { ok: true, backupVersionId, fileName: original.fileName || null, version };
 }
 
+const EXHIBIT_REDLINE_FORBIDDEN = 'Only exhibit admins or redline admins can edit exhibits for RedLine';
+
+/**
+ * Exhibit "Edit for RedLine" is open to exhibit admins and redline admins. `via` says which list
+ * granted it, so the caller can audit-log access that came only from the redline list.
+ */
+function exhibitRedlineAccess({ isExhibitAdmin = false, isRedlineAdmin = false }) {
+  if (isExhibitAdmin === true) return { ok: true, via: 'exhibit_admin' };
+  if (isRedlineAdmin === true) return { ok: true, via: 'redline_admin' };
+  return { ok: false, httpStatus: 403, error: EXHIBIT_REDLINE_FORBIDDEN };
+}
+
 module.exports = {
   CLOSED_SESSION_STATUSES,
+  EXHIBIT_REDLINE_FORBIDDEN,
+  exhibitRedlineAccess,
   EXHIBIT_LOCK_STALE_MS,
   findExhibitEditLock,
   isDocxBuffer,

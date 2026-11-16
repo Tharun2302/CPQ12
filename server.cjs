@@ -162,10 +162,19 @@ const {
   isActiveApproval,
   isTrustedWorkflow,
   requesterWorkflows,
-  redlineNeedsAuth,
-  redlineSaveDecision,
+  redlineAccessDecision,
   saveRedlineOverDocument,
 } = require('./onlyoffice-redline.cjs');
+const { createAdminEmailList } = require('./admin-email-lists.cjs');
+const {
+  documentListOwnerMatch,
+  combineMatches,
+  mayReadDocument,
+  mayDeleteDocument,
+  mayLinkDocument,
+  parseDocumentIdInput,
+  creatorStampFromLogin,
+} = require('./document-access.cjs');
 const {
   CLOSED_SESSION_STATUSES,
   findExhibitEditLock,
@@ -175,6 +184,7 @@ const {
   applyExhibitDownload,
   statusAfterForceSave,
   saveRedlineOverExhibit,
+  exhibitRedlineAccess,
 } = require('./exhibit-redline.cjs');
 
 const {
@@ -529,6 +539,7 @@ async function initializeDatabase() {
     await documentsCollection.createIndex({ generatedDate: -1 });
     await documentsCollection.createIndex({ createdAt: -1 }); // For fast sorting in GET /api/documents
     await documentsCollection.createIndex({ status: 1 });
+    await documentsCollection.createIndex({ createdByEmail: 1, createdAt: -1, generatedDate: -1 });
     console.log('✅ Documents collection ready with indexes');
     await db.collection('document_versions').createIndex({ documentId: 1, createdAt: -1 });
     try {
@@ -754,21 +765,6 @@ async function initializeDatabase() {
     console.log('   MONGODB_URI, DB_NAME environment variables');
     return false;
   }
-}
-
-// Helper to generate a friendly document ID
-function generateDocumentId(clientName = 'UnknownClient', company = 'UnknownCompany') {
-  const sanitize = (str) =>
-    String(str)
-      .replace(/[^a-zA-Z0-9]/g, '')
-      .substring(0, 20)
-      .replace(/^[0-9]/, 'C$&');
-
-  const sanitizedCompany = sanitize(company);
-  const sanitizedClient = sanitize(clientName);
-  const timestamp = Date.now().toString().slice(-5);
-
-  return `${sanitizedCompany}_${sanitizedClient}_${timestamp}`;
 }
 
 // Helper function to track daily user logins
@@ -1800,7 +1796,7 @@ app.post('/api/boldsign/create-embedded-send', async (req, res) => {
 
     try {
       // Prefer documents/:id/file if present
-      const doc = await db.collection('documents').findOne({ id: documentId });
+      const doc = await db.collection('documents').findOne({ id: String(documentId) });
       if (doc && doc.fileData) {
         resolvedDownloadUrl = `${baseAppUrl}/api/documents/${documentId}/file`;
       } else {
@@ -1893,7 +1889,10 @@ app.get('/api/auth/me', async (req, res) => {
     const isAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || (await getExhibitAdminEmailsFromDb()).some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
     const effectiveRole = user.role || (isAdmin ? 'exhibit_admin' : 'viewer');
     const isApprovalAdmin = await hasApprovalAdminAccess(user);
-    const userResponse = { ...userWithoutPassword, role: effectiveRole, isApprovalAdmin };
+    const isRedlineAdmin = await hasRedlineAdminAccess(user);
+    const isDocumentAdmin = await hasDocumentAdminAccess(user);
+    const userResponse = {
+      ...userWithoutPassword, role: effectiveRole, isApprovalAdmin, isRedlineAdmin, isDocumentAdmin };
 
     res.json({
       success: true,
@@ -1992,7 +1991,10 @@ app.post('/api/auth/microsoft', async (req, res) => {
     const isAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || dbEmails.some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
     const effectiveRole = user.role || (isAdmin ? 'exhibit_admin' : 'viewer');
     const isApprovalAdmin = await hasApprovalAdminAccess(user);
-    const userResponse = { ...userWithoutPassword, role: effectiveRole, isApprovalAdmin };
+    const isRedlineAdmin = await hasRedlineAdminAccess(user);
+    const isDocumentAdmin = await hasDocumentAdminAccess(user);
+    const userResponse = {
+      ...userWithoutPassword, role: effectiveRole, isApprovalAdmin, isRedlineAdmin, isDocumentAdmin };
 
     res.json({
       success: true,
@@ -3396,6 +3398,149 @@ app.put('/api/settings/discount-policy', discountPolicyLimiter, async (req, res)
   }
 });
 
+// ============================================
+// REDLINE ADMINS / DOCUMENT ADMINS — managed by approval admins on Admin Settings
+// ============================================
+
+// No hardcoded defaults: approval admins grant these explicitly on Admin Settings.
+const REDLINE_ADMINS = createAdminEmailList({ settingsId: 'redline_admins', envVar: 'REDLINE_ADMIN_EMAILS' });
+const DOCUMENT_ADMINS = createAdminEmailList({ settingsId: 'document_admins', envVar: 'DOCUMENT_ADMIN_EMAILS' });
+
+async function hasRedlineAdminAccess(user) {
+  return REDLINE_ADMINS.hasAccess(db, user);
+}
+
+async function hasDocumentAdminAccess(user) {
+  return DOCUMENT_ADMINS.hasAccess(db, user);
+}
+
+// Grants are rare; this only blunts scripted abuse of an admin token. One limiter per list, keyed by
+// login session (else IP), and refused or invalid requests don't use up the allowance.
+function createAdminListWriteLimiter(listName) {
+  return rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skipFailedRequests: true,
+    keyGenerator: (req) => {
+      const decoded = decodeLoginToken(readBearerToken(req));
+      const who = decoded && decoded.sid ? `sid:${decoded.sid}` : `ip:${rateLimit.ipKeyGenerator(req.ip || '')}`;
+      return `${listName}:${who}`;
+    },
+    message: { success: false, error: 'Too many requests. Try again in a minute.' },
+  });
+}
+const redlineAdminsLimiter = createAdminListWriteLimiter('redline_admins');
+const documentAdminsLimiter = createAdminListWriteLimiter('document_admins');
+
+// Reads are cheap but each one checks admin status; looser than the write limiter.
+const adminListReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests. Try again in a minute.' },
+});
+
+const REDLINE_ADMINS_FORBIDDEN = 'Only approval admins can manage redline admins';
+const DOCUMENT_ADMINS_FORBIDDEN = 'Only approval admins can manage document admins';
+
+async function sendAdminListSnapshot(res, list) {
+  res.set('Cache-Control', 'no-store');
+  res.json({ success: true, data: await list.snapshot(db) });
+}
+
+function sendAdminListResult(res, list, result, action, actor) {
+  if (!result.ok) {
+    return res.status(result.httpStatus).json({ success: false, error: result.error, code: result.code });
+  }
+  if (result.changed) {
+    logger.info('Admin list changed', {
+      source: 'admin-lists', list: list.settingsId, action, actor: actor.email, target: result.email,
+    });
+  }
+  res.set('Cache-Control', 'no-store');
+  return res.json({ success: true, data: result.data, message: result.message });
+}
+
+function sendAdminListError(res, list, e) {
+  logger.error('Admin list request failed', {
+    source: 'admin-lists', list: list.settingsId, error: e.message,
+  });
+  if (!res.headersSent) res.status(500).json({ success: false, error: 'Admin list request failed' });
+}
+
+app.get('/api/settings/redline-admins', adminListReadLimiter, async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res, REDLINE_ADMINS_FORBIDDEN);
+    if (!authUser) return;
+    await sendAdminListSnapshot(res, REDLINE_ADMINS);
+  } catch (e) {
+    sendAdminListError(res, REDLINE_ADMINS, e);
+  }
+});
+
+app.post('/api/settings/redline-admins', redlineAdminsLimiter, async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res, REDLINE_ADMINS_FORBIDDEN);
+    if (!authUser) return;
+    const result = await REDLINE_ADMINS.add(db, req.body?.email, authUser.email);
+    sendAdminListResult(res, REDLINE_ADMINS, result, 'add', authUser);
+  } catch (e) {
+    sendAdminListError(res, REDLINE_ADMINS, e);
+  }
+});
+
+app.delete('/api/settings/redline-admins/:email', redlineAdminsLimiter, async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res, REDLINE_ADMINS_FORBIDDEN);
+    if (!authUser) return;
+    const result = await REDLINE_ADMINS.remove(db, req.params.email, authUser.email);
+    sendAdminListResult(res, REDLINE_ADMINS, result, 'remove', authUser);
+  } catch (e) {
+    sendAdminListError(res, REDLINE_ADMINS, e);
+  }
+});
+
+app.get('/api/settings/document-admins', adminListReadLimiter, async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res, DOCUMENT_ADMINS_FORBIDDEN);
+    if (!authUser) return;
+    await sendAdminListSnapshot(res, DOCUMENT_ADMINS);
+  } catch (e) {
+    sendAdminListError(res, DOCUMENT_ADMINS, e);
+  }
+});
+
+app.post('/api/settings/document-admins', documentAdminsLimiter, async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res, DOCUMENT_ADMINS_FORBIDDEN);
+    if (!authUser) return;
+    const result = await DOCUMENT_ADMINS.add(db, req.body?.email, authUser.email);
+    sendAdminListResult(res, DOCUMENT_ADMINS, result, 'add', authUser);
+  } catch (e) {
+    sendAdminListError(res, DOCUMENT_ADMINS, e);
+  }
+});
+
+app.delete('/api/settings/document-admins/:email', documentAdminsLimiter, async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res, DOCUMENT_ADMINS_FORBIDDEN);
+    if (!authUser) return;
+    const result = await DOCUMENT_ADMINS.remove(db, req.params.email, authUser.email);
+    sendAdminListResult(res, DOCUMENT_ADMINS, result, 'remove', authUser);
+  } catch (e) {
+    sendAdminListError(res, DOCUMENT_ADMINS, e);
+  }
+});
+
 // DELETE remove an email from exhibit admins list. Requires exhibit_admin.
 app.delete('/api/settings/exhibit-admins/:email', async (req, res) => {
   try {
@@ -3989,6 +4134,40 @@ app.delete('/api/exhibits/:id', async (req, res) => {
 // PDF DOCUMENTS API ENDPOINTS
 // ============================================
 
+// Cheapest checks first: most opens are by the creator, so the admin and linked reads are skipped.
+async function callerMayReadDocument(doc, user) {
+  if (mayReadDocument({ doc, user })) return true;
+  const [isDocumentAdmin, isApprovalAdmin, isRedlineAdmin] = await Promise.all([
+    hasDocumentAdminAccess(user), hasApprovalAdminAccess(user), hasRedlineAdminAccess(user),
+  ]);
+  if (mayReadDocument({ doc, user, isDocumentAdmin, isApprovalAdmin, isRedlineAdmin })) return true;
+  const [linkedWorkflows, linkedEsignDocs] = await Promise.all([
+    db.collection('approval_workflows')
+      .find({ documentId: doc.id }, { projection: { creatorEmail: 1, createdBy: 1, workflowSteps: 1 } })
+      .toArray(),
+    db.collection('esign_documents')
+      .find({ source_document_id: doc.id }, { projection: { uploaded_by: 1, requested_by_email: 1 } })
+      .toArray(),
+  ]);
+  return mayReadDocument({ doc, user, linkedWorkflows, linkedEsignDocs });
+}
+
+// Linking makes the caller a requester/e-sign creator of the document, which grants read and redline.
+// Returns 'missing' when no such document exists, so callers keep their old behaviour for that case.
+async function callerMayLinkDocument(documentId, user) {
+  if (typeof documentId !== 'string' || !documentId) return 'denied';
+  const doc = await db.collection('documents').findOne(
+    { id: documentId },
+    { projection: { id: 1, createdByEmail: 1 } }
+  );
+  if (!doc) return 'missing';
+  if (mayLinkDocument({ doc, user })) return 'allowed';
+  const [isDocumentAdmin, isApprovalAdmin] = await Promise.all([
+    hasDocumentAdminAccess(user), hasApprovalAdminAccess(user),
+  ]);
+  return mayLinkDocument({ doc, user, isDocumentAdmin, isApprovalAdmin }) ? 'allowed' : 'denied';
+}
+
 // Save PDF document to MongoDB (similar to template save)
 app.post('/api/documents', async (req, res) => {
   try {
@@ -4091,7 +4270,8 @@ app.post('/api/documents', async (req, res) => {
       templateData: templateData && typeof templateData === 'object' ? templateData : null,
       templateId: templateId || null,
       customLineItems: Array.isArray(customLineItems) ? customLineItems : [],
-      dateHistory: []
+      dateHistory: [],
+      ...creatorStampFromLogin(authUser),
     };
     
     // Add DOCX data if available
@@ -4143,7 +4323,8 @@ app.get('/api/documents/:id', async (req, res) => {
 
     // Exact match only: the old client/company regex fallback let a crafted ID return someone else's agreement
     const document = await db.collection('documents').findOne({ id: String(req.params.id) });
-    if (!document) {
+    // 404 rather than 403 so the route cannot be used to probe which ids exist
+    if (!document || !(await callerMayReadDocument(document, authUser))) {
       return res.status(404).json({ success: false, error: 'Document not found' });
     }
 
@@ -4217,25 +4398,33 @@ app.delete('/api/documents/:id', async (req, res) => {
     const authUser = await getAuthenticatedUser(req, res);
     if (!authUser) return;
 
+    const documentId = String(req.params.id);
     const documentsCollection = db.collection('documents');
-    const result = await documentsCollection.deleteOne({ id: req.params.id });
+    const doc = await documentsCollection.findOne({ id: documentId }, { projection: { id: 1, createdByEmail: 1 } });
+    const mayDelete = !!doc && (
+      mayDeleteDocument({ doc, user: authUser }) ||
+      mayDeleteDocument({ doc, user: authUser, isDocumentAdmin: await hasDocumentAdminAccess(authUser) })
+    );
+    if (!mayDelete) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
 
+    const result = await documentsCollection.deleteOne({ id: documentId });
     if (result.deletedCount === 0) {
       return res.status(404).json({ success: false, error: 'Document not found' });
     }
 
-    console.log('✅ Deleted document from MongoDB:', req.params.id);
+    logger.info('Document deleted', { source: 'documents', actor: authUser.email, documentId });
 
     res.json({ 
       success: true, 
       message: 'Document deleted successfully' 
     });
   } catch (error) {
-    console.error('❌ Error deleting document:', error);
+    logger.error('Document delete failed', { source: 'documents', error: error.message });
     res.status(500).json({ 
       success: false, 
-      error: 'Failed to delete document',
-      details: error.message 
+      error: 'Failed to delete document'
     });
   }
 });
@@ -5678,22 +5867,29 @@ app.get('/api/onlyoffice/result/:sessionId', (req, res) => {
 app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const { id } = req.params;
+    // Always signed in and bound: the session's file URL would otherwise serve the agreement to anyone.
+    const actor = await getAuthenticatedUser(req, res);
+    if (!actor) return;
+    const id = String(req.params.id);
     const document = await db.collection('documents').findOne({ id });
     if (!document) return res.status(404).json({ success: false, error: 'Document not found' });
 
-    // Redlining a document under active approval edits what the approvers review, so only the
-    // requester may do it. /persist-to-document re-checks this when the edit is saved.
+    // Redlining edits what approvers review, so only the requester or a redline admin may do it
+    // (creator or redline admin when there is no approval). /persist-to-document re-checks this.
     const linkedWorkflows = await db.collection('approval_workflows').find({ documentId: id }).toArray();
     const activeWorkflows = linkedWorkflows.filter(isActiveApproval);
-    let editorEmail = null;
-    if (linkedWorkflows.length) {
-      const actor = await getAuthenticatedUser(req, res);
-      if (!actor) return; // 401 already sent
-      const decision = redlineSaveDecision({ session: { workflowId: null }, linkedWorkflows, actor });
-      if (!decision.ok) return res.status(decision.httpStatus).json({ success: false, error: decision.error });
-      editorEmail = normalizeEmail(actor.email);
+    const isRedlineAdmin = await hasRedlineAdminAccess(actor);
+    const decision = redlineAccessDecision({
+      session: { workflowId: null }, linkedWorkflows, doc: document, actor, isRedlineAdmin,
+    });
+    if (!decision.ok) return res.status(decision.httpStatus).json({ success: false, error: decision.error });
+    if (decision.adminOverride) {
+      logger.info('Redline admin override', {
+        source: 'redline', stage: 'start', actor: actor.email, documentId: id,
+        workflowIds: linkedWorkflows.map((w) => w.id),
+      });
     }
+    const editorEmail = normalizeEmail(actor.email);
 
     const toBuf = (fd) => {
       if (!fd) return null;
@@ -5769,7 +5965,7 @@ app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => 
     res.json({ success: true, sessionId, editorUrl: ONLYOFFICE_PUBLIC_URL, config, hasActiveApprovalWorkflow: activeWorkflows.length > 0 });
   } catch (e) {
     console.error('❌ onlyoffice start-session-from-document error:', e);
-    res.status(500).json({ success: false, error: e.message });
+    res.status(500).json({ success: false, error: 'Failed to open the editor' });
   }
 });
 
@@ -5777,9 +5973,10 @@ app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => 
 // collection, overwriting both the PDF (fileData) and the Word copy (docxFileData).
 // Re-sends the current approver their approval email with the edited PDF, since the copy they
 // were emailed earlier is now stale. Best-effort: returns { role, email } once queued, or null.
-async function notifyCurrentApproverOfRedline(workflow, actor) {
+async function notifyCurrentApproverOfRedline(workflow, actor, byRedlineAdmin = false) {
   try {
-    const editor = escapeHtml(actor?.name || actor?.email || 'The requester');
+    const editorName = actor?.name || actor?.email || 'The requester';
+    const editor = escapeHtml(byRedlineAdmin ? `${editorName} (redline admin)` : editorName);
     const banner = `<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 18px;font-family:Arial,sans-serif;font-size:14px;color:#92400e;line-height:1.5">
       ✏️ <strong>Document updated:</strong> ${editor} edited <strong>${escapeHtml(workflow.documentId)}</strong> during the approval. The attached PDF is the latest version — please review this one, not the copy you received earlier.
     </div>`;
@@ -5800,9 +5997,13 @@ async function notifyCurrentApproverOfRedline(workflow, actor) {
 }
 
 app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
-  const s = onlyofficeSessions.get(req.params.sessionId);
+  let s = null;
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    // Login first, so an anonymous caller learns nothing about which session ids exist
+    const actor = await getAuthenticatedUser(req, res);
+    if (!actor) return;
+    s = onlyofficeSessions.get(req.params.sessionId);
     if (!s) return res.status(404).json({ success: false, error: 'Session not found' });
     if (!s.documentId) return res.status(400).json({ success: false, error: 'Session is not bound to a document' });
 
@@ -5814,14 +6015,18 @@ app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
     const linkedWorkflows = await db.collection('approval_workflows').find({ documentId: s.documentId }).toArray();
     const activeWorkflows = linkedWorkflows.filter(isActiveApproval);
 
-    // Identity comes from the verified JWT, never the body — a client-supplied email could name anyone.
-    let actor = null;
-    if (redlineNeedsAuth(s, linkedWorkflows)) {
-      actor = await getAuthenticatedUser(req, res);
-      if (!actor) return; // 401 already sent
-    }
-    const decision = redlineSaveDecision({ session: s, linkedWorkflows, actor });
+    // Identity comes from the verified JWT (checked above), never the body.
+    // Admin status and the creator are read live, so someone removed mid-edit is refused at save.
+    const isRedlineAdmin = await hasRedlineAdminAccess(actor);
+    const doc = await db.collection('documents').findOne({ id: s.documentId }, { projection: { createdByEmail: 1 } });
+    const decision = redlineAccessDecision({ session: s, linkedWorkflows, doc, actor, isRedlineAdmin });
     if (!decision.ok) return res.status(decision.httpStatus).json({ success: false, error: decision.error });
+    if (decision.adminOverride) {
+      logger.info('Redline admin override', {
+        source: 'redline', stage: 'save', actor: actor.email, documentId: s.documentId,
+        workflowIds: linkedWorkflows.map((w) => w.id),
+      });
+    }
 
     // Claim the session before the first write so a double-clicked "Done" can't save twice.
     if (s.status !== 'ready') {
@@ -5846,7 +6051,7 @@ app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
 
     const notified = [];
     for (const workflow of activeWorkflows) {
-      const sent = await notifyCurrentApproverOfRedline(workflow, actor);
+      const sent = await notifyCurrentApproverOfRedline(workflow, actor, decision.adminOverride);
       if (sent) notified.push(sent.role);
     }
 
@@ -5860,17 +6065,39 @@ app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
   } catch (e) {
     if (s && s.status === 'persisting') s.status = 'ready';
     console.error('❌ onlyoffice persist-to-document error:', e);
-    res.status(500).json({ success: false, error: e.message });
+    res.status(500).json({ success: false, error: 'Failed to save the edited document' });
   }
 });
 
 // "Edit for RedLine" on the Exhibits page: open an exhibit's DOCX in OnlyOffice. Exhibit admins only,
 // and the session is bound to the admin who opened it so nobody else can save it.
+// Exhibit redline only: exhibit admins or redline admins, read live on every call. Redline admins
+// get no other exhibit-admin power, since every other exhibit route still uses getExhibitAdminUser.
+async function getExhibitRedlineUser(req, res) {
+  const user = await getAuthenticatedUser(req, res);
+  if (!user) return null;
+  const isExhibitAdmin = await hasExhibitAdminAccess(user);
+  const isRedlineAdmin = isExhibitAdmin ? false : await hasRedlineAdminAccess(user);
+  const access = exhibitRedlineAccess({ isExhibitAdmin, isRedlineAdmin });
+  if (!access.ok) {
+    res.status(access.httpStatus).json({ success: false, error: access.error });
+    return null;
+  }
+  return { user, via: access.via };
+}
+
+function logExhibitRedlineViaRedlineList(stage, actor, exhibitId) {
+  logger.info('Redline admin override', {
+    source: 'redline', target: 'exhibit', stage, actor: actor.email, exhibitId,
+  });
+}
+
 app.post('/api/onlyoffice/start-session-from-exhibit/:id', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const authUser = await getExhibitAdminUser(req, res);
-    if (!authUser) return;
+    const access = await getExhibitRedlineUser(req, res);
+    if (!access) return;
+    const authUser = access.user;
 
     const { ObjectId } = require('mongodb');
     const { id } = req.params;
@@ -5894,6 +6121,7 @@ app.post('/api/onlyoffice/start-session-from-exhibit/:id', async (req, res) => {
     }
     // The same admin reopening replaces their older editor, which can then no longer save
     if (holder && holder.status !== 'persisting') holder.status = 'closed';
+    if (access.via === 'redline_admin') logExhibitRedlineViaRedlineList('start', authUser, id);
 
     const sessionId = uuidv4();
     onlyofficeSessions.set(sessionId, {
@@ -5944,8 +6172,10 @@ app.post('/api/onlyoffice/persist-to-exhibit/:sessionId', async (req, res) => {
   let s = null;
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const authUser = await getExhibitAdminUser(req, res);
-    if (!authUser) return;
+    // Re-checked live, so someone removed from both lists mid-edit is refused here
+    const access = await getExhibitRedlineUser(req, res);
+    if (!access) return;
+    const authUser = access.user;
 
     s = onlyofficeSessions.get(req.params.sessionId);
     if (!s) return res.status(404).json({ success: false, error: 'Session not found' });
@@ -5960,6 +6190,7 @@ app.post('/api/onlyoffice/persist-to-exhibit/:sessionId', async (req, res) => {
     if (s.status !== 'ready' || !s.editedDocx) {
       return res.status(409).json({ success: false, error: 'Edited exhibit not ready yet', status: s.status });
     }
+    if (access.via === 'redline_admin') logExhibitRedlineViaRedlineList('save', authUser, s.exhibitId);
     // Claim the session before the first write so a double-clicked "Done" can't save twice
     s.status = 'persisting';
     // Read once: a late callback must not make MongoDB and the folder copy differ
@@ -6005,8 +6236,9 @@ app.post('/api/onlyoffice/persist-to-exhibit/:sessionId', async (req, res) => {
 
 // Only the admin who opened an exhibit editor may keep its lock alive or release it
 async function getOwnExhibitSession(req, res) {
-  const authUser = await getExhibitAdminUser(req, res);
-  if (!authUser) return null;
+  const access = await getExhibitRedlineUser(req, res);
+  if (!access) return null;
+  const authUser = access.user;
   const s = onlyofficeSessions.get(req.params.sessionId);
   if (!s || !s.exhibitId || normalizeEmail(authUser.email) !== s.actorEmail) {
     res.status(404).json({ success: false, error: 'Session not found' });
@@ -6507,7 +6739,7 @@ app.post('/api/send-manager-email', async (req, res) => {
       try {
         console.log('📄 Fetching document for attachment:', workflowData.documentId);
         const documentsCollection = db.collection('documents');
-        const document = await documentsCollection.findOne({ id: workflowData.documentId });
+        const document = await documentsCollection.findOne({ id: String(workflowData.documentId) });
         
         if (document && document.fileData) {
           // Convert document data to attachment
@@ -6605,7 +6837,7 @@ app.post('/api/send-team-email', async (req, res) => {
       try {
         console.log('📄 Fetching document for attachment:', workflowData.documentId);
         const documentsCollection = db.collection('documents');
-        const document = await documentsCollection.findOne({ id: workflowData.documentId });
+        const document = await documentsCollection.findOne({ id: String(workflowData.documentId) });
         
         if (document && document.fileData) {
           // Convert document data to attachment
@@ -6702,7 +6934,7 @@ app.post('/api/send-ceo-email', async (req, res) => {
       try {
         console.log('📄 Fetching document for attachment:', workflowData.documentId);
         const documentsCollection = db.collection('documents');
-        const document = await documentsCollection.findOne({ id: workflowData.documentId });
+        const document = await documentsCollection.findOne({ id: String(workflowData.documentId) });
         
         if (document && document.fileData) {
           // Convert document data to attachment
@@ -6799,7 +7031,7 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
       try {
         console.log('📄 Fetching document for attachment:', workflowData.documentId);
         const documentsCollection = db.collection('documents');
-        const document = await documentsCollection.findOne({ id: workflowData.documentId });
+        const document = await documentsCollection.findOne({ id: String(workflowData.documentId) });
         
         if (document && document.fileData) {
           // Convert document data to attachment
@@ -6990,7 +7222,8 @@ app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
       },
       status: 'active',
       createdAt: new Date().toISOString(),
-      generatedDate: new Date().toISOString()
+      generatedDate: new Date().toISOString(),
+      ...creatorStampFromLogin(authUser),
     };
     
     await db.collection('documents').insertOne(document);
@@ -7585,8 +7818,15 @@ app.post('/api/esign/documents/from-approval', async (req, res) => {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
     const user = await getAuthenticatedUser(req, res);
     if (!user) return;
-    const { documentId, workflowId, requested_by_name: requestedByNameBody } = req.body || {};
-    if (!documentId || typeof documentId !== 'string') return res.status(400).json({ success: false, error: 'documentId is required' });
+    const { documentId: rawDocumentId, workflowId, requested_by_name: requestedByNameBody } = req.body || {};
+    const documentIdInput = parseDocumentIdInput(rawDocumentId);
+    if (!documentIdInput.ok || !documentIdInput.value) {
+      return res.status(400).json({ success: false, error: 'documentId is required' });
+    }
+    const documentId = documentIdInput.value;
+    if (workflowId !== undefined && workflowId !== null && typeof workflowId !== 'string') {
+      return res.status(400).json({ success: false, error: 'workflowId must be a string' });
+    }
 
     const linkId = typeof workflowId === 'string' ? workflowId.trim() : '';
     let workflow = null;
@@ -7603,6 +7843,13 @@ app.post('/api/esign/documents/from-approval', async (req, res) => {
       }
     }
 
+    // Without an approval verified above, only the document's owner or an admin may e-sign it.
+    if (!workflow && (await callerMayLinkDocument(documentId, user)) === 'denied') {
+      logger.warn('E-sign from approval refused: document not owned by caller', {
+        source: 'esign-from-approval', userId: user.id,
+      });
+      return res.status(404).json({ success: false, error: 'Approval document not found' });
+    }
     const document = await db.collection('documents').findOne({ id: documentId });
     if (!document) return res.status(404).json({ success: false, error: 'Approval document not found' });
 
@@ -11389,8 +11636,8 @@ app.post('/api/documents/test', async (req, res) => {
       }
     ];
 
-    // Insert test documents
-    const result = await db.collection('documents').insertMany(testDocuments);
+    const creatorStamp = creatorStampFromLogin(authUser);
+    const result = await db.collection('documents').insertMany(testDocuments.map((doc) => ({ ...doc, ...creatorStamp })));
 
     console.log(`✅ Created ${result.insertedCount} test documents`);
 
@@ -11651,6 +11898,22 @@ app.post('/api/approval-workflows', async (req, res) => {
     }
     if (technicalApproverGuard.isSigninEnforced(process.env) && Array.isArray(workflowData.workflowSteps)) {
       workflowData.workflowSteps = technicalApproverGuard.withPendingTechnicalStep(workflowData.workflowSteps);
+    }
+    const documentIdInput = parseDocumentIdInput(workflowData.documentId);
+    if (!documentIdInput.ok) {
+      return res.status(400).json({
+        success: false, error: 'documentId must be a document id', code: 'INVALID_DOCUMENT_ID',
+      });
+    }
+    if (documentIdInput.value) workflowData.documentId = documentIdInput.value;
+    // A missing document is refused too, so nobody can pre-link a predictable future id.
+    // 404 either way so this cannot be used to probe which document ids exist.
+    const linkCheck = documentIdInput.value ? await callerMayLinkDocument(documentIdInput.value, actor) : 'allowed';
+    if (linkCheck !== 'allowed') {
+      logger.warn('Workflow create refused: document not owned by caller', {
+        source: 'workflow-create', userId: actor.id,
+      });
+      return res.status(404).json({ success: false, error: 'Document not found' });
     }
     if (workflowData.esignDocumentId !== undefined && workflowData.esignDocumentId !== null && workflowData.esignDocumentId !== '') {
       let esignDoc = null;
@@ -12449,11 +12712,17 @@ app.get('/api/documents', async (req, res) => {
             : {}
           : {};
 
-    const totalCount = await db.collection('documents').countDocuments(approvalMatch);
+    // Non-admins see only what they created; the same filter feeds the count and the page.
+    const isDocumentAdmin = await hasDocumentAdminAccess(authUser);
+    const ownerMatch = documentListOwnerMatch({ user: authUser, isDocumentAdmin });
+    const listMatch = combineMatches(approvalMatch, ownerMatch);
 
+    const totalCount = await db.collection('documents').countDocuments(listMatch);
+
+    // $match before $project so the createdByEmail index can be used
     const pipeline = [
+      ...(Object.keys(listMatch).length ? [{ $match: listMatch }] : []),
       { $project: DOCUMENTS_LIST_PROJECTION },
-      ...(Object.keys(approvalMatch).length ? [{ $match: approvalMatch }] : []),
       { $sort: { createdAt: -1, generatedDate: -1 } },
       { $skip: skip },
       ...(listUnlimited ? [] : [{ $limit: listLimit }]),
@@ -12484,188 +12753,11 @@ app.get('/api/documents', async (req, res) => {
       count: serializedDocuments.length,
       totalCount,
       approvalFilter,
+      scope: isDocumentAdmin ? 'all' : 'own',
       limited: !listUnlimited && serializedDocuments.length >= listLimit && totalCount > serializedDocuments.length,
     });
   } catch (error) {
     console.error('❌ Error fetching documents:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-// Save a new document
-app.post('/api/documents', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({
-        success: false,
-        error: 'Database not available',
-      });
-    }
-
-    const payload = req.body || {};
-
-    if (!payload.fileName || !payload.fileData) {
-      return res.status(400).json({
-        success: false,
-        error: 'fileName and fileData are required',
-      });
-    }
-
-    const nowIso = new Date().toISOString();
-
-    const documentId =
-      payload.id ||
-      generateDocumentId(payload.clientName || 'UnknownClient', payload.company || 'UnknownCompany');
-
-    const documentToSave = {
-      ...payload,
-      id: documentId,
-      status: payload.status || 'active',
-      createdAt: payload.createdAt || nowIso,
-      generatedDate: payload.generatedDate || nowIso,
-    };
-
-    await db.collection('documents').updateOne(
-      { id: documentId },
-      { $set: documentToSave },
-      { upsert: true }
-    );
-
-    const { fileData, ...safeDoc } = documentToSave;
-
-    res.json({
-      success: true,
-      documentId,
-      document: safeDoc,
-    });
-  } catch (error) {
-    console.error('❌ Error saving document:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-// Get a base64 preview for a document
-app.get('/api/documents/:id/preview', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({
-        success: false,
-        error: 'Database not available',
-      });
-    }
-
-    const { id } = req.params;
-    const doc = await db.collection('documents').findOne({ id });
-
-    if (!doc || !doc.fileData) {
-      // Try smart search as fallback if exact ID doesn't match
-      console.log('⚠️ Exact ID not found, attempting smart search...');
-      
-      // Extract client and company from ID pattern: Company_Client_Timestamp
-      const parts = id.split('_');
-      if (parts.length >= 2) {
-        const sanitizeForSearch = (str) => {
-          if (!str) return null;
-          // Remove numbers and special chars, keep letters
-          return str.replace(/[0-9]/g, '').replace(/[^a-zA-Z]/g, ' ').trim();
-        };
-        
-        const possibleCompany = sanitizeForSearch(parts[0]);
-        const possibleClient = sanitizeForSearch(parts[1]);
-        
-        if (possibleCompany && possibleClient) {
-          console.log('🔍 Searching by:', { company: possibleCompany, client: possibleClient });
-          const searchQuery = {
-            $or: [
-              { company: { $regex: possibleCompany, $options: 'i' } },
-              { clientName: { $regex: possibleClient, $options: 'i' } }
-            ]
-          };
-          
-          const matchingDocs = await db.collection('documents')
-            .find(searchQuery)
-            .sort({ createdAt: -1 })
-            .limit(1)
-            .toArray();
-          
-          if (matchingDocs.length > 0) {
-            const matchedDoc = matchingDocs[0];
-            console.log(`✅ Found matching document: ${matchedDoc.id} (searched for: ${id})`);
-            
-            // Return the matched document
-            const dataUrl = typeof matchedDoc.fileData === 'string' 
-              ? `data:application/pdf;base64,${matchedDoc.fileData}`
-              : `data:application/pdf;base64,${Buffer.from(matchedDoc.fileData).toString('base64')}`;
-            
-            return res.json({
-              success: true,
-              dataUrl,
-              fileName: matchedDoc.fileName || 'document.pdf',
-              documentId: matchedDoc.id,
-              originalSearchedId: id,
-              matched: true
-            });
-          }
-        }
-      }
-      
-      return res.status(404).json({
-        success: false,
-        error: 'Document not found',
-      });
-    }
-
-    const dataUrl = typeof doc.fileData === 'string'
-      ? `data:application/pdf;base64,${doc.fileData}`
-      : `data:application/pdf;base64,${Buffer.from(doc.fileData).toString('base64')}`;
-
-    res.json({
-      success: true,
-      dataUrl,
-      fileName: doc.fileName || 'document.pdf',
-      documentId: id,
-    });
-  } catch (error) {
-    console.error('❌ Error generating document preview:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-// Delete a document
-app.delete('/api/documents/:id', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({
-        success: false,
-        error: 'Database not available',
-      });
-    }
-
-    const { id } = req.params;
-    const result = await db.collection('documents').deleteOne({ id });
-
-    if (result.deletedCount === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'Document not found',
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'Document deleted successfully',
-    });
-  } catch (error) {
-    console.error('❌ Error deleting document:', error);
     res.status(500).json({
       success: false,
       error: error.message,

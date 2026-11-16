@@ -96,16 +96,29 @@ describe.each(LOCKED)('$method $path requires $helper', ({ method, path: routePa
 
 });
 
-describe('dead duplicate registrations of POST/DELETE /api/documents', () => {
-  it('the live (first) registrations come before the duplicates and both require login', () => {
-    const posts = [...serverSrc.matchAll(/\napp\.post\(\s*'\/api\/documents'\s*,/g)];
-    const deletes = [...serverSrc.matchAll(/\napp\.delete\(\s*'\/api\/documents\/:id'\s*,/g)];
-    expect(posts.length).toBeGreaterThanOrEqual(1);
-    expect(deletes.length).toBeGreaterThanOrEqual(1);
-    const firstPost = serverSrc.slice(posts[0].index! + 1, serverSrc.indexOf('\napp.', posts[0].index! + 2));
-    const firstDelete = serverSrc.slice(deletes[0].index! + 1, serverSrc.indexOf('\napp.', deletes[0].index! + 2));
-    expect(firstPost).toContain('await getAuthenticatedUser(req, res)');
-    expect(firstDelete).toContain('await getAuthenticatedUser(req, res)');
+describe('POST/DELETE /api/documents and GET :id/preview are registered once', () => {
+  it('the dead duplicate copies (one spread the request body, so it allowed creator spoofing) are gone', () => {
+    expect([...serverSrc.matchAll(/\napp\.post\(\s*'\/api\/documents'\s*,/g)]).toHaveLength(1);
+    expect([...serverSrc.matchAll(/\napp\.delete\(\s*'\/api\/documents\/:id'\s*,/g)]).toHaveLength(1);
+    expect([...serverSrc.matchAll(/\napp\.get\(\s*'\/api\/documents\/:id\/preview'\s*,/g)]).toHaveLength(1);
+    expect(routeSource('post', '/api/documents')).toContain('await getAuthenticatedUser(req, res)');
+    expect(routeSource('delete', '/api/documents/:id')).toContain('await getAuthenticatedUser(req, res)');
+  });
+});
+
+describe('GET and DELETE /api/documents/:id are scoped to people with access', () => {
+  it('GET checks read access and answers 404 (not 403) for strangers', () => {
+    const route = routeSource('get', '/api/documents/:id');
+    expect(route).toMatch(/if \(!document \|\| !\(await callerMayReadDocument\(document, authUser\)\)\) \{\s*return res\.status\(404\)/);
+    expect(route).not.toMatch(/status\(403\)/);
+  });
+
+  it('DELETE allows only the creator or a document admin, answers 404 otherwise, and is audit logged', () => {
+    const route = routeSource('delete', '/api/documents/:id');
+    expect(route).toContain('mayDeleteDocument({ doc, user: authUser, isDocumentAdmin: await hasDocumentAdminAccess(authUser) })');
+    expect(route.indexOf('if (!mayDelete)')).toBeLessThan(route.indexOf('deleteOne('));
+    expect(route).toContain("logger.info('Document deleted'");
+    expect(route).not.toMatch(/status\(403\)|details:\s*error\.message/);
   });
 });
 
@@ -146,6 +159,9 @@ describe('routes that must stay open are unchanged', () => {
     ['get', '/api/esign/documents/:id/recipients'],
     // Signers download right after signing from their email link, with no login
     ['get', '/api/esign/documents/:id/file'],
+    // Approvers open these from emailed portal links without signing in; e-sign prepare uses /file
+    ['get', '/api/documents/:id/preview'],
+    ['get', '/api/documents/:id/file'],
   ];
 
   it.each(OPEN)('%s %s calls no auth helper', (method, routePath) => {

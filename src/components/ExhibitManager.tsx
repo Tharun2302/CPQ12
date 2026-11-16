@@ -264,6 +264,7 @@ export function buildFolderGroups(list: Exhibit[]): ExhibitFolder[] {
 type ExhibitCardProps = {
   exhibit: Exhibit;
   canManageExhibits: boolean;
+  canRedlineExhibits: boolean;
   downloadingExhibitId: string | null;
   onView: (exhibit: Exhibit) => void;
   onDownload: (exhibit: Exhibit) => void;
@@ -272,7 +273,7 @@ type ExhibitCardProps = {
   onDelete: (exhibit: Exhibit) => void;
 };
 
-function ExhibitCard({ exhibit, canManageExhibits, downloadingExhibitId, onView, onDownload, onEdit, onRedline, onDelete }: ExhibitCardProps) {
+function ExhibitCard({ exhibit, canManageExhibits, canRedlineExhibits, downloadingExhibitId, onView, onDownload, onEdit, onRedline, onDelete }: ExhibitCardProps) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
       <div className="flex justify-between items-start mb-2">
@@ -314,22 +315,26 @@ function ExhibitCard({ exhibit, canManageExhibits, downloadingExhibitId, onView,
           Download
         </button>
         {canManageExhibits && (
+          <button
+            onClick={() => onEdit(exhibit)}
+            className="flex-1 min-w-[90px] flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors text-sm"
+          >
+            <Edit className="w-4 h-4" />
+            Edit
+          </button>
+        )}
+        {canRedlineExhibits && (
+          <button
+            onClick={() => onRedline(exhibit)}
+            className="flex-1 min-w-[90px] flex items-center justify-center gap-2 px-3 py-2 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors text-sm"
+            title="Edit the document text in the Word editor"
+          >
+            <PenLine className="w-4 h-4" />
+            Edit for RedLine
+          </button>
+        )}
+        {canManageExhibits && (
           <>
-            <button
-              onClick={() => onEdit(exhibit)}
-              className="flex-1 min-w-[90px] flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors text-sm"
-            >
-              <Edit className="w-4 h-4" />
-              Edit
-            </button>
-            <button
-              onClick={() => onRedline(exhibit)}
-              className="flex-1 min-w-[90px] flex items-center justify-center gap-2 px-3 py-2 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors text-sm"
-              title="Edit the document text in the Word editor"
-            >
-              <PenLine className="w-4 h-4" />
-              Edit for RedLine
-            </button>
             <button
               onClick={() => onDelete(exhibit)}
               className="flex-1 min-w-[90px] flex items-center justify-center gap-2 px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors text-sm"
@@ -364,6 +369,8 @@ interface Exhibit {
 const ExhibitManager: React.FC = () => {
   const { user } = useAuth();
   const canManageExhibits = user?.role === 'exhibit_admin';
+  // Redline admins may redline exhibits but get no other exhibit-admin buttons; the server re-checks.
+  const canRedlineExhibits = canManageExhibits || Boolean(user?.isRedlineAdmin);
 
   const [exhibits, setExhibits] = useState<Exhibit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -1491,7 +1498,9 @@ const ExhibitManager: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2">
           {!canManageExhibits && (
             <p className="text-sm text-gray-500">
-              You can view exhibits only. Only exhibit admins can add, edit, or delete.
+              {canRedlineExhibits
+                ? 'You can redline exhibits. Only exhibit admins can add, edit, or delete.'
+                : 'You can view exhibits only. Only exhibit admins can add, edit, or delete.'}
             </p>
           )}
           <DownloadAllButton
@@ -1622,6 +1631,7 @@ const ExhibitManager: React.FC = () => {
                         key={exhibit._id || exhibit.id}
                         exhibit={exhibit}
                         canManageExhibits={canManageExhibits}
+                        canRedlineExhibits={canRedlineExhibits}
                         downloadingExhibitId={downloadingExhibitId}
                         onView={handleView}
                         onDownload={handleDownload}
