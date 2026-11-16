@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 
 const authState = vi.hoisted(() => ({
-  value: { user: { email: 'other@cpq12.test', isRedlineAdmin: false } as Record<string, unknown> },
+  value: { user: { email: 'other@cpq12.test' } as Record<string, unknown> },
 }));
 
 vi.mock('../../src/hooks/useAuth', () => ({
@@ -57,11 +57,8 @@ const redlineStartCalls = () => fetchMock.mock.calls.filter(([url]) => String(ur
 beforeEach(() => {
   fetchMock = vi.fn(() => Promise.resolve({
     ok: false,
-    status: 403,
-    json: () => Promise.resolve({
-      success: false,
-      error: 'Only the requester or a redline admin can edit this document because it has an approval',
-    }),
+    status: 404,
+    json: () => Promise.resolve({ success: false, error: 'Document not found' }),
   } as Response));
   vi.stubGlobal('fetch', fetchMock);
   alertMock = vi.fn();
@@ -79,20 +76,8 @@ afterEach(() => {
 });
 
 describe('ApprovalDashboard Edit for RedLine access', () => {
-  it('locks the item for a non-requester who is not a redline admin', async () => {
-    authState.value = { user: { email: 'other@cpq12.test', isRedlineAdmin: false } };
-    const { user, item } = await openMenu();
-
-    expect(item).toHaveAttribute('aria-disabled', 'true');
-    expect(item).toHaveAttribute('title', 'Only the requester or a redline admin can edit this document');
-
-    await user.click(item);
-    expect(alertMock).toHaveBeenCalledWith('Only the requester or a redline admin can edit this document.');
-    expect(redlineStartCalls()).toHaveLength(0);
-  });
-
-  it('enables the item for a redline admin who is not the requester', async () => {
-    authState.value = { user: { email: 'other@cpq12.test', isRedlineAdmin: true } };
+  it('is enabled for any signed-in user, not just the requester', async () => {
+    authState.value = { user: { email: 'other@cpq12.test' } };
     const { user, item } = await openMenu();
 
     expect(item).toHaveAttribute('aria-disabled', 'false');
@@ -102,20 +87,29 @@ describe('ApprovalDashboard Edit for RedLine access', () => {
     expect(redlineStartCalls()).toHaveLength(1);
   });
 
-  it('enables the item for the requester', async () => {
+  it('is enabled for the requester', async () => {
     authState.value = { user: { email: 'rep@cpq12.test' } };
     const { item } = await openMenu();
     expect(item).toHaveAttribute('aria-disabled', 'false');
   });
 
-  it("shows the server's 403 reason when the editor cannot be opened", async () => {
-    authState.value = { user: { email: 'other@cpq12.test', isRedlineAdmin: true } };
+  it('is locked when nobody is signed in, and asks them to sign in', async () => {
+    authState.value = { user: {} };
+    const { user, item } = await openMenu();
+
+    expect(item).toHaveAttribute('aria-disabled', 'true');
+    expect(item).toHaveAttribute('title', 'Sign in to edit this document');
+    await user.click(item);
+    expect(alertMock).toHaveBeenCalledWith('Sign in to edit this document.');
+    expect(redlineStartCalls()).toHaveLength(0);
+  });
+
+  it("shows the server's reason when the editor cannot be opened", async () => {
+    authState.value = { user: { email: 'other@cpq12.test' } };
     const { user, item } = await openMenu();
 
     await act(async () => { await user.click(item); });
 
-    expect(alertMock).toHaveBeenCalledWith(
-      'Only the requester or a redline admin can edit this document because it has an approval',
-    );
+    expect(alertMock).toHaveBeenCalledWith('Document not found');
   });
 });

@@ -179,7 +179,6 @@ const ApprovalDashboard: React.FC = () => {
   const { user } = useAuth();
   const showStandaloneBackLink = location.pathname !== '/approval';
   const userIsApprovalAdmin = Boolean((user as any)?.isApprovalAdmin);
-  const userIsRedlineAdmin = Boolean(user?.isRedlineAdmin);
   const currentUserEmail = String((user as any)?.email || '').trim().toLowerCase();
 
   /** Only the requester (workflow creator) may proceed to e-sign, reset, or send reminders. */
@@ -958,7 +957,8 @@ const ApprovalDashboard: React.FC = () => {
                 const createdAt = workflow.createdAt ? new Date(workflow.createdAt) : null;
                 const canManage = isWorkflowCreator(workflow);
                 const canCopyLink = canManage || userIsApprovalAdmin;
-                const canRedline = canManage || userIsRedlineAdmin;
+                // Any signed-in user may redline an agreement; the server requires the login too
+                const canRedline = Boolean(currentUserEmail);
 
                 const teamStep = getStep(workflow, 'Team Approval');
                 const technicalStep = getStep(workflow, 'Technical Team');
@@ -1153,11 +1153,11 @@ const ApprovalDashboard: React.FC = () => {
                                   {workflow.documentId && (
                                     <button
                                       type="button"
-                                      onClick={() => { setOpenMenuId(null); if (!canRedline) { alert('Only the requester or a redline admin can edit this document.'); return; } handleOpenRedline(String(workflow.documentId)); }}
+                                      onClick={() => { setOpenMenuId(null); if (!canRedline) { alert('Sign in to edit this document.'); return; } handleOpenRedline(String(workflow.documentId)); }}
                                       disabled={canRedline && isStartingRedline === String(workflow.documentId)}
                                       aria-disabled={!canRedline}
                                       className={canRedline ? enabledItemCls : lockedItemCls}
-                                      title={canRedline ? 'Open the Word editor to redline this document' : 'Only the requester or a redline admin can edit this document'}
+                                      title={canRedline ? 'Open the Word editor to redline this document' : 'Sign in to edit this document'}
                                     >
                                       {canRedline && isStartingRedline === String(workflow.documentId)
                                         ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" />

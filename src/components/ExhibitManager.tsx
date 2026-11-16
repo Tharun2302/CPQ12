@@ -16,8 +16,6 @@ import {
   Eye,
   Download,
   Info,
-  Shield,
-  UserPlus,
   PenLine
 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
@@ -367,9 +365,8 @@ interface Exhibit {
 
 const ExhibitManager: React.FC = () => {
   const { user } = useAuth();
-  const canManageExhibitAdmins = user?.role === 'exhibit_admin';
-  // Redline admins may change exhibits too, but not manage the exhibit-admin list; the server re-checks.
-  const canManageExhibits = canManageExhibitAdmins || Boolean(user?.isRedlineAdmin);
+  // The exhibit-admin list itself is managed by approval admins on Admin Settings
+  const canManageExhibits = user?.role === 'exhibit_admin';
 
   const [exhibits, setExhibits] = useState<Exhibit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -399,15 +396,6 @@ const ExhibitManager: React.FC = () => {
   const [filterAgreement, setFilterAgreement] = useState<string>('');
   // Track EXPANDED ids so folders added later default to collapsed
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-
-  // Exhibit Admins modal (only used when canManageExhibitAdmins)
-  const [showExhibitAdminsModal, setShowExhibitAdminsModal] = useState(false);
-  const [adminEmails, setAdminEmails] = useState<string[]>([]);
-  const [adminEmailsLoading, setAdminEmailsLoading] = useState(false);
-  const [adminEmailsError, setAdminEmailsError] = useState<string | null>(null);
-  const [newAdminEmail, setNewAdminEmail] = useState('');
-  const [addingAdmin, setAddingAdmin] = useState(false);
-  const [removingAdmin, setRemovingAdmin] = useState<string | null>(null);
 
   // Upload form state
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -561,84 +549,6 @@ const ExhibitManager: React.FC = () => {
       setIsLoading(false);
     }
   };
-
-  const fetchAdminEmails = async () => {
-    try {
-      setAdminEmailsLoading(true);
-      setAdminEmailsError(null);
-      const res = await fetch(`${BACKEND_URL}/api/settings/exhibit-admins`, { headers: getAuthHeaders() });
-      const data = await res.json();
-      if (!res.ok) {
-        setAdminEmailsError(data.error || 'Failed to load list');
-        setAdminEmails([]);
-        return;
-      }
-      setAdminEmails(data.emails || []);
-    } catch {
-      setAdminEmailsError('Failed to load exhibit admins');
-      setAdminEmails([]);
-    } finally {
-      setAdminEmailsLoading(false);
-    }
-  };
-
-  const handleAddAdmin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const email = newAdminEmail.trim();
-    if (!email || !email.includes('@')) {
-      setAdminEmailsError('Please enter a valid email');
-      return;
-    }
-    setAddingAdmin(true);
-    setAdminEmailsError(null);
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/settings/exhibit-admins`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ email }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setAdminEmailsError(data.error || 'Failed to add');
-        return;
-      }
-      setAdminEmails(data.emails || []);
-      setNewAdminEmail('');
-    } catch {
-      setAdminEmailsError('Failed to add email');
-    } finally {
-      setAddingAdmin(false);
-    }
-  };
-
-  const handleRemoveAdmin = async (email: string) => {
-    setRemovingAdmin(email);
-    setAdminEmailsError(null);
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/settings/exhibit-admins/${encodeURIComponent(email)}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setAdminEmailsError(data.error || 'Failed to remove');
-        return;
-      }
-      setAdminEmails(data.emails || []);
-    } catch {
-      setAdminEmailsError('Failed to remove email');
-    } finally {
-      setRemovingAdmin(null);
-    }
-  };
-
-  useEffect(() => {
-    if (canManageExhibitAdmins) fetchAdminEmails();
-  }, [canManageExhibitAdmins]);
-
-  useEffect(() => {
-    if (showExhibitAdminsModal && canManageExhibitAdmins) fetchAdminEmails();
-  }, [showExhibitAdminsModal]);
 
   // Handle file upload - manual only; no auto-detection from filename
   const handleFileSelect = (file: File) => {
@@ -1506,15 +1416,6 @@ const ExhibitManager: React.FC = () => {
             disabled={isLoading || exhibits.length === 0 || bulkProgress !== null}
             onClick={handleDownloadAll}
           />
-          {canManageExhibitAdmins && (
-            <button
-              onClick={() => setShowExhibitAdminsModal(true)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <Shield className="w-5 h-5" />
-              Exhibit Admins
-            </button>
-          )}
           {canManageExhibits && (
             <>
               <button
@@ -1643,87 +1544,6 @@ const ExhibitManager: React.FC = () => {
               </div>
             );
           })}
-        </div>
-      )}
-
-      {/* Exhibit Admins Modal */}
-      {showExhibitAdminsModal && canManageExhibitAdmins && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-          onClick={() => setShowExhibitAdminsModal(false)}
-        >
-          <div
-            className="bg-white rounded-xl border border-gray-200 shadow-lg max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-start">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  <Shield className="w-5 h-5 text-blue-600" />
-                  Exhibit Admins
-                </h3>
-                <p className="text-xs text-gray-600 mt-1">
-                  Users with these emails can add, edit, and delete exhibits. You can also set EXHIBIT_ADMIN_EMAILS in .env.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowExhibitAdminsModal(false)}
-                className="p-1 text-gray-400 hover:text-gray-600"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4 overflow-y-auto">
-              <form onSubmit={handleAddAdmin} className="flex gap-2">
-                <input
-                  type="email"
-                  value={newAdminEmail}
-                  onChange={(e) => setNewAdminEmail(e.target.value)}
-                  placeholder="email@example.com"
-                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                  disabled={addingAdmin}
-                />
-                <button
-                  type="submit"
-                  disabled={addingAdmin || !newAdminEmail.trim()}
-                  className="inline-flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                >
-                  {addingAdmin ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                  Add
-                </button>
-              </form>
-              {adminEmailsError && (
-                <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800">
-                  {adminEmailsError}
-                </div>
-              )}
-              {adminEmailsLoading ? (
-                <div className="flex justify-center py-6">
-                  <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-                </div>
-              ) : adminEmails.length === 0 ? (
-                <p className="text-gray-500 text-xs">No exhibit admins in the list yet. Add an email above or use .env.</p>
-              ) : (
-                <ul className="divide-y divide-gray-200 max-h-64 overflow-y-auto">
-                  {adminEmails.map((email) => (
-                    <li key={email} className="py-2 flex items-center justify-between gap-2">
-                      <span className="text-gray-900 text-sm truncate">{email}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveAdmin(email)}
-                        disabled={removingAdmin === email}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded disabled:opacity-50 text-sm"
-                        title="Remove"
-                      >
-                        {removingAdmin === email ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
         </div>
       )}
 

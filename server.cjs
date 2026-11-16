@@ -162,7 +162,8 @@ const {
   isActiveApproval,
   isTrustedWorkflow,
   requesterWorkflows,
-  redlineAccessDecision,
+  redlineSaveDecision,
+  actorIsWorkflowCreator,
   saveRedlineOverDocument,
 } = require('./onlyoffice-redline.cjs');
 const { createAdminEmailList } = require('./admin-email-lists.cjs');
@@ -184,7 +185,6 @@ const {
   applyExhibitDownload,
   statusAfterForceSave,
   saveRedlineOverExhibit,
-  exhibitEditorAccess,
 } = require('./exhibit-redline.cjs');
 
 const {
@@ -1886,13 +1886,12 @@ app.get('/api/auth/me', async (req, res) => {
 
     // Return user without password (ensure role for frontend: from DB, .env, or settings list)
     const { password: _, ...userWithoutPassword } = user;
-    const isAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || (await getExhibitAdminEmailsFromDb()).some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
+    const isAdmin = await hasExhibitAdminAccess(user);
     const effectiveRole = user.role || (isAdmin ? 'exhibit_admin' : 'viewer');
     const isApprovalAdmin = await hasApprovalAdminAccess(user);
-    const isRedlineAdmin = await hasRedlineAdminAccess(user);
     const isDocumentAdmin = await hasDocumentAdminAccess(user);
     const userResponse = {
-      ...userWithoutPassword, role: effectiveRole, isApprovalAdmin, isRedlineAdmin, isDocumentAdmin };
+      ...userWithoutPassword, role: effectiveRole, isApprovalAdmin, isDocumentAdmin };
 
     res.json({
       success: true,
@@ -1987,14 +1986,12 @@ app.post('/api/auth/microsoft', async (req, res) => {
 
     // Return user without password (ensure role for frontend: from DB, .env, or settings list)
     const { password: __, ...userWithoutPassword } = user;
-    const dbEmails = await getExhibitAdminEmailsFromDb();
-    const isAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || dbEmails.some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
+    const isAdmin = await hasExhibitAdminAccess(user);
     const effectiveRole = user.role || (isAdmin ? 'exhibit_admin' : 'viewer');
     const isApprovalAdmin = await hasApprovalAdminAccess(user);
-    const isRedlineAdmin = await hasRedlineAdminAccess(user);
     const isDocumentAdmin = await hasDocumentAdminAccess(user);
     const userResponse = {
-      ...userWithoutPassword, role: effectiveRole, isApprovalAdmin, isRedlineAdmin, isDocumentAdmin };
+      ...userWithoutPassword, role: effectiveRole, isApprovalAdmin, isDocumentAdmin };
 
     res.json({
       success: true,
@@ -3077,34 +3074,14 @@ app.get('/api/exhibits/:id/file', async (req, res) => {
 // EXHIBIT UPLOAD/MANAGEMENT API ENDPOINTS
 // ============================================
 
-// Helper: true if email is in EXHIBIT_ADMIN_EMAILS (.env comma-separated list). No DB update needed.
-// In .env add: EXHIBIT_ADMIN_EMAILS=user1@cloudfuze.com,user2@cloudfuze.com
-function isExhibitAdminByEnv(email) {
-  const list = process.env.EXHIBIT_ADMIN_EMAILS;
-  if (!list || typeof list !== 'string') return false;
-  const emails = list.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
-  return emails.includes((email || '').trim().toLowerCase());
-}
+// Kept on the existing settings doc so current members (stored in any letter case) keep access.
+const EXHIBIT_ADMINS = createAdminEmailList({ settingsId: 'exhibit_admins', envVar: 'EXHIBIT_ADMIN_EMAILS' });
 
-// Get exhibit admin emails stored in DB (settings collection). Used by admin UI.
-async function getExhibitAdminEmailsFromDb() {
-  if (!db) return [];
-  try {
-    const doc = await db.collection('settings').findOne({ _id: 'exhibit_admins' });
-    return Array.isArray(doc?.emails) ? doc.emails : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-// Resolve effective exhibit_admin: from DB role, .env EXHIBIT_ADMIN_EMAILS, or DB settings.exhibit_admins list
+// Effective exhibit admin: DB role, EXHIBIT_ADMIN_EMAILS, or the list managed on Admin Settings.
 async function hasExhibitAdminAccess(user) {
   if (!user) return false;
   if (user.role === 'exhibit_admin') return true;
-  if (isExhibitAdminByEnv(user.email)) return true;
-  const dbEmails = await getExhibitAdminEmailsFromDb();
-  const normalized = (user.email || '').trim().toLowerCase();
-  return dbEmails.some((e) => String(e).trim().toLowerCase() === normalized);
+  return EXHIBIT_ADMINS.hasAccess(db, user);
 }
 
 // Helper: require JWT and exhibit_admin (from DB role, .env, or settings list). Returns user or sends 401/403 and null.
@@ -3117,75 +3094,6 @@ async function getExhibitAdminUser(req, res) {
   }
   return user;
 }
-
-// Exhibit changes (upload, edit, replace, delete, redline): exhibit admins or redline admins, read
-// live on every call. Managing the exhibit-admin list stays on getExhibitAdminUser.
-async function getExhibitEditorUser(req, res) {
-  const user = await getAuthenticatedUser(req, res);
-  if (!user) return null;
-  const isExhibitAdmin = await hasExhibitAdminAccess(user);
-  const isRedlineAdmin = isExhibitAdmin ? false : await hasRedlineAdminAccess(user);
-  const access = exhibitEditorAccess({ isExhibitAdmin, isRedlineAdmin });
-  if (!access.ok) {
-    res.status(access.httpStatus).json({ success: false, error: access.error });
-    return null;
-  }
-  return { user, via: access.via };
-}
-
-function logExhibitEditViaRedlineList(action, actor, exhibitId) {
-  logger.info('Redline admin override', {
-    source: 'exhibits', action, actor: actor.email, exhibitId: exhibitId || null,
-  });
-}
-
-// ============================================
-// EXHIBIT ADMINS SETTINGS (admin UI to add/remove emails)
-// ============================================
-
-// GET list of exhibit admin emails (from DB settings). Requires exhibit_admin.
-app.get('/api/settings/exhibit-admins', async (req, res) => {
-  try {
-    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const authUser = await getExhibitAdminUser(req, res);
-    if (!authUser) return;
-    const emails = await getExhibitAdminEmailsFromDb();
-    res.json({ success: true, emails });
-  } catch (e) {
-    console.error('GET exhibit-admins error:', e);
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-// POST add an email to exhibit admins list. Requires exhibit_admin.
-app.post('/api/settings/exhibit-admins', async (req, res) => {
-  try {
-    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const authUser = await getExhibitAdminUser(req, res);
-    if (!authUser) return;
-    const { email } = req.body || {};
-    const trimmed = (email && String(email).trim()) || '';
-    if (!trimmed || !trimmed.includes('@')) {
-      return res.status(400).json({ success: false, error: 'Valid email is required' });
-    }
-    const normalized = trimmed.toLowerCase();
-    const doc = await db.collection('settings').findOne({ _id: 'exhibit_admins' });
-    const emails = Array.isArray(doc?.emails) ? doc.emails : [];
-    if (emails.map((e) => String(e).trim().toLowerCase()).includes(normalized)) {
-      return res.json({ success: true, emails, message: 'Email already in list' });
-    }
-    const updated = [...emails, trimmed];
-    await db.collection('settings').updateOne(
-      { _id: 'exhibit_admins' },
-      { $set: { emails: updated, updatedAt: new Date() } },
-      { upsert: true }
-    );
-    res.json({ success: true, emails: updated });
-  } catch (e) {
-    console.error('POST exhibit-admins error:', e);
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
 
 // ============================================
 // APPROVAL ADMINS — admins who can edit Team Approval Settings
@@ -3420,16 +3328,11 @@ app.put('/api/settings/discount-policy', discountPolicyLimiter, async (req, res)
 });
 
 // ============================================
-// REDLINE ADMINS / DOCUMENT ADMINS — managed by approval admins on Admin Settings
+// EXHIBIT ADMINS / DOCUMENT ADMINS — managed by approval admins on Admin Settings
 // ============================================
 
 // No hardcoded defaults: approval admins grant these explicitly on Admin Settings.
-const REDLINE_ADMINS = createAdminEmailList({ settingsId: 'redline_admins', envVar: 'REDLINE_ADMIN_EMAILS' });
 const DOCUMENT_ADMINS = createAdminEmailList({ settingsId: 'document_admins', envVar: 'DOCUMENT_ADMIN_EMAILS' });
-
-async function hasRedlineAdminAccess(user) {
-  return REDLINE_ADMINS.hasAccess(db, user);
-}
 
 async function hasDocumentAdminAccess(user) {
   return DOCUMENT_ADMINS.hasAccess(db, user);
@@ -3452,7 +3355,7 @@ function createAdminListWriteLimiter(listName) {
     message: { success: false, error: 'Too many requests. Try again in a minute.' },
   });
 }
-const redlineAdminsLimiter = createAdminListWriteLimiter('redline_admins');
+const exhibitAdminsLimiter = createAdminListWriteLimiter('exhibit_admins');
 const documentAdminsLimiter = createAdminListWriteLimiter('document_admins');
 
 // Reads are cheap but each one checks admin status; looser than the write limiter.
@@ -3464,7 +3367,7 @@ const adminListReadLimiter = rateLimit({
   message: { success: false, error: 'Too many requests. Try again in a minute.' },
 });
 
-const REDLINE_ADMINS_FORBIDDEN = 'Only approval admins can manage redline admins';
+const EXHIBIT_ADMINS_FORBIDDEN = 'Only approval admins can manage exhibit admins';
 const DOCUMENT_ADMINS_FORBIDDEN = 'Only approval admins can manage document admins';
 
 async function sendAdminListSnapshot(res, list) {
@@ -3492,38 +3395,38 @@ function sendAdminListError(res, list, e) {
   if (!res.headersSent) res.status(500).json({ success: false, error: 'Admin list request failed' });
 }
 
-app.get('/api/settings/redline-admins', adminListReadLimiter, async (req, res) => {
+app.get('/api/settings/exhibit-admins', adminListReadLimiter, async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const authUser = await getApprovalAdminUser(req, res, REDLINE_ADMINS_FORBIDDEN);
+    const authUser = await getApprovalAdminUser(req, res, EXHIBIT_ADMINS_FORBIDDEN);
     if (!authUser) return;
-    await sendAdminListSnapshot(res, REDLINE_ADMINS);
+    await sendAdminListSnapshot(res, EXHIBIT_ADMINS);
   } catch (e) {
-    sendAdminListError(res, REDLINE_ADMINS, e);
+    sendAdminListError(res, EXHIBIT_ADMINS, e);
   }
 });
 
-app.post('/api/settings/redline-admins', redlineAdminsLimiter, async (req, res) => {
+app.post('/api/settings/exhibit-admins', exhibitAdminsLimiter, async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const authUser = await getApprovalAdminUser(req, res, REDLINE_ADMINS_FORBIDDEN);
+    const authUser = await getApprovalAdminUser(req, res, EXHIBIT_ADMINS_FORBIDDEN);
     if (!authUser) return;
-    const result = await REDLINE_ADMINS.add(db, req.body?.email, authUser.email);
-    sendAdminListResult(res, REDLINE_ADMINS, result, 'add', authUser);
+    const result = await EXHIBIT_ADMINS.add(db, req.body?.email, authUser.email);
+    sendAdminListResult(res, EXHIBIT_ADMINS, result, 'add', authUser);
   } catch (e) {
-    sendAdminListError(res, REDLINE_ADMINS, e);
+    sendAdminListError(res, EXHIBIT_ADMINS, e);
   }
 });
 
-app.delete('/api/settings/redline-admins/:email', redlineAdminsLimiter, async (req, res) => {
+app.delete('/api/settings/exhibit-admins/:email', exhibitAdminsLimiter, async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const authUser = await getApprovalAdminUser(req, res, REDLINE_ADMINS_FORBIDDEN);
+    const authUser = await getApprovalAdminUser(req, res, EXHIBIT_ADMINS_FORBIDDEN);
     if (!authUser) return;
-    const result = await REDLINE_ADMINS.remove(db, req.params.email, authUser.email);
-    sendAdminListResult(res, REDLINE_ADMINS, result, 'remove', authUser);
+    const result = await EXHIBIT_ADMINS.remove(db, req.params.email, authUser.email);
+    sendAdminListResult(res, EXHIBIT_ADMINS, result, 'remove', authUser);
   } catch (e) {
-    sendAdminListError(res, REDLINE_ADMINS, e);
+    sendAdminListError(res, EXHIBIT_ADMINS, e);
   }
 });
 
@@ -3562,30 +3465,6 @@ app.delete('/api/settings/document-admins/:email', documentAdminsLimiter, async 
   }
 });
 
-// DELETE remove an email from exhibit admins list. Requires exhibit_admin.
-app.delete('/api/settings/exhibit-admins/:email', async (req, res) => {
-  try {
-    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const authUser = await getExhibitAdminUser(req, res);
-    if (!authUser) return;
-    const emailParam = decodeURIComponent((req.params.email || '').trim());
-    if (!emailParam) return res.status(400).json({ success: false, error: 'Email required' });
-    const doc = await db.collection('settings').findOne({ _id: 'exhibit_admins' });
-    const emails = Array.isArray(doc?.emails) ? doc.emails : [];
-    const normalized = emailParam.toLowerCase();
-    const updated = emails.filter((e) => String(e).trim().toLowerCase() !== normalized);
-    await db.collection('settings').updateOne(
-      { _id: 'exhibit_admins' },
-      { $set: { emails: updated, updatedAt: new Date() } },
-      { upsert: true }
-    );
-    res.json({ success: true, emails: updated });
-  } catch (e) {
-    console.error('DELETE exhibit-admins error:', e);
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
 // Upload new exhibit (POST)
 const { checkExhibitDuplicates, duplicateRulesForEdit, isDuplicateOverride } = require('./exhibit-duplicates.cjs');
 
@@ -3605,10 +3484,8 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
       });
     }
 
-    const editor = await getExhibitEditorUser(req, res);
-    if (!editor) return;
-    const authUser = editor.user;
-    if (editor.via === 'redline_admin') logExhibitEditViaRedlineList('upload', authUser, null);
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
 
     if (!req.file) {
       return res.status(400).json({ 
@@ -3871,10 +3748,8 @@ app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
       });
     }
 
-    const editor = await getExhibitEditorUser(req, res);
-    if (!editor) return;
-    const authUser = editor.user;
-    if (editor.via === 'redline_admin') logExhibitEditViaRedlineList('update', authUser, req.params.id);
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
 
     const { id } = req.params;
     const { ObjectId } = require('mongodb');
@@ -4101,10 +3976,8 @@ app.delete('/api/exhibits/:id', async (req, res) => {
       });
     }
 
-    const editor = await getExhibitEditorUser(req, res);
-    if (!editor) return;
-    const authUser = editor.user;
-    if (editor.via === 'redline_admin') logExhibitEditViaRedlineList('delete', authUser, req.params.id);
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
 
     const { id } = req.params;
     const { ObjectId } = require('mongodb');
@@ -4164,10 +4037,10 @@ app.delete('/api/exhibits/:id', async (req, res) => {
 // Cheapest checks first: most opens are by the creator, so the admin and linked reads are skipped.
 async function callerMayReadDocument(doc, user) {
   if (mayReadDocument({ doc, user })) return true;
-  const [isDocumentAdmin, isApprovalAdmin, isRedlineAdmin] = await Promise.all([
-    hasDocumentAdminAccess(user), hasApprovalAdminAccess(user), hasRedlineAdminAccess(user),
+  const [isDocumentAdmin, isApprovalAdmin] = await Promise.all([
+    hasDocumentAdminAccess(user), hasApprovalAdminAccess(user),
   ]);
-  if (mayReadDocument({ doc, user, isDocumentAdmin, isApprovalAdmin, isRedlineAdmin })) return true;
+  if (mayReadDocument({ doc, user, isDocumentAdmin, isApprovalAdmin })) return true;
   const [linkedWorkflows, linkedEsignDocs] = await Promise.all([
     db.collection('approval_workflows')
       .find({ documentId: doc.id }, { projection: { creatorEmail: 1, createdBy: 1, workflowSteps: 1 } })
@@ -5901,21 +5774,12 @@ app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => 
     const document = await db.collection('documents').findOne({ id });
     if (!document) return res.status(404).json({ success: false, error: 'Document not found' });
 
-    // Redlining edits what approvers review, so only the requester or a redline admin may do it
-    // (creator or redline admin when there is no approval). /persist-to-document re-checks this.
+    // Any signed-in user may redline an agreement; the session is bound to them and to the active
+    // approval, and /persist-to-document re-checks both.
     const linkedWorkflows = await db.collection('approval_workflows').find({ documentId: id }).toArray();
     const activeWorkflows = linkedWorkflows.filter(isActiveApproval);
-    const isRedlineAdmin = await hasRedlineAdminAccess(actor);
-    const decision = redlineAccessDecision({
-      session: { workflowId: null }, linkedWorkflows, doc: document, actor, isRedlineAdmin,
-    });
+    const decision = redlineSaveDecision({ session: { workflowId: null }, linkedWorkflows, actor });
     if (!decision.ok) return res.status(decision.httpStatus).json({ success: false, error: decision.error });
-    if (decision.adminOverride) {
-      logger.info('Redline admin override', {
-        source: 'redline', stage: 'start', actor: actor.email, documentId: id,
-        workflowIds: linkedWorkflows.map((w) => w.id),
-      });
-    }
     const editorEmail = normalizeEmail(actor.email);
 
     const toBuf = (fd) => {
@@ -6000,10 +5864,12 @@ app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => 
 // collection, overwriting both the PDF (fileData) and the Word copy (docxFileData).
 // Re-sends the current approver their approval email with the edited PDF, since the copy they
 // were emailed earlier is now stale. Best-effort: returns { role, email } once queued, or null.
-async function notifyCurrentApproverOfRedline(workflow, actor, byRedlineAdmin = false) {
+async function notifyCurrentApproverOfRedline(workflow, actor) {
   try {
     const editorName = actor?.name || actor?.email || 'The requester';
-    const editor = escapeHtml(byRedlineAdmin ? `${editorName} (redline admin)` : editorName);
+    // Anyone signed in may redline, so tell the approver when it wasn't the person who asked for approval
+    const notRequester = actor && !actorIsWorkflowCreator(workflow, actor);
+    const editor = escapeHtml(notRequester ? `${editorName} (not the requester)` : editorName);
     const banner = `<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 18px;font-family:Arial,sans-serif;font-size:14px;color:#92400e;line-height:1.5">
       ✏️ <strong>Document updated:</strong> ${editor} edited <strong>${escapeHtml(workflow.documentId)}</strong> during the approval. The attached PDF is the latest version — please review this one, not the copy you received earlier.
     </div>`;
@@ -6043,17 +5909,8 @@ app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
     const activeWorkflows = linkedWorkflows.filter(isActiveApproval);
 
     // Identity comes from the verified JWT (checked above), never the body.
-    // Admin status and the creator are read live, so someone removed mid-edit is refused at save.
-    const isRedlineAdmin = await hasRedlineAdminAccess(actor);
-    const doc = await db.collection('documents').findOne({ id: s.documentId }, { projection: { createdByEmail: 1 } });
-    const decision = redlineAccessDecision({ session: s, linkedWorkflows, doc, actor, isRedlineAdmin });
+    const decision = redlineSaveDecision({ session: s, linkedWorkflows, actor });
     if (!decision.ok) return res.status(decision.httpStatus).json({ success: false, error: decision.error });
-    if (decision.adminOverride) {
-      logger.info('Redline admin override', {
-        source: 'redline', stage: 'save', actor: actor.email, documentId: s.documentId,
-        workflowIds: linkedWorkflows.map((w) => w.id),
-      });
-    }
 
     // Claim the session before the first write so a double-clicked "Done" can't save twice.
     if (s.status !== 'ready') {
@@ -6078,7 +5935,7 @@ app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
 
     const notified = [];
     for (const workflow of activeWorkflows) {
-      const sent = await notifyCurrentApproverOfRedline(workflow, actor, decision.adminOverride);
+      const sent = await notifyCurrentApproverOfRedline(workflow, actor);
       if (sent) notified.push(sent.role);
     }
 
@@ -6101,9 +5958,8 @@ app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
 app.post('/api/onlyoffice/start-session-from-exhibit/:id', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const access = await getExhibitEditorUser(req, res);
-    if (!access) return;
-    const authUser = access.user;
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
 
     const { ObjectId } = require('mongodb');
     const { id } = req.params;
@@ -6127,7 +5983,6 @@ app.post('/api/onlyoffice/start-session-from-exhibit/:id', async (req, res) => {
     }
     // The same admin reopening replaces their older editor, which can then no longer save
     if (holder && holder.status !== 'persisting') holder.status = 'closed';
-    if (access.via === 'redline_admin') logExhibitEditViaRedlineList('redline-start', authUser, id);
 
     const sessionId = uuidv4();
     onlyofficeSessions.set(sessionId, {
@@ -6179,9 +6034,8 @@ app.post('/api/onlyoffice/persist-to-exhibit/:sessionId', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
     // Re-checked live, so someone removed from both lists mid-edit is refused here
-    const access = await getExhibitEditorUser(req, res);
-    if (!access) return;
-    const authUser = access.user;
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
 
     s = onlyofficeSessions.get(req.params.sessionId);
     if (!s) return res.status(404).json({ success: false, error: 'Session not found' });
@@ -6196,7 +6050,6 @@ app.post('/api/onlyoffice/persist-to-exhibit/:sessionId', async (req, res) => {
     if (s.status !== 'ready' || !s.editedDocx) {
       return res.status(409).json({ success: false, error: 'Edited exhibit not ready yet', status: s.status });
     }
-    if (access.via === 'redline_admin') logExhibitEditViaRedlineList('redline-save', authUser, s.exhibitId);
     // Claim the session before the first write so a double-clicked "Done" can't save twice
     s.status = 'persisting';
     // Read once: a late callback must not make MongoDB and the folder copy differ
@@ -6242,9 +6095,8 @@ app.post('/api/onlyoffice/persist-to-exhibit/:sessionId', async (req, res) => {
 
 // Only the admin who opened an exhibit editor may keep its lock alive or release it
 async function getOwnExhibitSession(req, res) {
-  const access = await getExhibitEditorUser(req, res);
-  if (!access) return null;
-  const authUser = access.user;
+  const authUser = await getExhibitAdminUser(req, res);
+  if (!authUser) return null;
   const s = onlyofficeSessions.get(req.params.sessionId);
   if (!s || !s.exhibitId || normalizeEmail(authUser.email) !== s.actorEmail) {
     res.status(404).json({ success: false, error: 'Session not found' });

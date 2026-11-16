@@ -16,7 +16,7 @@ function routeSource(method: string, routePath: string): string {
 }
 
 const ROUTES: Array<[string, string]> = [];
-for (const kind of ['redline-admins', 'document-admins']) {
+for (const kind of ['exhibit-admins', 'document-admins']) {
   ROUTES.push(['get', `/api/settings/${kind}`], ['post', `/api/settings/${kind}`], ['delete', `/api/settings/${kind}/:email`]);
 }
 
@@ -41,7 +41,7 @@ describe.each(ROUTES)('%s %s', (method, routePath) => {
   it('is rate limited, writes with the limiter of its own list', () => {
     const limiter = method === 'get'
       ? 'adminListReadLimiter'
-      : routePath.includes('redline') ? 'redlineAdminsLimiter' : 'documentAdminsLimiter';
+      : routePath.includes('exhibit') ? 'exhibitAdminsLimiter' : 'documentAdminsLimiter';
     expect(route).toMatch(new RegExp(`^app\\.${method}\\([^,]+,\\s*${limiter},`));
   });
 });
@@ -51,28 +51,31 @@ describe('admin-list route behaviour', () => {
     serverSrc.indexOf('const DEFAULT_APPROVAL_ADMINS'),
     serverSrc.indexOf("app.get('/api/settings/approval-admins'"),
   );
+  const exhibitListStart = serverSrc.indexOf('// Kept on the existing settings doc');
+  const exhibitListDecl = serverSrc.slice(exhibitListStart, serverSrc.indexOf('// Effective exhibit admin', exhibitListStart));
   const listBlockStart = serverSrc.indexOf('// No hardcoded defaults: approval admins grant');
-  const listRoutesEnd = serverSrc.indexOf('// DELETE remove an email from exhibit admins list');
+  const listRoutesEnd = serverSrc.indexOf('// Upload new exhibit (POST)');
   const listBlock = serverSrc.slice(listBlockStart, listRoutesEnd);
   const originalApproval = process.env.APPROVAL_ADMIN_EMAILS;
-  const originalRedline = process.env.REDLINE_ADMIN_EMAILS;
+  const originalExhibit = process.env.EXHIBIT_ADMIN_EMAILS;
 
   afterEach(() => {
     if (originalApproval === undefined) delete process.env.APPROVAL_ADMIN_EMAILS;
     else process.env.APPROVAL_ADMIN_EMAILS = originalApproval;
-    if (originalRedline === undefined) delete process.env.REDLINE_ADMIN_EMAILS;
-    else process.env.REDLINE_ADMIN_EMAILS = originalRedline;
+    if (originalExhibit === undefined) delete process.env.EXHIBIT_ADMIN_EMAILS;
+    else process.env.EXHIBIT_ADMIN_EMAILS = originalExhibit;
   });
 
   function setup() {
     process.env.APPROVAL_ADMIN_EMAILS = 'admin@test.example';
-    process.env.REDLINE_ADMIN_EMAILS = 'env@test.example';
+    process.env.EXHIBIT_ADMIN_EMAILS = 'env@test.example';
     const settings: Record<string, any> = {};
     const writes: any[] = [];
     const logs: any[] = [];
     const users: Record<string, { id: string; email: string }> = {
       'admin-id': { id: 'admin-id', email: 'admin@test.example' },
       'user-id': { id: 'user-id', email: 'user@test.example' },
+      'exhibit-id': { id: 'exhibit-id', email: 'env@test.example' },
     };
     const db = {
       collection(name: string) {
@@ -97,6 +100,7 @@ describe('admin-list route behaviour', () => {
       verify: (token: string) => {
         if (token === 'aaa.admin.ccc') return { userId: 'admin-id' };
         if (token === 'aaa.user.ccc') return { userId: 'user-id' };
+        if (token === 'aaa.exhibit.ccc') return { userId: 'exhibit-id' };
         throw new Error('invalid signature');
       },
     };
@@ -107,7 +111,7 @@ describe('admin-list route behaviour', () => {
     const rateLimit = () => (_req: unknown, _res: unknown, next: () => void) => next();
     new Function(
       'app', 'db', 'jwt', 'JWT_SECRET', 'console', 'loginSessions', 'logger', 'rateLimit', 'createAdminEmailList',
-      `${loginSessionSrc}\n${approvalHelpers}\n${listBlock}`,
+      `${loginSessionSrc}\n${approvalHelpers}\n${exhibitListDecl}\n${listBlock}`,
     )(app, db, withSession(jwt), 'test-secret', { error: () => {}, log: () => {} }, fakeLoginSessions(), logger, rateLimit, (lists as any).createAdminEmailList);
 
     const call = async (key: string, token: string | null, extra: Record<string, unknown> = {}) => {
@@ -128,8 +132,8 @@ describe('admin-list route behaviour', () => {
 
   it('no token: 401 and nothing is written', async () => {
     const { call, writes } = setup();
-    expect((await call('get /api/settings/redline-admins', null)).statusCode).toBe(401);
-    expect((await call('post /api/settings/redline-admins', null, { body: { email: 'x@y.com' } })).statusCode).toBe(401);
+    expect((await call('get /api/settings/exhibit-admins', null)).statusCode).toBe(401);
+    expect((await call('post /api/settings/exhibit-admins', null, { body: { email: 'x@y.com' } })).statusCode).toBe(401);
     expect(writes).toEqual([]);
   });
 
@@ -138,29 +142,49 @@ describe('admin-list route behaviour', () => {
     const res = await call('post /api/settings/document-admins', 'aaa.user.ccc', { body: { email: 'x@y.com' } });
     expect(res.statusCode).toBe(403);
     expect(res.body).toEqual({ success: false, error: 'Only approval admins can manage document admins' });
-    const del = await call('delete /api/settings/redline-admins/:email', 'aaa.user.ccc', { params: { email: 'env@test.example' } });
+    const del = await call('delete /api/settings/exhibit-admins/:email', 'aaa.user.ccc', { params: { email: 'env@test.example' } });
     expect(del.statusCode).toBe(403);
     expect(writes).toEqual([]);
   });
 
   it('approval admin: add, list and remove with the documented shape and an audit log', async () => {
     const { call, logs } = setup();
-    const added = await call('post /api/settings/redline-admins', 'aaa.admin.ccc', { body: { email: ' New@Test.example ' } });
+    const added = await call('post /api/settings/exhibit-admins', 'aaa.admin.ccc', { body: { email: ' New@Test.example ' } });
     expect(added.statusCode).toBe(200);
     expect(added.body).toMatchObject({
       success: true,
       message: 'Email added',
       data: { emails: ['env@test.example', 'new@test.example'], envEmails: ['env@test.example'], updatedBy: 'admin@test.example' },
     });
-    expect(logs[0]).toEqual(['Admin list changed', { source: 'admin-lists', list: 'redline_admins', action: 'add', actor: 'admin@test.example', target: 'new@test.example' }]);
+    expect(logs[0]).toEqual(['Admin list changed', { source: 'admin-lists', list: 'exhibit_admins', action: 'add', actor: 'admin@test.example', target: 'new@test.example' }]);
 
-    const listed = await call('get /api/settings/redline-admins', 'aaa.admin.ccc');
+    const listed = await call('get /api/settings/exhibit-admins', 'aaa.admin.ccc');
     expect(listed.body.data.emails).toEqual(['env@test.example', 'new@test.example']);
 
-    const removed = await call('delete /api/settings/redline-admins/:email', 'aaa.admin.ccc', { params: { email: 'new@test.example' } });
+    const removed = await call('delete /api/settings/exhibit-admins/:email', 'aaa.admin.ccc', { params: { email: 'new@test.example' } });
     expect(removed.statusCode).toBe(200);
     expect(removed.body.data.emails).toEqual(['env@test.example']);
     expect(logs[1][1]).toMatchObject({ action: 'remove', target: 'new@test.example' });
+  });
+
+  it('an exhibit admin who is not an approval admin cannot manage the exhibit-admin list (403)', async () => {
+    const { call, writes } = setup();
+    const res = await call('post /api/settings/exhibit-admins', 'aaa.exhibit.ccc', { body: { email: 'x@y.com' } });
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ success: false, error: 'Only approval admins can manage exhibit admins' });
+    expect((await call('get /api/settings/exhibit-admins', 'aaa.exhibit.ccc')).statusCode).toBe(403);
+    expect(writes).toEqual([]);
+  });
+
+  it('existing mixed-case members are listed once, lower-cased, and env members are flagged', async () => {
+    const { call, settings } = setup();
+    settings.exhibit_admins = { emails: ['Abhinav.Surattu@CloudFuze.com', 'abhinav.surattu@cloudfuze.com'] };
+    const res = await call('get /api/settings/exhibit-admins', 'aaa.admin.ccc');
+    expect(res.body.data.emails).toEqual(['env@test.example', 'abhinav.surattu@cloudfuze.com']);
+    expect(res.body.data.envEmails).toEqual(['env@test.example']);
+    const removed = await call('delete /api/settings/exhibit-admins/:email', 'aaa.admin.ccc', { params: { email: 'ABHINAV.surattu@cloudfuze.com' } });
+    expect(removed.body.data.emails).toEqual(['env@test.example']);
+    expect(settings.exhibit_admins.emails).toEqual([]);
   });
 
   it('bad email: 400 INVALID_EMAIL; env member: 409 ENV_MANAGED', async () => {
@@ -168,7 +192,7 @@ describe('admin-list route behaviour', () => {
     const bad = await call('post /api/settings/document-admins', 'aaa.admin.ccc', { body: { email: { $ne: '' } } });
     expect(bad.statusCode).toBe(400);
     expect(bad.body).toMatchObject({ success: false, code: 'INVALID_EMAIL' });
-    const env = await call('delete /api/settings/redline-admins/:email', 'aaa.admin.ccc', { params: { email: 'env@test.example' } });
+    const env = await call('delete /api/settings/exhibit-admins/:email', 'aaa.admin.ccc', { params: { email: 'env@test.example' } });
     expect(env.statusCode).toBe(409);
     expect(env.body).toMatchObject({ success: false, code: 'ENV_MANAGED' });
     expect(writes).toEqual([]);
@@ -178,21 +202,21 @@ describe('admin-list route behaviour', () => {
     const { call, settings } = setup();
     await call('post /api/settings/document-admins', 'aaa.admin.ccc', { body: { email: 'doc@test.example' } });
     expect(settings.document_admins.emails).toEqual(['doc@test.example']);
-    expect(settings.redline_admins).toBeUndefined();
+    expect(settings.exhibit_admins).toBeUndefined();
   });
 });
 
 describe('admin-list write limiters', () => {
   const src = serverSrc.slice(
     serverSrc.indexOf('function createAdminListWriteLimiter'),
-    serverSrc.indexOf('const REDLINE_ADMINS_FORBIDDEN'),
+    serverSrc.indexOf('const EXHIBIT_ADMINS_FORBIDDEN'),
   );
 
   it('keep 20/min, key by list plus session or IP, and do not count failed requests', () => {
     expect(src).toContain('max: 20,');
     expect(src).toContain('skipFailedRequests: true,');
     expect(src).toContain('return `${listName}:${who}`;');
-    expect(src).toContain("createAdminListWriteLimiter('redline_admins')");
+    expect(src).toContain("createAdminListWriteLimiter('exhibit_admins')");
     expect(src).toContain("createAdminListWriteLimiter('document_admins')");
   });
 });
@@ -200,13 +224,20 @@ describe('admin-list write limiters', () => {
 describe('auth responses carry the new admin flags', () => {
   it.each([['get', '/api/auth/me'], ['post', '/api/auth/microsoft']])('%s %s', (method, routePath) => {
     const route = routeSource(method, routePath);
-    expect(route).toContain('const isRedlineAdmin = await hasRedlineAdminAccess(user);');
+    expect(route).not.toMatch(/isRedlineAdmin|hasRedlineAdminAccess/);
+    expect(route).toContain('const isAdmin = await hasExhibitAdminAccess(user);');
     expect(route).toContain('const isDocumentAdmin = await hasDocumentAdminAccess(user);');
-    expect(route).toMatch(/userResponse = \{[^}]*isApprovalAdmin, isRedlineAdmin, isDocumentAdmin \}/);
+    expect(route).toMatch(/userResponse = \{[^}]*isApprovalAdmin, isDocumentAdmin \}/);
   });
 
-  it('approval admins are not made redline or document admins implicitly', () => {
-    const block = serverSrc.slice(serverSrc.indexOf('async function hasRedlineAdminAccess'), serverSrc.indexOf('// Grants are rare'));
-    expect(block).not.toContain('hasApprovalAdminAccess');
+  it('the redline-admin list is gone', () => {
+    expect(serverSrc).not.toMatch(/redline-admins|REDLINE_ADMIN|hasRedlineAdminAccess|isRedlineAdmin/);
+  });
+
+  it('exhibit-admin membership keeps the DB role and reads the existing exhibit_admins doc', () => {
+    const fn = serverSrc.slice(serverSrc.indexOf('async function hasExhibitAdminAccess'), serverSrc.indexOf('async function getExhibitAdminUser'));
+    expect(fn).toContain("if (user.role === 'exhibit_admin') return true;");
+    expect(fn).toContain('EXHIBIT_ADMINS.hasAccess(db, user)');
+    expect(serverSrc).toContain("createAdminEmailList({ settingsId: 'exhibit_admins', envVar: 'EXHIBIT_ADMIN_EMAILS' })");
   });
 });

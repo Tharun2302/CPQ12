@@ -316,13 +316,13 @@ describe('ExhibitManager Download All', () => {
     expect(saveAs).not.toHaveBeenCalled();
   });
 
-  it('places the button before Exhibit Admins for an exhibit admin', async () => {
+  it('places the button before Upload Exhibit for an exhibit admin', async () => {
     mockRole = 'exhibit_admin';
     await renderManager();
 
     const downloadAll = screen.getByRole('button', { name: 'Download All (3)' });
-    const admins = screen.getByRole('button', { name: /Exhibit Admins/ });
-    const order = downloadAll.compareDocumentPosition(admins);
+    const upload = screen.getByRole('button', { name: /Upload Exhibit/ });
+    const order = downloadAll.compareDocumentPosition(upload);
     expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText(/You can view exhibits only/)).toBeNull();
   });

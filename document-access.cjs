@@ -38,12 +38,12 @@ function isCreator(doc, email) {
  * create; `linkedWorkflows` / `linkedEsignDocs` are the rows pointing at this document.
  */
 function mayReadDocument({
-  doc, user, isDocumentAdmin = false, isApprovalAdmin = false, isRedlineAdmin = false,
+  doc, user, isDocumentAdmin = false, isApprovalAdmin = false,
   linkedWorkflows = [], linkedEsignDocs = [],
 }) {
   const email = normalizeEmail(user && user.email);
   if (!doc || !email) return false;
-  if (isDocumentAdmin === true || isApprovalAdmin === true || isRedlineAdmin === true) return true;
+  if (isDocumentAdmin === true || isApprovalAdmin === true) return true;
   if (isCreator(doc, email)) return true;
   if ((linkedWorkflows || []).some((w) => isWorkflowVisibleToUser(w, email))) return true;
   return (linkedEsignDocs || []).some((e) => actorIsEsignDocumentCreator(e, email));

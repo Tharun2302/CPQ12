@@ -201,7 +201,8 @@ describe('ExhibitManager folder grouping', () => {
     await renderManager();
 
     expect(screen.getByRole('button', { name: /Upload Exhibit/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Exhibit Admins/ })).toBeTruthy();
+    // The exhibit-admin list is managed on Admin Settings now
+    expect(screen.queryByRole('button', { name: /Exhibit Admins/ })).toBeNull();
 
     await user.click(folderHeader(/Slack to Teams/));
 

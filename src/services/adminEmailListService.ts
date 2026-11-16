@@ -1,7 +1,7 @@
 import { BACKEND_URL } from '../config/api';
 import { authAwareError, getAuthHeaders } from '../utils/authUtils';
 
-export type AdminEmailListKind = 'redline-admins' | 'document-admins';
+export type AdminEmailListKind = 'exhibit-admins' | 'document-admins';
 
 export interface AdminEmailList {
   emails: string[];

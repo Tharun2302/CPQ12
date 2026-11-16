@@ -46,7 +46,11 @@ describe('mayReadDocument', () => {
     expect(mayReadDocument({ doc: DOC, user: { email: 'CREATOR@cloudfuze.com' } })).toBe(true);
   });
 
-  it.each(['isDocumentAdmin', 'isApprovalAdmin', 'isRedlineAdmin'])('allows a stranger who is %s', (flag) => {
+  it('no longer treats a redline flag as read access', () => {
+    expect(mayReadDocument({ doc: DOC, user: STRANGER, isRedlineAdmin: true })).toBe(false);
+  });
+
+  it.each(['isDocumentAdmin', 'isApprovalAdmin'])('allows a stranger who is %s', (flag) => {
     expect(mayReadDocument({ doc: DOC, user: STRANGER, [flag]: true })).toBe(true);
   });
 

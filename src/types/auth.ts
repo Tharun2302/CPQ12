@@ -12,8 +12,6 @@ export interface User {
   role?: string;
   /** True if the user can edit Team Approval Settings and manage the approval-admin list. Computed server-side. */
   isApprovalAdmin?: boolean;
-  /** True if the user can use Edit for RedLine on any agreement. Server-computed hint; the server re-checks. */
-  isRedlineAdmin?: boolean;
   /** True if the Documents page lists every document instead of only the user's own. Server-computed hint. */
   isDocumentAdmin?: boolean;
 }

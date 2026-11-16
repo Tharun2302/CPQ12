@@ -50,7 +50,7 @@ function stubFetch(handler: FetchFn) {
 const isMethod = (init: RequestInit | undefined, method: string) => init?.method === method;
 
 const renderList = () => render(
-  <AdminEmailListSettings kind="redline-admins" title="Redline Admins" description="Can redline any agreement." />,
+  <AdminEmailListSettings kind="exhibit-admins" title="Exhibit Admins" description="Can add, edit, delete and redline exhibits." />,
 );
 
 const emailInput = () => screen.getByLabelText('Add email') as HTMLInputElement;
@@ -84,7 +84,7 @@ describe('AdminEmailListSettings', () => {
     stubFetch(() => respond(200, listBody(['env@example.com', 'ui@example.com'], ['env@example.com'])));
     renderList();
 
-    const list = await screen.findByRole('list', { name: 'Redline Admins list' });
+    const list = await screen.findByRole('list', { name: 'Exhibit Admins list' });
     const [envRow, uiRow] = within(list).getAllByRole('listitem');
     expect(envRow).toHaveTextContent('env@example.com');
     expect(within(envRow).getByText('Set in server config')).toBeInTheDocument();
@@ -92,7 +92,7 @@ describe('AdminEmailListSettings', () => {
     expect(within(uiRow).getByRole('button', { name: 'Remove ui@example.com' })).toBeInTheDocument();
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toMatch(/\/api\/settings\/redline-admins$/);
+    expect(String(url)).toMatch(/\/api\/settings\/exhibit-admins$/);
     expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer test-token');
     expect(screen.getByText(/Last updated by boss@example.com/)).toBeInTheDocument();
   });
@@ -179,7 +179,7 @@ describe('AdminEmailListSettings', () => {
 
     expect(await screen.findByText('No one has been added yet.')).toBeInTheDocument();
     const del = fetchMock.mock.calls.find(([, init]) => isMethod(init, 'DELETE'));
-    expect(String(del?.[0])).toMatch(/\/api\/settings\/redline-admins\/a%2Bb%40example\.com$/);
+    expect(String(del?.[0])).toMatch(/\/api\/settings\/exhibit-admins\/a%2Bb%40example\.com$/);
   });
 
   it('shows the server error when a remove is refused', async () => {
@@ -199,24 +199,24 @@ describe('AdminEmailListSettings', () => {
   });
 
   it('shows a load error such as 403', async () => {
-    stubFetch(() => respond(403, { success: false, error: 'Only approval admins can manage redline admins' }));
+    stubFetch(() => respond(403, { success: false, error: 'Only approval admins can manage exhibit admins' }));
     renderList();
 
-    expect((await screen.findByRole('alert')).textContent).toContain('Only approval admins can manage redline admins');
+    expect((await screen.findByRole('alert')).textContent).toContain('Only approval admins can manage exhibit admins');
   });
 });
 
 describe('AdminSettingsPage admin lists', () => {
-  it('shows the Redline and Document admin sections to approval admins', async () => {
+  it('shows the Exhibit and Document admin sections to approval admins', async () => {
     stubFetch(() => respond(200, listBody([])));
     render(<AdminSettingsPage />);
 
     expect(screen.getByRole('heading', { name: 'Discount Policy' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Redline Admins' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Exhibit Admins' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Document Admins' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByText('No one has been added yet.')).toHaveLength(2));
     const urls = fetchMock.mock.calls.map(([url]) => String(url));
-    expect(urls.some((u) => u.endsWith('/api/settings/redline-admins'))).toBe(true);
+    expect(urls.some((u) => u.endsWith('/api/settings/exhibit-admins'))).toBe(true);
     expect(urls.some((u) => u.endsWith('/api/settings/document-admins'))).toBe(true);
   });
 
@@ -226,7 +226,7 @@ describe('AdminSettingsPage admin lists', () => {
     render(<AdminSettingsPage />);
 
     expect(screen.getByRole('alert').textContent).toContain('Access denied');
-    expect(screen.queryByRole('heading', { name: 'Redline Admins' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Exhibit Admins' })).toBeNull();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('-admins'))).toBe(false);
   });
 });

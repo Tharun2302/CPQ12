@@ -15,7 +15,7 @@ function fakeDb(
   initial: { emails?: string[]; updatedAt?: Date; updatedBy?: string } | null = null,
   opts: { failRead?: boolean } = {},
 ) {
-  let doc: any = initial ? { _id: 'redline_admins', ...initial } : null;
+  let doc: any = initial ? { _id: 'exhibit_admins', ...initial } : null;
   const calls: Call[] = [];
   const db = {
     collection(name: string) {
@@ -54,7 +54,7 @@ function fakeDb(
 }
 
 function makeList(env: Record<string, string> = {}, maxSize?: number) {
-  return createAdminEmailList({ settingsId: 'redline_admins', envVar: 'REDLINE_ADMIN_EMAILS', env, ...(maxSize ? { maxSize } : {}) });
+  return createAdminEmailList({ settingsId: 'exhibit_admins', envVar: 'EXHIBIT_ADMIN_EMAILS', env, ...(maxSize ? { maxSize } : {}) });
 }
 
 describe('normalizeAdminEmail', () => {
@@ -94,7 +94,7 @@ describe('parseEnvEmails', () => {
 describe('hasAccess', () => {
   it('grants env members without reading the database', async () => {
     const { db, calls } = fakeDb();
-    expect(await makeList({ REDLINE_ADMIN_EMAILS: 'env@x.com' }).hasAccess(db, { email: 'ENV@x.com' })).toBe(true);
+    expect(await makeList({ EXHIBIT_ADMIN_EMAILS: 'env@x.com' }).hasAccess(db, { email: 'ENV@x.com' })).toBe(true);
     expect(calls).toEqual([]);
   });
 
@@ -105,7 +105,7 @@ describe('hasAccess', () => {
 
   it('denies everyone else, and users with no email', async () => {
     const { db } = fakeDb({ emails: ['db@x.com'] });
-    const list = makeList({ REDLINE_ADMIN_EMAILS: 'env@x.com' });
+    const list = makeList({ EXHIBIT_ADMIN_EMAILS: 'env@x.com' });
     expect(await list.hasAccess(db, { email: 'other@x.com' })).toBe(false);
     expect(await list.hasAccess(db, {})).toBe(false);
     expect(await list.hasAccess(db, null)).toBe(false);
@@ -146,7 +146,7 @@ describe('add', () => {
 
   it('treats an env member as already present', async () => {
     const { db, calls } = fakeDb();
-    const out = await makeList({ REDLINE_ADMIN_EMAILS: 'env@x.com' }).add(db, 'env@x.com', 'admin@x.com');
+    const out = await makeList({ EXHIBIT_ADMIN_EMAILS: 'env@x.com' }).add(db, 'env@x.com', 'admin@x.com');
     expect(out).toMatchObject({ ok: true, changed: false });
     expect(calls.some((c) => c.op === 'updateOne')).toBe(false);
   });
@@ -168,7 +168,7 @@ describe('add', () => {
   it('puts the cap in the write filter so concurrent adds cannot overfill the list', async () => {
     const { db, calls } = fakeDb({ emails: ['a@x.com'] });
     await makeList({}, 2).add(db, 'b@x.com', 'admin@x.com');
-    expect(calls.find((c) => c.op === 'updateOne')!.args[0]).toEqual({ _id: 'redline_admins', 'emails.1': { $exists: false } });
+    expect(calls.find((c) => c.op === 'updateOne')!.args[0]).toEqual({ _id: 'exhibit_admins', 'emails.1': { $exists: false } });
   });
 
   it('answers LIST_FULL when another add filled the list between the check and the write', async () => {
@@ -223,7 +223,7 @@ describe('remove', () => {
 
   it('refuses to remove an env-managed email (409 ENV_MANAGED)', async () => {
     const { db, calls } = fakeDb();
-    const out = await makeList({ REDLINE_ADMIN_EMAILS: 'env@x.com' }).remove(db, 'ENV@x.com', 'admin@x.com');
+    const out = await makeList({ EXHIBIT_ADMIN_EMAILS: 'env@x.com' }).remove(db, 'ENV@x.com', 'admin@x.com');
     expect(out).toMatchObject({ ok: false, httpStatus: 409, code: 'ENV_MANAGED' });
     expect(calls.some((c) => c.op === 'updateOne')).toBe(false);
   });
@@ -237,7 +237,7 @@ describe('remove', () => {
 describe('snapshot', () => {
   it('lists env members first and flags them, without duplicating a DB copy', async () => {
     const { db } = fakeDb({ emails: ['env@x.com', 'db@x.com'], updatedBy: 'admin@x.com' });
-    const out = await makeList({ REDLINE_ADMIN_EMAILS: 'env@x.com' }).snapshot(db);
+    const out = await makeList({ EXHIBIT_ADMIN_EMAILS: 'env@x.com' }).snapshot(db);
     expect(out).toEqual({ emails: ['env@x.com', 'db@x.com'], envEmails: ['env@x.com'], updatedAt: null, updatedBy: 'admin@x.com' });
   });
 });

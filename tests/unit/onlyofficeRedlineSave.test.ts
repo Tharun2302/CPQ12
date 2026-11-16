@@ -7,19 +7,13 @@ import { authAwareError, getAuthHeaders, hasUsableAuthToken } from '../../src/ut
 import { redlineSaveMessage } from '../../src/utils/redlineSaveMessage';
 
 // "Edit for RedLine" during an active approval overwrites the agreement the remaining approvers
-// review. That is only safe if the requester alone can do it, the edit can't land on an approval
+// review. Any signed-in user may do it, so it is only safe if the edit is bound to whoever opened it, the edit can't land on an approval
 // that finished meanwhile, the replaced version is kept, and approvals already given stay intact.
 
-type Decision = { ok: boolean; httpStatus?: number; error?: string; adminOverride?: boolean };
-const {
-  actorIsWorkflowCreator, redlineNeedsAuth, redlineSaveDecision, saveRedlineOverDocument,
-  redlineStartWithoutApprovalDecision, redlineAccessDecision,
-} = redline as {
+type Decision = { ok: boolean; httpStatus?: number; error?: string };
+const { actorIsWorkflowCreator, redlineSaveDecision, saveRedlineOverDocument } = redline as {
   actorIsWorkflowCreator: (workflow: unknown, actor: unknown) => boolean;
-  redlineNeedsAuth: (session: unknown, linkedWorkflows: unknown[]) => boolean;
   redlineSaveDecision: (args: Record<string, unknown>) => Decision;
-  redlineStartWithoutApprovalDecision: (args: Record<string, unknown>) => Decision;
-  redlineAccessDecision: (args: Record<string, unknown>) => Decision;
   saveRedlineOverDocument: (db: unknown, args: Record<string, unknown>) => Promise<any>;
 };
 
@@ -92,178 +86,46 @@ describe('actorIsWorkflowCreator', () => {
   });
 });
 
-describe('redlineSaveDecision', () => {
+describe('redlineSaveDecision (any signed-in user may redline an agreement)', () => {
+  const fresh = { workflowId: null, actorEmail: null };
   const openSession = { workflowId: 'wf-1', actorEmail: REQUESTER };
 
-  it('allows the requester who opened the editor under this approval', () => {
-    const out = redlineSaveDecision({ session: openSession, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: REQUESTER } });
-    expect(out.ok).toBe(true);
-  });
-
-  it('rejects anyone who is not the requester (403)', () => {
-    const out = redlineSaveDecision({ session: openSession, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: OTHER } });
-    expect(out).toMatchObject({ ok: false, httpStatus: 403 });
-  });
-
-  it('rejects a save by a different user than the one who opened the editor', () => {
-    const session = { workflowId: 'wf-1', actorEmail: 'someone.else@cloudfuze.com' };
-    const out = redlineSaveDecision({ session, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: REQUESTER } });
-    expect(out).toMatchObject({ ok: false, httpStatus: 403 });
-  });
-
-  it('refuses (409) when the approval finished while the requester was editing', () => {
-    const out = redlineSaveDecision({ session: openSession, linkedWorkflows: [], actor: { email: REQUESTER } });
-    expect(out).toMatchObject({ ok: false, httpStatus: 409 });
-    const finished = { ...ACTIVE_WORKFLOW, status: 'approved' };
-    const out2 = redlineSaveDecision({ session: openSession, linkedWorkflows: [finished], actor: { email: REQUESTER } });
-    expect(out2).toMatchObject({ ok: false, httpStatus: 409 });
-  });
-
-  it('requires the requester when an approval started after the editor was opened', () => {
-    const session = { workflowId: null, actorEmail: null };
-    expect(redlineSaveDecision({ session, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: OTHER } }).ok).toBe(false);
-    expect(redlineSaveDecision({ session, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: REQUESTER } }).ok).toBe(true);
-  });
-
-  it('stays requester-only after the approval finished (status flip cannot switch the check off)', () => {
-    const session = { workflowId: null, actorEmail: null };
+  it('lets any signed-in user start, with or without an approval on the document', () => {
+    expect(redlineSaveDecision({ session: fresh, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: OTHER } }).ok).toBe(true);
+    expect(redlineSaveDecision({ session: fresh, linkedWorkflows: [], actor: { email: OTHER } }).ok).toBe(true);
     const approved = { ...ACTIVE_WORKFLOW, status: 'approved' };
-    expect(redlineNeedsAuth(session, [approved])).toBe(true);
-    expect(redlineSaveDecision({ session, linkedWorkflows: [approved], actor: null }).ok).toBe(false);
-    expect(redlineSaveDecision({ session, linkedWorkflows: [approved], actor: { email: OTHER } })).toMatchObject({ ok: false, httpStatus: 403 });
-    expect(redlineSaveDecision({ session, linkedWorkflows: [approved], actor: { email: REQUESTER } }).ok).toBe(true);
+    expect(redlineSaveDecision({ session: fresh, linkedWorkflows: [approved], actor: { email: OTHER } }).ok).toBe(true);
   });
 
-  it('lets whoever re-sent the document after an earlier approval ended edit it', () => {
-    const session = { workflowId: null, actorEmail: null };
-    const olderDenied = { ...ACTIVE_WORKFLOW, id: 'wf-old', status: 'denied', creatorEmail: OTHER, createdAt: '2026-09-01T00:00:00Z' };
-    const newer = { ...ACTIVE_WORKFLOW, id: 'wf-new', status: 'approved', createdAt: '2026-09-20T00:00:00Z' };
-    const linked = [olderDenied, newer];
-    expect(redlineSaveDecision({ session, linkedWorkflows: linked, actor: { email: REQUESTER } }).ok).toBe(true);
-    expect(redlineSaveDecision({ session, linkedWorkflows: linked, actor: { email: OTHER } }).ok).toBe(false);
+  it('lets the person who opened the editor save, whoever they are', () => {
+    const otherSession = { workflowId: 'wf-1', actorEmail: OTHER };
+    expect(redlineSaveDecision({ session: otherSession, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: ' Tech.Lead@CloudFuze.com ' } }).ok)
+      .toBe(true);
+    expect(redlineSaveDecision({ session: openSession, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: REQUESTER } }).ok).toBe(true);
   });
 
-  it('ignores approvals created without a verified login (forged rows cannot take over or lock out)', () => {
-    const session = { workflowId: null, actorEmail: null };
-    const real = { ...ACTIVE_WORKFLOW, status: 'approved', createdAt: '2026-09-01T00:00:00Z' };
-    const forged = { ...ACTIVE_WORKFLOW, id: 'wf-forged', creatorEmail: OTHER, creatorVerified: false, createdAt: '2026-09-30T00:00:00Z' };
-    const linked = [real, forged];
-    expect(redlineSaveDecision({ session, linkedWorkflows: linked, actor: { email: OTHER } })).toMatchObject({ ok: false, httpStatus: 403 });
-    expect(redlineSaveDecision({ session, linkedWorkflows: linked, actor: { email: REQUESTER } }).ok).toBe(true);
+  it('anonymous: 401, with or without an approval', () => {
+    expect(redlineSaveDecision({ session: fresh, linkedWorkflows: [], actor: null })).toMatchObject({ ok: false, httpStatus: 401 });
+    expect(redlineSaveDecision({ session: fresh, linkedWorkflows: [ACTIVE_WORKFLOW], actor: {} }))
+      .toMatchObject({ ok: false, httpStatus: 401 });
+    expect(redlineSaveDecision({ session: { workflowId: null, actorEmail: REQUESTER }, linkedWorkflows: [], actor: null }))
+      .toMatchObject({ ok: false, httpStatus: 401 });
   });
 
-  it('does not lock everyone out of documents whose old approvals name no requester', () => {
-    const session = { workflowId: null, actorEmail: null };
-    const legacy = { id: 'wf-legacy', documentId: 'doc-1', status: 'approved' };
-    expect(redlineSaveDecision({ session, linkedWorkflows: [legacy], actor: { email: OTHER } }).ok).toBe(true);
-    // ...but still needs a login
-    expect(redlineSaveDecision({ session, linkedWorkflows: [legacy], actor: null })).toMatchObject({ ok: false, httpStatus: 401 });
-  });
-
-  it('requires the caller to be the requester of every active approval on the document', () => {
-    const second = { ...ACTIVE_WORKFLOW, id: 'wf-2', creatorEmail: OTHER };
-    const out = redlineSaveDecision({ session: openSession, linkedWorkflows: [ACTIVE_WORKFLOW, second], actor: { email: REQUESTER } });
-    expect(out).toMatchObject({ ok: false, httpStatus: 403 });
-  });
-
-  it('keeps the unauthenticated path for documents with no approval, as before', () => {
-    const session = { workflowId: null, actorEmail: null };
-    expect(redlineNeedsAuth(session, [])).toBe(false);
-    expect(redlineSaveDecision({ session, linkedWorkflows: [], actor: null }).ok).toBe(true);
-  });
-
-  it('needs auth whenever an approval is involved, now or when the editor opened', () => {
-    expect(redlineNeedsAuth({ workflowId: null }, [ACTIVE_WORKFLOW])).toBe(true);
-    expect(redlineNeedsAuth({ workflowId: 'wf-1' }, [])).toBe(true);
-  });
-});
-
-describe('redline admins', () => {
-  const ADMIN = 'redline.admin@cloudfuze.com';
-  const fresh = { workflowId: null, actorEmail: null };
-
-  it('isRedlineAdmin defaults to false, so a non-requester is still refused', () => {
-    expect(redlineSaveDecision({ session: fresh, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: ADMIN } }))
+  it('someone other than the opener cannot save (403), not even the requester', () => {
+    const otherSession = { workflowId: 'wf-1', actorEmail: OTHER };
+    expect(redlineSaveDecision({ session: otherSession, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: REQUESTER } }))
+      .toMatchObject({ ok: false, httpStatus: 403, error: 'Only the person who opened this editor can save it' });
+    expect(redlineSaveDecision({ session: { workflowId: null, actorEmail: REQUESTER }, linkedWorkflows: [], actor: { email: OTHER } }))
       .toMatchObject({ ok: false, httpStatus: 403 });
-    expect(redlineSaveDecision({ session: fresh, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: ADMIN }, isRedlineAdmin: 'true' }).ok)
-      .toBe(false);
   });
 
-  it('bypasses the requester rule on an active approval', () => {
-    expect(redlineSaveDecision({ session: fresh, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: ADMIN }, isRedlineAdmin: true }).ok)
-      .toBe(true);
-    const adminSession = { workflowId: 'wf-1', actorEmail: ADMIN };
-    expect(redlineSaveDecision({ session: adminSession, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: ADMIN }, isRedlineAdmin: true }).ok)
-      .toBe(true);
-  });
-
-  it('still gets 409 when the approval finished while editing', () => {
-    const adminSession = { workflowId: 'wf-1', actorEmail: ADMIN };
-    const finished = { ...ACTIVE_WORKFLOW, status: 'approved' };
-    expect(redlineSaveDecision({ session: adminSession, linkedWorkflows: [finished], actor: { email: ADMIN }, isRedlineAdmin: true }))
+  it('refuses (409) when the approval finished or vanished while editing', () => {
+    expect(redlineSaveDecision({ session: openSession, linkedWorkflows: [], actor: { email: REQUESTER } }))
       .toMatchObject({ ok: false, httpStatus: 409 });
-  });
-
-  it('cannot save the session of the requester, and the requester cannot save the admin session', () => {
-    const requesterSession = { workflowId: 'wf-1', actorEmail: REQUESTER };
-    expect(redlineSaveDecision({ session: requesterSession, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: ADMIN }, isRedlineAdmin: true }))
-      .toMatchObject({ ok: false, httpStatus: 403 });
-    const adminSession = { workflowId: 'wf-1', actorEmail: ADMIN };
-    expect(redlineSaveDecision({ session: adminSession, linkedWorkflows: [ACTIVE_WORKFLOW], actor: { email: REQUESTER } }))
-      .toMatchObject({ ok: false, httpStatus: 403 });
-  });
-
-  it('a bound session needs a login even when no approval is involved', () => {
-    const bound = { workflowId: null, actorEmail: REQUESTER };
-    expect(redlineSaveDecision({ session: bound, linkedWorkflows: [], actor: null })).toMatchObject({ ok: false, httpStatus: 401 });
-    expect(redlineSaveDecision({ session: bound, linkedWorkflows: [], actor: { email: OTHER } })).toMatchObject({ ok: false, httpStatus: 403 });
-  });
-});
-
-describe('redlineStartWithoutApprovalDecision (documents never sent for approval)', () => {
-  const doc = { id: 'doc-1', createdByEmail: REQUESTER };
-
-  it('allows the creator and a redline admin', () => {
-    expect(redlineStartWithoutApprovalDecision({ doc, actor: { email: ' Anush.Dasari@CloudFuze.com' } }).ok).toBe(true);
-    expect(redlineStartWithoutApprovalDecision({ doc, actor: { email: OTHER }, isRedlineAdmin: true }).ok).toBe(true);
-  });
-
-  it('refuses a stranger (403) and an anonymous caller (401)', () => {
-    expect(redlineStartWithoutApprovalDecision({ doc, actor: { email: OTHER } })).toMatchObject({ ok: false, httpStatus: 403 });
-    expect(redlineStartWithoutApprovalDecision({ doc, actor: null })).toMatchObject({ ok: false, httpStatus: 401 });
-  });
-
-  it('a legacy document with no creator is redline-admin only', () => {
-    const legacy = { id: 'doc-old' };
-    expect(redlineStartWithoutApprovalDecision({ doc: legacy, actor: { email: OTHER } })).toMatchObject({ ok: false, httpStatus: 403 });
-    expect(redlineStartWithoutApprovalDecision({ doc: legacy, actor: { email: OTHER }, isRedlineAdmin: true }).ok).toBe(true);
-  });
-});
-
-describe('redlineAccessDecision', () => {
-  const fresh = { workflowId: null, actorEmail: null };
-  const doc = { id: 'doc-1', createdByEmail: OTHER };
-
-  it('uses the approval rule when an approval exists and the creator rule otherwise', () => {
-    expect(redlineAccessDecision({ session: fresh, linkedWorkflows: [ACTIVE_WORKFLOW], doc, actor: { email: OTHER } }).ok).toBe(false);
-    expect(redlineAccessDecision({ session: fresh, linkedWorkflows: [ACTIVE_WORKFLOW], doc, actor: { email: REQUESTER } }).ok).toBe(true);
-    expect(redlineAccessDecision({ session: fresh, linkedWorkflows: [], doc, actor: { email: OTHER } }).ok).toBe(true);
-    expect(redlineAccessDecision({ session: fresh, linkedWorkflows: [], doc, actor: { email: REQUESTER } }).ok).toBe(false);
-  });
-
-  it('flags adminOverride only when the bypass was what allowed it', () => {
-    const viaAdmin = redlineAccessDecision({ session: fresh, linkedWorkflows: [ACTIVE_WORKFLOW], doc, actor: { email: OTHER }, isRedlineAdmin: true });
-    expect(viaAdmin).toMatchObject({ ok: true, adminOverride: true });
-    const ownRight = redlineAccessDecision({ session: fresh, linkedWorkflows: [ACTIVE_WORKFLOW], doc, actor: { email: REQUESTER }, isRedlineAdmin: true });
-    expect(ownRight).toMatchObject({ ok: true, adminOverride: false });
-  });
-
-  it('never lets an admin past the 409 or session binding', () => {
     const finished = { ...ACTIVE_WORKFLOW, status: 'approved' };
-    expect(redlineAccessDecision({ session: { workflowId: 'wf-1', actorEmail: OTHER }, linkedWorkflows: [finished], doc, actor: { email: OTHER }, isRedlineAdmin: true }))
-      .toMatchObject({ ok: false, httpStatus: 409, adminOverride: false });
-    expect(redlineAccessDecision({ session: { workflowId: null, actorEmail: REQUESTER }, linkedWorkflows: [], doc, actor: { email: OTHER }, isRedlineAdmin: true }))
-      .toMatchObject({ ok: false, httpStatus: 403 });
+    expect(redlineSaveDecision({ session: openSession, linkedWorkflows: [finished], actor: { email: REQUESTER } }))
+      .toMatchObject({ ok: false, httpStatus: 409 });
   });
 });
 
@@ -282,25 +144,31 @@ describe('redline routes in server.cjs', () => {
     expect(authAt).toBeGreaterThan(-1);
     expect(authAt).toBeLessThan(start.indexOf("db.collection('documents')"));
     expect(authAt).toBeLessThan(start.indexOf('req.params'));
-    expect(start).not.toMatch(/if \(linkedWorkflows\.length\) \{\s*const actor/);
   });
 
-  it('start and persist check redline admin status live and use the shared decision', () => {
+  it('persist requires a login before looking up the session', () => {
+    expect(persist).toMatch(/const actor = await getAuthenticatedUser\(req, res\);\s*if \(!actor\) return;/);
+    expect(persist.indexOf('await getAuthenticatedUser(req, res)')).toBeLessThan(persist.indexOf('onlyofficeSessions.get('));
+  });
+
+  it('start and persist use the shared decision and no longer gate on requester, creator or redline admin', () => {
     for (const src of [start, persist]) {
-      expect(src).toContain('await hasRedlineAdminAccess(actor)');
-      expect(src).toContain('redlineAccessDecision({');
-      expect(src).toContain("logger.info('Redline admin override'");
+      expect(src).toContain('redlineSaveDecision({');
+      expect(src).not.toMatch(/hasRedlineAdminAccess|redlineAccessDecision|createdByEmail|Redline admin override/);
     }
   });
 
-  it('start always binds the session to the opener', () => {
+  it('start always binds the session to the opener and the active approval', () => {
     expect(start).toContain('const editorEmail = normalizeEmail(actor.email);');
     expect(start).toMatch(/actorEmail: editorEmail/);
+    expect(start).toMatch(/workflowId: activeWorkflows\.length \? activeWorkflows\[0\]\.id : null/);
   });
 
-  it('persist always requires a login', () => {
-    expect(persist).toMatch(/const actor = await getAuthenticatedUser\(req, res\);\s*if \(!actor\) return;/);
-    expect(persist).not.toContain('redlineNeedsAuth(');
+  it('the approver email names the editor and says when it was not the requester', () => {
+    const notify = serverSrc.slice(serverSrc.indexOf('async function notifyCurrentApproverOfRedline'), serverSrc.indexOf("app.post('/api/onlyoffice/persist-to-document/:sessionId'"));
+    expect(notify).toContain('!actorIsWorkflowCreator(workflow, actor)');
+    expect(notify).toContain('(not the requester)');
+    expect(notify).not.toContain('redline admin');
   });
 });
 

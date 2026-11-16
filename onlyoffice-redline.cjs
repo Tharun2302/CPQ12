@@ -1,8 +1,7 @@
 'use strict';
 
 // Saving an "Edit for RedLine" edit over a document. Kept out of server.cjs so the rules
-// (requester or redline admin during approval, backup before overwrite, approval history)
-// can be unit tested.
+// (login and session binding, backup before overwrite, approval history) can be unit tested.
 
 const ACTIVE_APPROVAL_STATUSES = ['pending', 'in_progress'];
 
@@ -46,19 +45,13 @@ function requesterWorkflows(linkedWorkflows) {
   return gates;
 }
 
-// Any approval, finished or not, puts the document behind a login: checking only active ones
-// let a status flipped to "approved" for a moment switch the check off.
-function redlineNeedsAuth(session, linkedWorkflows) {
-  return linkedWorkflows.length > 0 || !!(session && session.workflowId);
-}
-
 /**
- * Decides whether `actor` may open or save a redline over the document.
+ * Decides whether `actor` may open or save a redline over an agreement. Any signed-in user may;
+ * what is enforced is the login, the session binding and the finished-approval rule.
  * `linkedWorkflows` are all approvals on the document (any status), read live.
- * `isRedlineAdmin` (checked live by the caller) skips only the requester rule.
  * Returns { ok: true } or { ok: false, httpStatus, error }.
  */
-function redlineSaveDecision({ session, linkedWorkflows, actor, isRedlineAdmin = false }) {
+function redlineSaveDecision({ session, linkedWorkflows, actor }) {
   // An edit begun under an approval must not land on it once it has finished or been cancelled.
   const startedUnder = session.workflowId && linkedWorkflows.find(w => w.id === session.workflowId);
   if (session.workflowId && !isActiveApproval(startedUnder)) {
@@ -69,10 +62,8 @@ function redlineSaveDecision({ session, linkedWorkflows, actor, isRedlineAdmin =
     };
   }
   const actorEmail = normalizeEmail(actor && actor.email);
-  // A session is bound to whoever opened it, so nobody else (admin or requester) can save it.
-  if (session.actorEmail && !actorEmail) {
-    return { ok: false, httpStatus: 401, error: 'Authentication required' };
-  }
+  if (!actorEmail) return { ok: false, httpStatus: 401, error: 'Authentication required' };
+  // A session is bound to whoever opened it, so nobody else can save it.
   if (session.actorEmail && session.actorEmail !== actorEmail) {
     return {
       ok: false,
@@ -80,52 +71,7 @@ function redlineSaveDecision({ session, linkedWorkflows, actor, isRedlineAdmin =
       error: 'Only the person who opened this editor can save it',
     };
   }
-  if (!redlineNeedsAuth(session, linkedWorkflows)) return { ok: true };
-  if (!actorEmail) {
-    return { ok: false, httpStatus: 401, error: 'Authentication required' };
-  }
-  if (isRedlineAdmin === true) return { ok: true };
-  if (!requesterWorkflows(linkedWorkflows).every(w => actorIsWorkflowCreator(w, actor))) {
-    return {
-      ok: false,
-      httpStatus: 403,
-      error: 'Only the requester or a redline admin can edit this document '
-        + 'because it has an approval',
-    };
-  }
   return { ok: true };
-}
-
-/** Documents never sent for approval: the creator (createdByEmail) or a redline admin. */
-function redlineStartWithoutApprovalDecision({ doc, actor, isRedlineAdmin = false }) {
-  const actorEmail = normalizeEmail(actor && actor.email);
-  if (!actorEmail) return { ok: false, httpStatus: 401, error: 'Authentication required' };
-  if (isRedlineAdmin === true) return { ok: true };
-  const creator = normalizeEmail(doc && doc.createdByEmail);
-  if (creator && creator === actorEmail) return { ok: true };
-  return {
-    ok: false,
-    httpStatus: 403,
-    error: "Only the document's creator or a redline admin can edit this document",
-  };
-}
-
-/**
- * Full start/save check: the approval rules when any approval is involved, otherwise the
- * creator-or-redline-admin rule. `adminOverride` is true when only the admin bypass allowed it.
- */
-function redlineAccessDecision({ session, linkedWorkflows, doc, actor, isRedlineAdmin = false }) {
-  const decide = (admin) => {
-    const saveCheck = redlineSaveDecision({
-      session, linkedWorkflows, actor, isRedlineAdmin: admin,
-    });
-    if (!saveCheck.ok || redlineNeedsAuth(session, linkedWorkflows)) return saveCheck;
-    return redlineStartWithoutApprovalDecision({ doc, actor, isRedlineAdmin: admin });
-  };
-  const asUser = decide(false);
-  if (asUser.ok || isRedlineAdmin !== true) return { ...asUser, adminOverride: false };
-  const asAdmin = decide(true);
-  return { ...asAdmin, adminOverride: asAdmin.ok };
 }
 
 // Flags workflows so the dashboard shows a "Redline Agreement" badge. Older rows whose redline
@@ -216,10 +162,7 @@ module.exports = {
   isActiveApproval,
   isTrustedWorkflow,
   requesterWorkflows,
-  redlineNeedsAuth,
   redlineSaveDecision,
-  redlineStartWithoutApprovalDecision,
-  redlineAccessDecision,
   markWorkflowsRedlined,
   saveRedlineOverDocument,
 };

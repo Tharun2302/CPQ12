@@ -23,10 +23,9 @@ function AdminSettingsPage() {
         <div className="space-y-6">
           <DiscountPolicySettings />
           <AdminEmailListSettings
-            kind="redline-admins"
-            title="Redline Admins"
-            description="Can use Edit for RedLine on any agreement, and add, edit, delete and redline exhibits. Managing Exhibit admins stays with Exhibit admins."
-            helperText="To find agreements created by others on the Documents page, also add the person as a Document admin."
+            kind="exhibit-admins"
+            title="Exhibit Admins"
+            description="Can upload, edit, delete and redline exhibits, and manage templates and combinations."
           />
           <AdminEmailListSettings
             kind="document-admins"

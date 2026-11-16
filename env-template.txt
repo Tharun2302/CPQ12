@@ -86,10 +86,10 @@ ALLOWED_ORIGINS=
 # JWT Secret for authentication tokens (CHANGE IN PRODUCTION!)
 JWT_SECRET=your-super-secret-jwt-key-change-in-production
 
-# Optional. Redline admins and Document admins are normally managed by approval admins on
+# Optional. Exhibit admins and Document admins are normally managed by approval admins on
 # Admin Settings. Emails listed here (comma-separated) always have access and cannot be
 # removed from the UI.
-REDLINE_ADMIN_EMAILS=
+EXHIBIT_ADMIN_EMAILS=
 DOCUMENT_ADMIN_EMAILS=
 
 # Behind nginx set TRUST_PROXY=1, or rate limits and audit logs see every visitor as one IP.
