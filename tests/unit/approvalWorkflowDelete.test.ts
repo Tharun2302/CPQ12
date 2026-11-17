@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { approvalWorkflowServiceMongoDB } from '../../src/services/approvalWorkflowServiceMongoDB';
 
-// Deleting an approval is creator-only and authorized server-side against the JWT's
+// Deleting an approval is for the requester or an approval admin, authorized server-side against the JWT's
 // identity. If this request ever stops carrying the Bearer token the endpoint replies
 // 401 and Delete silently breaks for everyone — so pin the header explicitly.
 
@@ -27,7 +27,7 @@ function jsonResponse(status: number, body: unknown): Response {
   } as unknown as Response;
 }
 
-describe('approvalWorkflowServiceMongoDB.deleteWorkflow — creator-only authorization', () => {
+describe('approvalWorkflowServiceMongoDB.deleteWorkflow — requester or approval admin', () => {
   beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -52,14 +52,14 @@ describe('approvalWorkflowServiceMongoDB.deleteWorkflow — creator-only authori
     expect(init.headers).toEqual({ Authorization: `Bearer ${TOKEN}` });
   });
 
-  it('surfaces the 403 message when the caller is not the creator', async () => {
+  it('surfaces the 403 message when the caller is neither the requester nor an approval admin', async () => {
     mockLocalStorage(TOKEN);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
-      jsonResponse(403, { success: false, error: 'Only the requester who created this approval can delete it' })
+      jsonResponse(403, { success: false, error: 'Only the requester or an approval admin can delete this approval' })
     ));
 
     await expect(approvalWorkflowServiceMongoDB.deleteWorkflow('wf-123')).rejects.toThrow(
-      'Only the requester who created this approval can delete it'
+      'Only the requester or an approval admin can delete this approval'
     );
   });
 

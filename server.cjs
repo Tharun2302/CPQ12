@@ -12356,11 +12356,17 @@ async function buildCurrentApproverEmail(workflow, bannerHtml) {
 app.post('/api/approval-workflows/:workflowId/remind', async (req, res) => {
   if (!db) return res.status(503).json({ success: false, error: 'Database unavailable' });
 
-  const { workflowId } = req.params;
-
   try {
-    // 1. Fetch workflow
+    // Sends email on the approval's behalf, so only its requester or an approval admin may trigger it
+    const actor = await getAuthenticatedUser(req, res);
+    if (!actor) return;
+    const workflowId = String(req.params.workflowId || '');
+    const isAdmin = await hasApprovalAdminAccess(actor);
     const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+    if (!mayManageApprovalWorkflow({ workflow, user: actor, isAdmin })) {
+      logger.warn('Approval reminder refused', { source: 'workflow-remind', workflowId, userId: actor.id });
+      return res.status(403).json({ success: false, error: 'Only the requester or an approval admin can send a reminder' });
+    }
     if (!workflow) {
       return res.status(404).json({ success: false, error: 'Workflow not found' });
     }
@@ -12477,15 +12483,21 @@ app.delete('/api/approval-workflows/:id', async (req, res) => {
       });
     }
 
-    const { id } = req.params;
-
-    // Authorization: deleting an approval is destructive and irreversible, so the caller
-    // must be the requester who created it. Identity comes from the verified JWT, never
-    // from the body — a client-supplied email could name anyone.
+    // Destructive and irreversible: only the requester or an approval admin, identified by the JWT.
     const actor = await getAuthenticatedUser(req, res);
     if (!actor) return; // 401 already sent
+    const { id } = req.params;
+    const isAdmin = await hasApprovalAdminAccess(actor);
 
-    const workflow = await db.collection('approval_workflows').findOne({ id: id });
+    const workflow = await db.collection('approval_workflows').findOne({ id: String(id) });
+    // Non-admins get the same 403 for a missing workflow, so the route can't be used to probe IDs.
+    if (!mayManageApprovalWorkflow({ workflow, user: actor, isAdmin })) {
+      logger.warn('Approval delete refused', { source: 'workflow-delete', workflowId: String(id), userId: actor.id });
+      return res.status(403).json({
+        success: false,
+        error: 'Only the requester or an approval admin can delete this approval'
+      });
+    }
     if (!workflow) {
       return res.status(404).json({
         success: false,
@@ -12493,19 +12505,12 @@ app.delete('/api/approval-workflows/:id', async (req, res) => {
       });
     }
 
-    const actorEmail = String(actor.email || '').trim().toLowerCase();
-    const creatorEmail = String(workflow.creatorEmail || workflow.createdBy || '').trim().toLowerCase();
-    if (!actorEmail || !creatorEmail || actorEmail !== creatorEmail) {
-      console.warn('⛔ Delete denied — actor is not the approval creator:', { id, actorEmail });
-      return res.status(403).json({
-        success: false,
-        error: 'Only the requester who created this approval can delete it'
-      });
-    }
+    logger.info('Approval deleted', {
+      source: 'workflow-delete', workflowId: String(id), userId: actor.id,
+      byAdmin: normalizeEmail(actor.email) !== normalizeEmail(workflow.creatorEmail || workflow.createdBy),
+    });
 
-    console.log('🗑️ Deleting approval workflow:', id, 'by', actorEmail);
-
-    const result = await db.collection('approval_workflows').deleteOne({ id: id });
+    const result = await db.collection('approval_workflows').deleteOne({ id: String(id) });
 
     if (result.deletedCount === 0) {
       return res.status(404).json({
@@ -12514,7 +12519,6 @@ app.delete('/api/approval-workflows/:id', async (req, res) => {
       });
     }
 
-    console.log('✅ Approval workflow deleted');
     res.json({
       success: true,
       message: 'Workflow deleted successfully'

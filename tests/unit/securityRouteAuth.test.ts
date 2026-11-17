@@ -42,6 +42,8 @@ const LOCKED: Array<{ method: string; path: string; helper: Helper }> = [
   { method: 'get', path: '/api/team-approval-settings/team/:teamName', helper: 'getAuthenticatedUser' },
   { method: 'get', path: '/api/approval-workflows/:workflowId/portal-link', helper: 'getAuthenticatedUser' },
   { method: 'post', path: '/api/approval-workflows/:workflowId/reset-esign', helper: 'getAuthenticatedUser' },
+  { method: 'post', path: '/api/approval-workflows/:workflowId/remind', helper: 'getAuthenticatedUser' },
+  { method: 'delete', path: '/api/approval-workflows/:id', helper: 'getAuthenticatedUser' },
   { method: 'post', path: '/api/esign/documents/:id/recipients', helper: 'getAuthenticatedUser' },
   { method: 'post', path: '/api/esign/documents/:id/void', helper: 'getAuthenticatedUser' },
   { method: 'post', path: '/api/esign/documents/:id/remind', helper: 'getAuthenticatedUser' },

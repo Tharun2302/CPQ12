@@ -181,7 +181,7 @@ const ApprovalDashboard: React.FC = () => {
   const userIsApprovalAdmin = Boolean((user as any)?.isApprovalAdmin);
   const currentUserEmail = String((user as any)?.email || '').trim().toLowerCase();
 
-  /** Only the requester (workflow creator) may proceed to e-sign, reset, or send reminders. */
+  /** True when the signed-in user requested this approval; approval admins get the same actions. */
   const isWorkflowCreator = (workflow: any): boolean => {
     const me = (user?.email || '').trim().toLowerCase();
     const creator = String(workflow?.creatorEmail || workflow?.createdBy || '').trim().toLowerCase();
@@ -343,8 +343,8 @@ const ApprovalDashboard: React.FC = () => {
     }
   };
 
-  // Permanently remove an approval request. Creator-only and irreversible, so the confirm
-  // names the record explicitly; the backend re-checks the caller against creatorEmail.
+  // Permanently remove an approval request. Irreversible, so the confirm names the record;
+  // the backend re-checks that the caller is the requester or an approval admin.
   const handleDeleteApproval = async (workflow: any) => {
     const label = workflow.dealName || workflow.clientName || workflow.documentId || 'this approval';
     if (!window.confirm(`Delete "${label}" permanently?\n\nThis removes the approval request and its progress. This cannot be undone.`)) {
@@ -553,12 +553,12 @@ const ApprovalDashboard: React.FC = () => {
   const handleSendReminder = async (workflowId: string) => {
     setSendingReminderId(workflowId);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/approval-workflows/${workflowId}/remind`, {
+      const res = await fetch(`${BACKEND_URL}/api/approval-workflows/${encodeURIComponent(workflowId)}/remind`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to send reminder');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(authAwareError(res.status, data.error, 'Failed to send reminder'));
       flashToast('Reminder sent to the current approver');
     } catch (err: any) {
       alert(err?.message || 'Failed to send reminder. Please try again.');
@@ -955,8 +955,9 @@ const ApprovalDashboard: React.FC = () => {
                 const statusLabel = String(status).replace('_', ' ');
                 const requestedBy = workflow.creatorName || workflow.creatorEmail || '—';
                 const createdAt = workflow.createdAt ? new Date(workflow.createdAt) : null;
-                const canManage = isWorkflowCreator(workflow);
-                const canCopyLink = canManage || userIsApprovalAdmin;
+                // The server applies the same rule: the requester or an approval admin
+                const canManage = isWorkflowCreator(workflow) || userIsApprovalAdmin;
+                const canCopyLink = canManage;
                 // Any signed-in user may redline an agreement; the server requires the login too
                 const canRedline = Boolean(currentUserEmail);
 
@@ -1039,15 +1040,15 @@ const ApprovalDashboard: React.FC = () => {
                       </div>
 
                       <div className="flex w-full shrink-0 items-center gap-2 self-stretch sm:w-auto sm:self-start lg:self-stretch">
-                        {/* Primary: Proceed to e-Sign — approved only, creator only */}
+                        {/* Primary: Proceed to e-Sign — approved only, requester or approval admin */}
                         {status === 'approved' && (
                           <button
                             type="button"
                             onClick={() => canManage
                               ? handleProceedToEsignWithCheck(workflow)
-                              : alert('Only the requester can proceed to e-sign for this approval.')}
+                              : alert('Only the requester or an approval admin can proceed to e-sign for this approval.')}
                             disabled={processingEsignId === workflow.id || resettingEsignId === workflow.id}
-                            title={canManage ? 'Approval complete — add recipients, place fields and send for e-signature' : 'Only the requester can proceed to e-sign for this approval'}
+                            title={canManage ? 'Approval complete — add recipients, place fields and send for e-signature' : 'Only the requester or an approval admin can proceed to e-sign for this approval'}
                             className={`inline-flex flex-1 sm:flex-initial items-center justify-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold shadow-sm transition-all whitespace-nowrap ${
                               !canManage
                                 ? 'bg-emerald-300 border-emerald-300 text-white/90 cursor-not-allowed'
@@ -1090,7 +1091,7 @@ const ApprovalDashboard: React.FC = () => {
                         >
                           <Copy className="h-5 w-5" />
                         </button>
-                        {/* More Actions ⋮ — Reminder, Edit/View Dates, Cancel Approval, Reset (creator only) */}
+                        {/* More Actions ⋮ — Reminder, Edit/View Dates, Cancel Approval, Reset (requester or approval admin) */}
                         <div className="relative">
                           <button
                             type="button"
@@ -1114,10 +1115,10 @@ const ApprovalDashboard: React.FC = () => {
                                   {(status === 'pending' || status === 'in_progress') && (
                                     <button
                                       type="button"
-                                      onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester can send reminders for this approval.'); return; } handleSendReminder(workflow.id); }}
+                                      onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester or an approval admin can send reminders for this approval.'); return; } handleSendReminder(workflow.id); }}
                                       disabled={canManage && sendingReminderId === workflow.id}
                                       className={itemCls}
-                                      title={canManage ? undefined : 'Only the requester can send reminders for this approval'}
+                                      title={canManage ? undefined : 'Only the requester or an approval admin can send reminders for this approval'}
                                     >
                                       {canManage && sendingReminderId === workflow.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Bell className="h-4 w-4 shrink-0" />}
                                       Reminder
@@ -1141,9 +1142,9 @@ const ApprovalDashboard: React.FC = () => {
                                   {workflow.documentId && (
                                     <button
                                       type="button"
-                                      onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester can edit dates for this approval.'); return; } setEditDatesDocId(String(workflow.documentId)); }}
+                                      onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester or an approval admin can edit dates for this approval.'); return; } setEditDatesDocId(String(workflow.documentId)); }}
                                       className={itemCls}
-                                      title={canManage ? 'Edit project start / effective / expiry dates' : 'Only the requester can edit dates for this approval'}
+                                      title={canManage ? 'Edit project start / effective / expiry dates' : 'Only the requester or an approval admin can edit dates for this approval'}
                                     >
                                       <CalendarClock className="h-4 w-4 shrink-0" />
                                       Edit Dates
@@ -1169,10 +1170,10 @@ const ApprovalDashboard: React.FC = () => {
                                   {status === 'approved' && workflow.esignDocumentId && (
                                     <button
                                       type="button"
-                                      onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester can reset e-sign for this approval.'); return; } handleResetEsign(workflow); }}
+                                      onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester or an approval admin can reset e-sign for this approval.'); return; } handleResetEsign(workflow); }}
                                       disabled={canManage && (resettingEsignId === workflow.id || processingEsignId === workflow.id)}
                                       className={itemCls}
-                                      title={canManage ? undefined : 'Only the requester can reset e-sign for this approval'}
+                                      title={canManage ? undefined : 'Only the requester or an approval admin can reset e-sign for this approval'}
                                     >
                                       {canManage && resettingEsignId === workflow.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <RotateCcw className="h-4 w-4 shrink-0" />}
                                       Reset e-Sign
@@ -1182,27 +1183,27 @@ const ApprovalDashboard: React.FC = () => {
                                   {(status === 'pending' || status === 'in_progress') && (
                                     <button
                                       type="button"
-                                      onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester can cancel this approval.'); return; } handleCancelApproval(workflow); }}
+                                      onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester or an approval admin can cancel this approval.'); return; } handleCancelApproval(workflow); }}
                                       disabled={canManage && cancelingApprovalId === workflow.id}
                                       className={`${itemCls} ${canManage ? 'hover:bg-red-50 hover:text-red-600' : ''}`}
-                                      title={canManage ? undefined : 'Only the requester can cancel this approval'}
+                                      title={canManage ? undefined : 'Only the requester or an approval admin can cancel this approval'}
                                     >
                                       {canManage && cancelingApprovalId === workflow.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <XCircle className="h-4 w-4 shrink-0" />}
                                       Cancel Approval
                                       {lock}
                                     </button>
                                   )}
-                                  {/* Delete — creator only, any status. Separated and red-tinted
+                                  {/* Delete — requester or approval admin, any status. Separated and red-tinted
                                       because it is the only irreversible action in this menu. */}
                                   <div className="my-1 border-t border-gray-100" />
                                   <button
                                     type="button"
-                                    onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester who created this approval can delete it.'); return; } handleDeleteApproval(workflow); }}
+                                    onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester or an approval admin can delete this approval.'); return; } handleDeleteApproval(workflow); }}
                                     disabled={canManage && deletingApprovalId === workflow.id}
                                     className={canManage
                                       ? 'flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50'
                                       : itemCls}
-                                    title={canManage ? 'Permanently delete this approval request' : 'Only the requester who created this approval can delete it'}
+                                    title={canManage ? 'Permanently delete this approval request' : 'Only the requester or an approval admin can delete this approval'}
                                   >
                                     {canManage && deletingApprovalId === workflow.id
                                       ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
