@@ -49,6 +49,17 @@ interface EditDatesModalProps {
   canEdit?: boolean;
 }
 
+const COMBINATION_TEMPLATE_PREFIX = 'combo-';
+
+// Combination-attached agreements are saved as "combo-<combinationId>" and live in the combinations collection, not templates
+export function templateFileUrl(templateId: string): string {
+  if (templateId.startsWith(COMBINATION_TEMPLATE_PREFIX)) {
+    const combinationId = templateId.slice(COMBINATION_TEMPLATE_PREFIX.length);
+    return `${BACKEND_URL}/api/combinations/${encodeURIComponent(combinationId)}/file`;
+  }
+  return `${BACKEND_URL}/api/templates/${encodeURIComponent(templateId)}/file`;
+}
+
 /** Format an ISO date string (YYYY-MM-DD) as "27th of June, 2026" — mirrors
  *  formatDateLongOrdinal in QuoteGenerator. The two impls must stay in sync. */
 function formatDateLongOrdinal(dateString: string): string {
@@ -277,7 +288,7 @@ const EditDatesModal: React.FC<EditDatesModalProps> = ({ documentId, actorEmail,
       // client-side so the new dates appear inside the actual file.
       if (canRerender && context.templateData && context.templateId) {
         setProgress('Fetching template…');
-        const tmplResp = await fetch(`${BACKEND_URL}/api/templates/${context.templateId}/file`, { headers: getAuthHeaders() });
+        const tmplResp = await fetch(templateFileUrl(context.templateId), { headers: getAuthHeaders() });
         if (!tmplResp.ok) {
           throw new Error(`Could not fetch original template (${tmplResp.status}). Dates not updated.`);
         }
