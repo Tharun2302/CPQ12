@@ -12,6 +12,7 @@ import { track } from '../analytics/clarity';
 import EsignPdfPageView from './EsignPdfPageView';
 import PdfCanvasViewer from './PdfCanvasViewer';
 import { SUPPRESS_PII } from '../analytics/privacy';
+import { useOptionalAuth } from '../contexts/AuthContext';
 
 function showSuccessToast(message: string, durationMs = 3000) {
   const el = document.createElement('div');
@@ -22,14 +23,13 @@ function showSuccessToast(message: string, durationMs = 3000) {
 }
 
 interface TechnicalTeamApprovalDashboardProps {
-  managerEmail?: string;
   initialWorkflowId?: string;
 }
 
 const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardProps> = ({
-  managerEmail = 'cpq.zenop.ai.technical@cloudfuze.com',
   initialWorkflowId
 }) => {
+  const signedInEmail = useOptionalAuth()?.user?.email || '';
   const [activeTab, setActiveTab] = useState('queue');
   const [selectedWorkflow, setSelectedWorkflow] = useState<any>(null);
   const [showDocumentModal, setShowDocumentModal] = useState(false);
@@ -52,7 +52,6 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
   const getFieldLabel = (type: string) => { const t = (type || 'signature').toLowerCase(); if (t === 'name') return 'Name'; if (t === 'title') return 'Title'; if (t === 'date') return 'Date'; if (t === 'text') return 'Text'; return 'Signature'; };
   const { workflows, updateWorkflowStep, refreshWorkflows } = useApprovalWorkflows();
   
-  console.log('TechnicalTeamApprovalDashboard rendered for:', managerEmail);
   console.log('📊 Available workflows:', workflows.length);
   console.log('📋 Workflows data:', workflows);
 
@@ -579,7 +578,6 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Comments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Comments</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Deal Desk Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Created</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
               </tr>
@@ -590,7 +588,6 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                 const teamStep = workflow.workflowSteps?.find(step => step.role === 'Team Approval');
                 const technicalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Technical Team');
                 const legalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
-                const dealDeskStep = workflow.workflowSteps?.find(step => step.role === 'Deal Desk');
 
       return (
                   <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">
@@ -638,15 +635,6 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                     </td>
                     <td className="py-4 px-4 text-gray-600 text-sm">
                       {legalTeamStep?.comments || 'No comments'}
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                        (dealDeskStep?.comments || '').toLowerCase().includes('notified')
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {(dealDeskStep?.comments || '').toLowerCase().includes('notified') ? 'Notified' : 'Pending'}
-                      </span>
                     </td>
                     <td className="py-4 px-4 text-gray-600 text-sm">
                 <div>
@@ -765,7 +753,9 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
               <h1 className="text-4xl font-bold text-gray-900">Technical Team Approval Portal</h1>
             </div>
             <p className="text-xl text-gray-600">Review and approve document workflows</p>
-            <p className="text-sm text-gray-500 mt-1">Logged in as: {managerEmail}</p>
+            {signedInEmail && (
+              <p className="text-sm text-gray-500 mt-1">Signed in as <span {...SUPPRESS_PII}>{signedInEmail}</span></p>
+            )}
           </div>
         </div>
       </div>

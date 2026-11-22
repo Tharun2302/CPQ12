@@ -2077,16 +2077,8 @@ function App() {
               } />
               <Route path="/approval/:workflowId" element={<ApprovalPortalGate />} />
               <Route path="/team-lead-approval" element={<TeamApprovalDashboard />} />
-              <Route path="/technical-approval" element={
-                <TechnicalTeamApprovalDashboard 
-                  managerEmail="manager@company.com"
-                />
-              } />
-              <Route path="/legal-approval" element={
-                <LegalTeamApprovalDashboard 
-                  ceoEmail="ceo@company.com"
-                />
-              } />
+              <Route path="/technical-approval" element={<TechnicalTeamApprovalDashboard />} />
+              <Route path="/legal-approval" element={<LegalTeamApprovalDashboard />} />
               <Route path="/team-approval" element={
                 <TeamApprovalDashboard />
               } />

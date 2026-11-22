@@ -646,6 +646,9 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
 };
  
 // Custom hook to use auth context
+// For screens that also open outside AuthProvider (approval portals reached from email links).
+export const useOptionalAuth = (): AuthContextType | undefined => useContext(AuthContext);
+
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (context === undefined) {

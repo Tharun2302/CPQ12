@@ -550,7 +550,6 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Team Approval Comments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Status</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Deal Desk Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Created</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
               </tr>
@@ -561,7 +560,6 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
                 const teamStep = workflow.workflowSteps?.find(step => step.role === 'Team Approval');
                 const technicalStep = workflow.workflowSteps?.find(step => step.role === 'Technical Team');
                 const legalStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
-                const dealDeskStep = workflow.workflowSteps?.find(step => step.role === 'Deal Desk');
 
                 return (
                   <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">
@@ -570,6 +568,9 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
                     </td>
                     <td {...SUPPRESS_PII} className="py-4 px-4 text-gray-700">
                       {workflow.clientName || 'Unknown Client'}
+                    </td>
+                    <td {...SUPPRESS_PII} className="py-4 px-4 text-gray-600 text-sm">
+                      {(workflow as any).creatorName || (workflow as any).creatorEmail || '—'}
                     </td>
                     <td className="py-4 px-4">
                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
@@ -599,15 +600,6 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
                         'bg-yellow-100 text-yellow-800'
                       }`}>
                         {legalStep?.status || 'pending'}
-                      </span>
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                        (dealDeskStep?.comments || '').toLowerCase().includes('notified')
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {(dealDeskStep?.comments || '').toLowerCase().includes('notified') ? 'Notified' : 'Pending'}
                       </span>
                     </td>
                     <td className="py-4 px-4 text-gray-600 text-sm">
