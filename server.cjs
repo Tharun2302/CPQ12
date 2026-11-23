@@ -155,6 +155,7 @@ function sanitizeEsignEmailSubjectFileName(name) {
 const {
   esignDocumentCreatorEmail,
   actorIsEsignDocumentCreator,
+  esignManageAccess,
 } = require('./esign-creator-utils.cjs');
 
 const {
@@ -214,6 +215,11 @@ function getEsignDocumentCreatorNotifyEmail(doc) {
  *  `requested_by_email` — so approval-created documents are not locked to nobody. */
 function esignActorIsDocumentCreator(doc, actorEmail) {
   return actorIsEsignDocumentCreator(doc, actorEmail);
+}
+
+/** Remind, extend expiry, void and delete on an e-sign document: creator OR approval admin. */
+function esignManageAccessFor(doc, user) {
+  return esignManageAccess({ doc, user, isAdmin: hasApprovalAdminAccess });
 }
 
 /** Authorization for Edit Dates on an e-sign document. Creator OR Approval Admin.
@@ -8152,33 +8158,22 @@ app.post('/api/esign/documents/:id/send', async (req, res) => {
 
 // DELETE /api/esign/documents/:id - Delete document, its fields, audit logs, and files
 app.delete('/api/esign/documents/:id', async (req, res) => {
-  const idParam = req.params.id;
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    // Identity comes from the verified JWT, never from the body. Same rule as DELETE /api/approval-workflows/:id.
+    const actor = await getAuthenticatedUser(req, res);
+    if (!actor) return;
+    const idParam = req.params.id;
     let docId;
     try { docId = new ObjectId(idParam); } catch {
-      console.warn('E-sign DELETE: invalid document id', idParam);
       return res.status(400).json({ success: false, error: 'Invalid document ID' });
     }
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
-    if (!doc) {
-      console.warn('E-sign DELETE: document not found', idParam);
-      return res.status(404).json({ success: false, error: 'Document not found' });
-    }
-    // Authorization: deleting an agreement is destructive and irreversible, so the caller
-    // must be the creator. Identity comes from the verified JWT, never from the body — a
-    // client-supplied email could name anyone. Same rule as DELETE /api/approval-workflows/:id.
-    const actor = await getAuthenticatedUser(req, res);
-    if (!actor) return; // 401 already sent
-    if (!esignActorIsDocumentCreator(doc, actor.email)) {
-      console.warn('⛔ E-sign DELETE denied — actor is not the document creator:', {
-        id: idParam,
-        actorEmail: actor.email,
-        resolvedCreator: getEsignDocumentCreatorNotifyEmail(doc) || '(none — document has no creator address)',
-        uploaded_by: doc.uploaded_by,
-        requested_by_email: doc.requested_by_email,
-      });
-      return res.status(403).json({ success: false, error: 'Only the document creator can delete this document' });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const access = await esignManageAccessFor(doc, actor);
+    if (!access.ok) {
+      logger.warn('E-sign delete denied', { id: idParam, actorId: actor.id });
+      return res.status(403).json({ success: false, error: 'Only the document creator or an approval admin can delete this document' });
     }
 
     await db.collection('signature_fields').deleteMany(signatureFieldsDocumentFilter(docId));
@@ -8193,7 +8188,9 @@ app.delete('/api/esign/documents/:id', async (req, res) => {
       try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { console.warn('Could not delete file:', filePath, e.message); }
     });
 
-    console.log('E-sign DELETE: document deleted', idParam, doc.file_name);
+    // Written after the document's own audit rows are wiped, so who deleted it is kept.
+    await logAudit(docId.toString(), 'deleted', actor.email, req.ip || null, { by_admin: access.byAdmin, file_name: doc.file_name || null });
+    logger.info('E-sign document deleted', { id: idParam, byAdmin: access.byAdmin, actorId: actor.id });
     res.json({ success: true, message: 'Document deleted' });
   } catch (error) {
     console.error('❌ E-sign delete document error:', error);
@@ -8215,8 +8212,9 @@ app.post('/api/esign/documents/:id/void', async (req, res) => {
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
     // Identity comes from the verified login; a body actor_email is ignored because anyone can type one.
     const actorEmail = user.email || '';
-    if (!esignActorIsDocumentCreator(doc, actorEmail)) {
-      return res.status(403).json({ success: false, error: 'Only the document creator can void this document' });
+    const access = await esignManageAccessFor(doc, user);
+    if (!access.ok) {
+      return res.status(403).json({ success: false, error: 'Only the document creator or an approval admin can void this document' });
     }
     if (doc.status !== 'sent') {
       return res.status(400).json({ success: false, error: 'Only documents with status "sent" can be voided' });
@@ -8258,7 +8256,7 @@ app.post('/api/esign/documents/:id/void', async (req, res) => {
       $or: [{ document_id: docId }, { document_id: docId.toString() }],
     });
     try {
-      await logAudit(docId.toString(), 'voided', actorEmail || req.ip || null, req.ip || req.connection?.remoteAddress, { void_reason: voidReason });
+      await logAudit(docId.toString(), 'voided', actorEmail || req.ip || null, req.ip || req.connection?.remoteAddress, { void_reason: voidReason, by_admin: access.byAdmin });
     } catch (auditErr) { /* non-fatal */ }
     console.log('E-sign VOID: document voided', req.params.id, doc.file_name, '|', actorEmail, '|', voidReason);
     res.json({ success: true, message: 'Document voided. Signing links no longer work.', void_reason: voidReason });
@@ -8281,8 +8279,9 @@ app.post('/api/esign/documents/:id/remind', async (req, res) => {
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
     const actorEmail = user.email || '';
-    if (!esignActorIsDocumentCreator(doc, actorEmail)) {
-      return res.status(403).json({ success: false, error: 'Only the document creator can send reminders for this document' });
+    const access = await esignManageAccessFor(doc, user);
+    if (!access.ok) {
+      return res.status(403).json({ success: false, error: 'Only the document creator or an approval admin can send reminders for this document' });
     }
     if (doc.status !== 'sent') {
       return res.status(400).json({ success: false, error: 'Only documents with status "sent" can be reminded' });
@@ -8315,7 +8314,7 @@ app.post('/api/esign/documents/:id/remind', async (req, res) => {
         });
       }
       try {
-        await logAudit(docId.toString(), 'manual_reminder_sent', actorEmail || req.ip || 'system', req.ip || null, { provider: 'zoho' });
+        await logAudit(docId.toString(), 'manual_reminder_sent', actorEmail || req.ip || 'system', req.ip || null, { provider: 'zoho', by_admin: access.byAdmin });
       } catch (_) { /* non-fatal */ }
       return res.json({
         success: true,
@@ -8371,7 +8370,7 @@ app.post('/api/esign/documents/:id/remind', async (req, res) => {
     }
 
     try {
-      await logAudit(docId.toString(), 'manual_reminder_sent', actorEmail || req.ip || 'system', req.ip || null);
+      await logAudit(docId.toString(), 'manual_reminder_sent', actorEmail || req.ip || 'system', req.ip || null, { by_admin: access.byAdmin });
     } catch (_) { /* non-fatal */ }
 
     if (sentCount === 0) {
@@ -9252,8 +9251,9 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
 
     const actorEmail = String(user.email || '').trim();
-    if (!esignActorIsDocumentCreator(doc, actorEmail)) {
-      return res.status(403).json({ success: false, error: 'Only the document creator can extend expiry for this document' });
+    const access = await esignManageAccessFor(doc, user);
+    if (!access.ok) {
+      return res.status(403).json({ success: false, error: 'Only the document creator or an approval admin can extend expiry for this document' });
     }
     if (doc.status !== 'sent') {
       return res.status(400).json({ success: false, error: 'Only documents with status "sent" can have their expiry extended' });
@@ -9335,7 +9335,7 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
           expires_at: tokenExpiresAt,
         });
         try {
-          await logAudit(docId.toString(), 'expiry_extended', actorEmail || rec.email || 'system', req.ip || req.connection?.remoteAddress);
+          await logAudit(docId.toString(), 'expiry_extended', actorEmail || rec.email || 'system', req.ip || req.connection?.remoteAddress, { by_admin: access.byAdmin });
         } catch (_) { /* non-fatal */ }
       } catch (mailErr) {
         failedRecipients.push({

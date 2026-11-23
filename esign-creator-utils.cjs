@@ -33,7 +33,21 @@ function actorIsEsignDocumentCreator(doc, actorEmail) {
   return creator !== '' && actor !== '' && creator === actor;
 }
 
+/**
+ * Who may remind, extend expiry, cancel (void) or delete an e-sign document: its creator or an
+ * approval admin. `isAdmin` is a function so the admin lookup only runs for non-creators.
+ * Resolves to { ok, byAdmin }; byAdmin marks an admin acting on someone else's document.
+ */
+async function esignManageAccess({ doc, user, isAdmin }) {
+  const email = normalizeEmail(user && user.email);
+  if (!doc || !email) return { ok: false, byAdmin: false };
+  if (actorIsEsignDocumentCreator(doc, email)) return { ok: true, byAdmin: false };
+  const admin = typeof isAdmin === 'function' ? (await isAdmin(user)) === true : false;
+  return { ok: admin, byAdmin: admin };
+}
+
 module.exports = {
   esignDocumentCreatorEmail,
   actorIsEsignDocumentCreator,
+  esignManageAccess,
 };

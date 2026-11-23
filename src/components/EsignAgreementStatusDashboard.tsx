@@ -785,6 +785,11 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     return creator !== '' && creator === me;
   };
 
+  // Remind, extend, cancel, delete and copy link: the server allows the creator or an approval admin.
+  const canManageAgreement = (ag: Agreement): boolean => {
+    return isCurrentUserCreator(ag) || userIsApprovalAdmin;
+  };
+
   const handleStatusModalPreview = () => {
     if (!statusModalId || !statusModalDoc) return;
     setPreviewDoc({ id: statusModalId, file_name: statusModalDoc.file_name });
@@ -1234,19 +1239,19 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                               </>
                             )}
                             {ag.status === 'sent' && !rowIsZoho && (() => {
-                              const isCreator = isCurrentUserCreator(ag);
+                              const canManage = canManageAgreement(ag);
                               return (
                                 <button
                                   type="button"
-                                  onClick={isCreator
+                                  onClick={canManage
                                     ? (e) => handleCopyLink(ag.id, e.currentTarget.getBoundingClientRect())
-                                    : () => alert('Only the agreement creator can copy the signing link.')}
-                                  disabled={isCreator && copyingId === ag.id}
-                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-lg disabled:opacity-50 ${isCreator ? 'text-slate-500 hover:text-indigo-600 hover:bg-indigo-50' : 'text-slate-300 cursor-not-allowed'}`}
-                                  title={isCreator ? 'Copy signing link' : 'Only the agreement creator can copy the signing link.'}
+                                    : () => alert('Only the agreement creator or an approval admin can copy the signing link.')}
+                                  disabled={canManage && copyingId === ag.id}
+                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-lg disabled:opacity-50 ${canManage ? 'text-slate-500 hover:text-indigo-600 hover:bg-indigo-50' : 'text-slate-300 cursor-not-allowed'}`}
+                                  title={canManage ? 'Copy signing link' : 'Only the agreement creator or an approval admin can copy the signing link.'}
                                   aria-label="Copy signing link"
                                 >
-                                  {isCreator && copyingId === ag.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                                  {canManage && copyingId === ag.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
                                 </button>
                               );
                             })()}
@@ -1326,9 +1331,9 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                 if (!openAgreement) return null;
                 const status = (openAgreement.status || '').toLowerCase();
                 const showDownload = status === 'signed' || status === 'completed' || status === 'denied';
-                const isCreator = isCurrentUserCreator(openAgreement);
+                const canManage = canManageAgreement(openAgreement);
                 const denyAction = (msg: string) => { closeActionsMenu(); alert(msg); };
-                const mgmtBtnClass = isCreator
+                const mgmtBtnClass = canManage
                   ? 'flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50'
                   : 'flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-400 hover:bg-slate-50 cursor-not-allowed';
                 return createPortal(
@@ -1342,16 +1347,16 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                       {status === 'sent' && (
                         <button
                           type="button"
-                          onClick={isCreator
+                          onClick={canManage
                             ? () => { handleRemind(openAgreement.id, openAgreement.file_name); closeActionsMenu(); }
-                            : () => denyAction('Only the agreement creator can send reminders.')}
-                          disabled={isCreator && remindingId === openAgreement.id}
+                            : () => denyAction('Only the agreement creator or an approval admin can send reminders.')}
+                          disabled={canManage && remindingId === openAgreement.id}
                           className={mgmtBtnClass}
-                          title={isCreator ? undefined : 'Only the agreement creator can send reminders.'}
+                          title={canManage ? undefined : 'Only the agreement creator or an approval admin can send reminders.'}
                         >
-                          {isCreator && remindingId === openAgreement.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Bell className="h-4 w-4 shrink-0" />}
+                          {canManage && remindingId === openAgreement.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Bell className="h-4 w-4 shrink-0" />}
                           Send Reminder
-                          {!isCreator && <Lock className="h-3 w-3 ml-auto shrink-0" />}
+                          {!canManage && <Lock className="h-3 w-3 ml-auto shrink-0" />}
                         </button>
                       )}
                       <button
@@ -1365,31 +1370,31 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                       {status === 'sent' && !isZohoAgreement(openAgreement) && (
                         <button
                           type="button"
-                          onClick={isCreator
+                          onClick={canManage
                             ? () => { handleExtendExpiry(openAgreement.id, openAgreement.file_name); closeActionsMenu(); }
                             : () => denyAction('You do not have permission to extend the expiry date.')}
-                          disabled={isCreator && extendingId === openAgreement.id}
+                          disabled={canManage && extendingId === openAgreement.id}
                           className={mgmtBtnClass}
-                          title={isCreator ? undefined : 'You do not have permission to extend the expiry date.'}
+                          title={canManage ? undefined : 'You do not have permission to extend the expiry date.'}
                         >
-                          {isCreator && extendingId === openAgreement.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Clock className="h-4 w-4 shrink-0" />}
+                          {canManage && extendingId === openAgreement.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Clock className="h-4 w-4 shrink-0" />}
                           Extend expiry
-                          {!isCreator && <Lock className="h-3 w-3 ml-auto shrink-0" />}
+                          {!canManage && <Lock className="h-3 w-3 ml-auto shrink-0" />}
                         </button>
                       )}
                       {status === 'sent' && (
                         <button
                           type="button"
-                          onClick={isCreator
+                          onClick={canManage
                             ? () => { handleCancelSigning(openAgreement.id, openAgreement.file_name); closeActionsMenu(); }
-                            : () => denyAction('Only the agreement creator can cancel this agreement.')}
-                          disabled={isCreator && cancelingId === openAgreement.id}
+                            : () => denyAction('Only the agreement creator or an approval admin can cancel this agreement.')}
+                          disabled={canManage && cancelingId === openAgreement.id}
                           className={mgmtBtnClass}
-                          title={isCreator ? undefined : 'Only the agreement creator can cancel this agreement.'}
+                          title={canManage ? undefined : 'Only the agreement creator or an approval admin can cancel this agreement.'}
                         >
-                          {isCreator && cancelingId === openAgreement.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <XCircle className="h-4 w-4 shrink-0" />}
+                          {canManage && cancelingId === openAgreement.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <XCircle className="h-4 w-4 shrink-0" />}
                           Cancel Signing
-                          {!isCreator && <Lock className="h-3 w-3 ml-auto shrink-0" />}
+                          {!canManage && <Lock className="h-3 w-3 ml-auto shrink-0" />}
                         </button>
                       )}
                       {showDownload && (
@@ -1402,25 +1407,25 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                           Download
                         </button>
                       )}
-                      {/* Delete — creator only, any status. Separated and red-tinted because
+                      {/* Delete — creator or approval admin, any status. Separated and red-tinted because
                           it is the only irreversible action in this menu. */}
                       <div className="my-1 border-t border-slate-100" />
                       <button
                         type="button"
-                        onClick={isCreator
+                        onClick={canManage
                           ? () => { handleDeleteAgreement(openAgreement.id, openAgreement.file_name); closeActionsMenu(); }
-                          : () => denyAction('Only the agreement creator can delete this agreement.')}
-                        disabled={isCreator && deletingId === openAgreement.id}
-                        className={isCreator
+                          : () => denyAction('Only the agreement creator or an approval admin can delete this agreement.')}
+                        disabled={canManage && deletingId === openAgreement.id}
+                        className={canManage
                           ? 'flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50'
                           : mgmtBtnClass}
-                        title={isCreator ? 'Permanently delete this agreement' : 'Only the agreement creator can delete this agreement.'}
+                        title={canManage ? 'Permanently delete this agreement' : 'Only the agreement creator or an approval admin can delete this agreement.'}
                       >
-                        {isCreator && deletingId === openAgreement.id
+                        {canManage && deletingId === openAgreement.id
                           ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
                           : <Trash2 className="h-4 w-4 shrink-0" />}
                         Delete
-                        {!isCreator && <Lock className="h-3 w-3 ml-auto shrink-0" />}
+                        {!canManage && <Lock className="h-3 w-3 ml-auto shrink-0" />}
                       </button>
                     </div>
                   </>,
