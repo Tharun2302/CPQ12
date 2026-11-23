@@ -115,10 +115,11 @@ describe('GET and DELETE /api/documents/:id are scoped to people with access', (
     expect(route).not.toMatch(/status\(403\)/);
   });
 
-  it('DELETE allows only the creator or a document admin, answers 404 otherwise, and is audit logged', () => {
+  it('DELETE allows only a document admin, answers 404 otherwise, and is audit logged', () => {
     const route = routeSource('delete', '/api/documents/:id');
-    expect(route).toContain('mayDeleteDocument({ doc, user: authUser, isDocumentAdmin: await hasDocumentAdminAccess(authUser) })');
-    expect(route.indexOf('if (!mayDelete)')).toBeLessThan(route.indexOf('deleteOne('));
+    expect(route).toContain('await findDocumentForAdminDelete(req.params.id, authUser)');
+    expect(route.indexOf('if (!doc)')).toBeLessThan(route.indexOf('deleteOne('));
+    expect(route).toContain("logAudit(doc._id, 'document_deleted', authUser.email");
     expect(route).toContain("logger.info('Document deleted'");
     expect(route).not.toMatch(/status\(403\)|details:\s*error\.message/);
   });

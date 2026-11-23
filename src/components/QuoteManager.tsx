@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Quote } from '../types/pricing';
 import { BACKEND_URL } from '../config/api';
 import OnlyOfficeEditor from './OnlyOfficeEditor';
@@ -38,6 +38,7 @@ import {
 import { convertPdfToWord, downloadWordFile } from '../utils/pdfToWordConverter';
 import { SUPPRESS_PII } from '../analytics/privacy';
 import { getQuoteTotals } from '../utils/discount';
+import DeleteDocumentDialog, { type DocumentLinksState } from './DeleteDocumentDialog';
 
 
 interface QuoteManagerProps {
@@ -111,6 +112,13 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
   const [redlineConfig, setRedlineConfig] = useState<any>(null);
   const [isStartingRedline, setIsStartingRedline] = useState<string | null>(null);
   const [isFinalizingRedline, setIsFinalizingRedline] = useState(false);
+  const [docPendingDelete, setDocPendingDelete] = useState<SavedDocument | null>(null);
+  const [docDeleteLinks, setDocDeleteLinks] = useState<DocumentLinksState>('loading');
+  const [isDeletingDoc, setIsDeletingDoc] = useState(false);
+  const [docDeleteError, setDocDeleteError] = useState<string | null>(null);
+  const pendingDeleteIdRef = useRef<string | null>(null);
+  // The server sends scope 'all' only to document admins, the only people allowed to delete
+  const canDeleteDocuments = documentListScope === 'all';
 
   const loadSavedDocuments = useCallback(async () => {
     setLoadingDocuments(true);
@@ -204,6 +212,42 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
     }
   };
   
+  const openDeleteDocument = (doc: SavedDocument) => {
+    setDocPendingDelete(doc);
+    setDocDeleteError(null);
+    setDocDeleteLinks('loading');
+    pendingDeleteIdRef.current = doc.id;
+    // A late answer for a dialog that was closed or reopened on another document is dropped
+    const applyIfCurrent = (state: DocumentLinksState) => {
+      if (pendingDeleteIdRef.current === doc.id) setDocDeleteLinks(state);
+    };
+    documentServiceMongoDB.getDocumentLinks(doc.id)
+      .then(applyIfCurrent)
+      .catch(() => applyIfCurrent('error'));
+  };
+
+  const closeDeleteDocument = () => {
+    pendingDeleteIdRef.current = null;
+    setDocPendingDelete(null);
+  };
+
+  const confirmDeleteDocument = async () => {
+    if (!docPendingDelete) return;
+    const deletedId = docPendingDelete.id;
+    setIsDeletingDoc(true);
+    setDocDeleteError(null);
+    try {
+      await documentServiceMongoDB.deleteDocument(deletedId);
+      setSavedDocuments((docs) => docs.filter((d) => d.id !== deletedId));
+      setSavedDocumentsTotalCount((n) => Math.max(0, n - 1));
+      closeDeleteDocument();
+    } catch {
+      setDocDeleteError('Could not delete this document. Please try again.');
+    } finally {
+      setIsDeletingDoc(false);
+    }
+  };
+
   // Open a saved document for redlining in OnlyOffice
   const handleDownloadForRedline = async (doc: SavedDocument) => {
     if (!doc.id) return;
@@ -1666,12 +1710,34 @@ ZENOP Pro Solutions Team`;
                     )}
                     <span>Redline</span>
                   </button>
+                  {canDeleteDocuments && (
+                    <button
+                      type="button"
+                      onClick={() => openDeleteDocument(doc)}
+                      className="flex-1 min-w-[80px] px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                      title="Delete this document (document admins only)"
+                    >
+                      <Trash2 className="w-4 h-4 flex-shrink-0" />
+                      <span>Delete</span>
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {docPendingDelete && (
+        <DeleteDocumentDialog
+          doc={docPendingDelete}
+          links={docDeleteLinks}
+          deleting={isDeletingDoc}
+          error={docDeleteError}
+          onCancel={closeDeleteDocument}
+          onConfirm={confirmDeleteDocument}
+        />
+      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (

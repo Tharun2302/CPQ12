@@ -4302,7 +4302,27 @@ app.get('/api/documents/:id', async (req, res) => {
   }
 });
 
-// Delete PDF document by ID
+// Admin check before the lookup, so non-admins get the same 404 whether or not the id exists
+async function findDocumentForAdminDelete(rawId, authUser) {
+  const idInput = parseDocumentIdInput(rawId);
+  if (!idInput.ok || !idInput.value) return null;
+  const isDocumentAdmin = await hasDocumentAdminAccess(authUser);
+  if (!isDocumentAdmin) return null;
+  const doc = await db.collection('documents').findOne(
+    { id: idInput.value }, { projection: { _id: 1, id: 1, createdByEmail: 1 } },
+  );
+  return doc && mayDeleteDocument({ doc, user: authUser, isDocumentAdmin }) ? doc : null;
+}
+
+async function countDocumentLinks(documentId) {
+  const [approvals, esign] = await Promise.all([
+    db.collection('approval_workflows').countDocuments({ documentId }),
+    db.collection('esign_documents').countDocuments({ source_document_id: documentId }),
+  ]);
+  return { approvals, esign };
+}
+
+// Delete PDF document by ID (document admins only)
 app.delete('/api/documents/:id', async (req, res) => {
   try {
     if (!db) {
@@ -4312,34 +4332,56 @@ app.delete('/api/documents/:id', async (req, res) => {
     const authUser = await getAuthenticatedUser(req, res);
     if (!authUser) return;
 
-    const documentId = String(req.params.id);
-    const documentsCollection = db.collection('documents');
-    const doc = await documentsCollection.findOne({ id: documentId }, { projection: { id: 1, createdByEmail: 1 } });
-    const mayDelete = !!doc && (
-      mayDeleteDocument({ doc, user: authUser }) ||
-      mayDeleteDocument({ doc, user: authUser, isDocumentAdmin: await hasDocumentAdminAccess(authUser) })
-    );
-    if (!mayDelete) {
+    const doc = await findDocumentForAdminDelete(req.params.id, authUser);
+    if (!doc) {
       return res.status(404).json({ success: false, error: 'Document not found' });
     }
 
-    const result = await documentsCollection.deleteOne({ id: documentId });
+    const links = await countDocumentLinks(doc.id);
+    const result = await db.collection('documents').deleteOne({ id: doc.id });
     if (result.deletedCount === 0) {
       return res.status(404).json({ success: false, error: 'Document not found' });
     }
 
-    logger.info('Document deleted', { source: 'documents', actor: authUser.email, documentId });
+    // The document is gone for good, so this entry is the only lasting record of who removed it
+    await logAudit(doc._id, 'document_deleted', authUser.email, req.ip || null, {
+      source: 'documents', document_id: doc.id, linked_approvals: links.approvals, linked_esign: links.esign,
+    });
+    logger.info('Document deleted', { source: 'documents', actor: authUser.email, documentId: doc.id });
 
-    res.json({ 
-      success: true, 
-      message: 'Document deleted successfully' 
+    res.json({
+      success: true,
+      message: 'Document deleted successfully'
     });
   } catch (error) {
     logger.error('Document delete failed', { source: 'documents', error: error.message });
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       error: 'Failed to delete document'
     });
+  }
+});
+
+// Lets the delete confirmation warn that approvals / e-sign agreements still point at this document
+app.get('/api/documents/:id/links', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+    res.set('Cache-Control', 'no-store');
+
+    const doc = await findDocumentForAdminDelete(req.params.id, authUser);
+    if (!doc) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    res.json({ success: true, links: await countDocumentLinks(doc.id) });
+  } catch (error) {
+    logger.error('Document links lookup failed', { source: 'documents', error: error.message });
+    res.status(500).json({ success: false, error: 'Failed to check document links' });
   }
 });
 

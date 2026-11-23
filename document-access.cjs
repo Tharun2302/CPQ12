@@ -49,11 +49,11 @@ function mayReadDocument({
   return (linkedEsignDocs || []).some((e) => actorIsEsignDocumentCreator(e, email));
 }
 
-/** DELETE /api/documents/:id: the creator or a document admin. */
+/** DELETE /api/documents/:id: document admins only; creators cannot delete their own. */
 function mayDeleteDocument({ doc, user, isDocumentAdmin = false }) {
   const email = normalizeEmail(user && user.email);
   if (!doc || !email) return false;
-  return isDocumentAdmin === true || isCreator(doc, email);
+  return isDocumentAdmin === true;
 }
 
 const MAX_DOCUMENT_ID_LENGTH = 200;

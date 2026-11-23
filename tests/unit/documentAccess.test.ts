@@ -83,11 +83,13 @@ describe('mayReadDocument', () => {
 });
 
 describe('mayDeleteDocument', () => {
-  it('allows the creator and a document admin only', () => {
-    expect(mayDeleteDocument({ doc: DOC, user: { email: CREATOR } })).toBe(true);
+  it('allows a document admin only, not even the creator', () => {
     expect(mayDeleteDocument({ doc: DOC, user: STRANGER, isDocumentAdmin: true })).toBe(true);
+    expect(mayDeleteDocument({ doc: LEGACY, user: STRANGER, isDocumentAdmin: true })).toBe(true);
+    expect(mayDeleteDocument({ doc: DOC, user: { email: CREATOR } })).toBe(false);
     expect(mayDeleteDocument({ doc: DOC, user: STRANGER })).toBe(false);
-    expect(mayDeleteDocument({ doc: LEGACY, user: STRANGER })).toBe(false);
+    expect(mayDeleteDocument({ doc: DOC, user: {}, isDocumentAdmin: true })).toBe(false);
+    expect(mayDeleteDocument({ doc: null, user: STRANGER, isDocumentAdmin: true })).toBe(false);
   });
 });
 

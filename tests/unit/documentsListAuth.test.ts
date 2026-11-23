@@ -176,6 +176,7 @@ describe('GET and DELETE /api/documents/:id behaviour', () => {
   function setup() {
     const deleted: unknown[] = [];
     const logs: unknown[] = [];
+    const audits: unknown[] = [];
     const doc = { id: 'Acme_Jane_12345', createdByEmail: 'creator@test.example', fileData: Buffer.from('pdf') };
     const db = {
       collection(name: string) {
@@ -187,10 +188,10 @@ describe('GET and DELETE /api/documents/:id behaviour', () => {
           };
         }
         if (name === 'approval_workflows') {
-          return { find: () => ({ toArray: async () => [{ creatorEmail: 'req@test.example', workflowSteps: [{ email: 'legal@test.example' }] }] }) };
+          return { find: () => ({ toArray: async () => [{ creatorEmail: 'req@test.example', workflowSteps: [{ email: 'legal@test.example' }] }] }), countDocuments: async () => 1 };
         }
         if (name === 'esign_documents') {
-          return { find: () => ({ toArray: async () => [{ uploaded_by: 'esign.owner@test.example' }] }) };
+          return { find: () => ({ toArray: async () => [{ uploaded_by: 'esign.owner@test.example' }] }), countDocuments: async () => 2 };
         }
         throw new Error(`unexpected collection ${name}`);
       },
@@ -204,6 +205,7 @@ describe('GET and DELETE /api/documents/:id behaviour', () => {
     new Function(
       'app', 'db', 'jwt', 'JWT_SECRET', 'console', 'loginSessions', 'logger',
       'mayReadDocument', 'mayDeleteDocument', 'hasDocumentAdminAccess', 'hasApprovalAdminAccess', 'hasRedlineAdminAccess',
+      'parseDocumentIdInput', 'logAudit',
       `${loginSessionSrc}\n${authHelperSrc}\n${readHelperSrc}\n${getRoute}\n${deleteRoute}`,
     )(
       app, db, withSession({ verify: (t: string) => ({ userId: t.split('.')[1] }) }), 'secret',
@@ -211,6 +213,7 @@ describe('GET and DELETE /api/documents/:id behaviour', () => {
       { info: (...a: unknown[]) => logs.push(a), error: () => {} },
       (access as any).mayReadDocument, (access as any).mayDeleteDocument,
       flag('docadmin'), flag('apadmin'), async () => false,
+      (access as any).parseDocumentIdInput, async (...a: unknown[]) => { audits.push(a); },
     );
     const call = async (method: 'get' | 'delete', who: string, id = doc.id) => {
       const res = {
@@ -223,7 +226,7 @@ describe('GET and DELETE /api/documents/:id behaviour', () => {
       await handlers[method]({ headers: { authorization: `Bearer a.${who}.c` }, params: { id } }, res);
       return res;
     };
-    return { call, deleted, logs };
+    return { call, deleted, logs, audits };
   }
 
   it.each(['creator', 'approver', 'signer', 'docadmin', 'apadmin'])('GET: %s can open the document', async (who) => {
@@ -241,16 +244,19 @@ describe('GET and DELETE /api/documents/:id behaviour', () => {
     expect(stranger.body).toEqual(missing.body);
   });
 
-  it('DELETE: only the creator or a document admin; others get 404 and nothing is deleted', async () => {
-    for (const who of ['stranger', 'approver', 'apadmin']) {
+  it('DELETE: only a document admin; everyone else, the creator included, gets 404 and nothing is deleted', async () => {
+    for (const who of ['stranger', 'approver', 'apadmin', 'creator']) {
       const { call, deleted } = setup();
       expect((await call('delete', who)).statusCode).toBe(404);
       expect(deleted).toEqual([]);
     }
-    for (const who of ['creator', 'docadmin']) {
-      const { call, deleted, logs } = setup();
+    for (const who of ['docadmin']) {
+      const { call, deleted, logs, audits } = setup();
       expect((await call('delete', who)).statusCode).toBe(200);
       expect(deleted).toEqual([{ id: 'Acme_Jane_12345' }]);
+      expect(audits).toEqual([[undefined, 'document_deleted', USERS[who].email, null, {
+        source: 'documents', document_id: 'Acme_Jane_12345', linked_approvals: 1, linked_esign: 2,
+      }]]);
       expect(logs[0]).toEqual(['Document deleted', { source: 'documents', actor: USERS[who].email, documentId: 'Acme_Jane_12345' }]);
     }
   });

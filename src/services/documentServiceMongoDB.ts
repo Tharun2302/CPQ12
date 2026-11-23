@@ -7,6 +7,7 @@ import { getAuthHeaders } from '../utils/authUtils';
 
 export type DealDocumentsApprovalFilter = 'all' | 'in_workflow' | 'no_workflow';
 export type DocumentListScope = 'all' | 'own';
+export interface DocumentLinks { approvals: number; esign: number }
 
 export interface SavedDocument {
   id: string;
@@ -179,9 +180,7 @@ class DocumentServiceMongoDB {
    */
   async deleteDocument(id: string): Promise<void> {
     try {
-      console.log('🗑️ Deleting document from MongoDB:', id);
-      
-      const response = await fetch(`${this.apiUrl}/${id}`, {
+      const response = await fetch(`${this.apiUrl}/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: getAuthHeaders(),
       });
@@ -197,12 +196,20 @@ class DocumentServiceMongoDB {
       if (!data.success) {
         throw new Error(data.error || 'Failed to delete document');
       }
-
-      console.log('✅ Document deleted from MongoDB successfully:', id);
     } catch (error) {
       console.error('❌ Error deleting document from MongoDB:', error);
       throw error;
     }
+  }
+
+  /** Admin-only: how many approvals and e-sign agreements still point at this document. */
+  async getDocumentLinks(id: string): Promise<DocumentLinks> {
+    const response = await fetch(`${this.apiUrl}/${encodeURIComponent(id)}/links`, { headers: getAuthHeaders() });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.success || !data.links) {
+      throw new Error(data?.error || `HTTP error! status: ${response.status}`);
+    }
+    return { approvals: Number(data.links.approvals) || 0, esign: Number(data.links.esign) || 0 };
   }
 
   /**
