@@ -48,6 +48,7 @@ const SITES: Site[] = [
   { label: 'every /api/esign fetch (status dashboard)', file: 'src/components/EsignAgreementStatusDashboard.tsx', opening: new RegExp(`fetch\\(${B}/api/esign/`), count: 10 },
   { label: 'POST send-for-signature (esignDocumentService)', file: 'src/services/esignDocumentService.ts', opening: new RegExp(`fetch\\(${B}/api/esign/documents/\\$\\{documentId\\}/send-for-signature\``), count: 1 },
   { label: 'GET edit-context (EditDatesModal)', file: 'src/components/EditDatesModal.tsx', opening: /fetch\(`\$\{endpointBase\}\/edit-context`/, count: 1 },
+  { label: 'GET saved agreement Word file (EditDatesModal)', file: 'src/components/EditDatesModal.tsx', opening: new RegExp(`fetch\\(${B}/api/documents/`), count: 1 },
 ];
 
 describe('login-only calls on the quotes, team settings and e-sign sender pages send the saved login', () => {

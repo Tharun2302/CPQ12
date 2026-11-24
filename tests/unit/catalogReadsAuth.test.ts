@@ -58,7 +58,6 @@ const SITES: Site[] = [
   { label: 'GET /api/templates/:id/file (QuoteGenerator)', file: 'src/components/QuoteGenerator.tsx', opening: new RegExp(`fetch\\(${BACKEND}/api/templates/\\$\\{selectedTemplate\\.id\\}/file`), count: 2 },
   { label: 'GET /api/exhibits + /file (QuoteGenerator)', file: 'src/components/QuoteGenerator.tsx', opening: new RegExp(`fetch\\(${BACKEND}/api/exhibits`), count: 6 },
   { label: 'GET /api/templates/:id/file (TemplateManager cache loader)', file: 'src/components/TemplateManager.tsx', opening: new RegExp(`fetch\\(${BACKEND}/api/templates/\\$\\{templateId\\}/file\``), count: 1 },
-  { label: 'GET template or combination file (EditDatesModal)', file: 'src/components/EditDatesModal.tsx', opening: /fetch\(templateFileUrl\(context\.templateId\)/, count: 1 },
   { label: 'GET /api/templates (templateService)', file: 'src/utils/templateService.ts', opening: /fetch\(`\$\{this\.baseUrl\}\/templates`/, count: 2 },
   { label: 'GET /api/templates/:id/file (templateService)', file: 'src/utils/templateService.ts', opening: /fetch\(`\$\{this\.baseUrl\}\/templates\/\$\{templateId\}\/file`/, count: 1 },
 ];

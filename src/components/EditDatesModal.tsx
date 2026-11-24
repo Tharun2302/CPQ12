@@ -3,6 +3,8 @@ import { Calendar, Loader2, AlertTriangle, History, X, Check } from 'lucide-reac
 import { BACKEND_URL } from '../config/api';
 import { authAwareError, getAuthHeaders, hasUsableAuthToken } from '../utils/authUtils';
 import { SUPPRESS_PII } from '../analytics/privacy';
+import { applyDatesToTemplateData, changedDatesNotInFile, printedTemplateValues, type ContractDates } from '../utils/contractDateValues';
+import { planTextReplacements, replaceTextInDocx, swapText, type TextReplacement } from '../utils/docxTextSwap';
 
 interface DateHistoryEntry {
   changedAt: string;
@@ -11,12 +13,7 @@ interface DateHistoryEntry {
   newDates: ContractDates;
   reason: string | null;
   reRendered: boolean;
-}
-
-interface ContractDates {
-  projectStartDate: string | null;
-  effectiveDate: string | null;
-  quoteExpiryDate: string | null;
+  templateDataUpdated?: boolean;
 }
 
 interface EditContext {
@@ -28,6 +25,8 @@ interface EditContext {
   dates: ContractDates | null;
   templateData: Record<string, string> | null;
   templateId: string | null;
+  // The `documents` row holding the saved Word file; null when there is none
+  docxDocumentId?: string | null;
   customLineItems: Array<{ name: string; description: string; price: number }>;
   dateHistory: DateHistoryEntry[];
   clientInfo: { clientName: string | null; clientEmail: string | null; company: string | null } | null;
@@ -49,137 +48,7 @@ interface EditDatesModalProps {
   canEdit?: boolean;
 }
 
-const COMBINATION_TEMPLATE_PREFIX = 'combo-';
-
-// Combination-attached agreements are saved as "combo-<combinationId>" and live in the combinations collection, not templates
-export function templateFileUrl(templateId: string): string {
-  if (templateId.startsWith(COMBINATION_TEMPLATE_PREFIX)) {
-    const combinationId = templateId.slice(COMBINATION_TEMPLATE_PREFIX.length);
-    return `${BACKEND_URL}/api/combinations/${encodeURIComponent(combinationId)}/file`;
-  }
-  return `${BACKEND_URL}/api/templates/${encodeURIComponent(templateId)}/file`;
-}
-
-/** Format an ISO date string (YYYY-MM-DD) as "27th of June, 2026" — mirrors
- *  formatDateLongOrdinal in QuoteGenerator. The two impls must stay in sync. */
-function formatDateLongOrdinal(dateString: string): string {
-  if (!dateString) return '';
-  try {
-    const date = dateString.includes('-') ? new Date(dateString + 'T00:00:00') : new Date(dateString);
-    if (isNaN(date.getTime())) return '';
-    const day = date.getDate();
-    const suffix = day >= 11 && day <= 13 ? 'th' : day % 10 === 1 ? 'st' : day % 10 === 2 ? 'nd' : day % 10 === 3 ? 'rd' : 'th';
-    const month = date.toLocaleString('en-US', { month: 'long' });
-    return `${day}${suffix} of ${month}, ${date.getFullYear()}`;
-  } catch {
-    return '';
-  }
-}
-
-/** Format an ISO date string (YYYY-MM-DD) as "MM/DD/YYYY" — matches
- *  DocxTemplateProcessor.formatDateMMDDYYYY which most start/end date tokens use. */
-function formatDateMMDDYYYY(dateString: string): string {
-  if (!dateString) return '';
-  try {
-    const date = dateString.includes('-') ? new Date(dateString + 'T00:00:00') : new Date(dateString);
-    if (isNaN(date.getTime())) return '';
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    return `${mm}/${dd}/${date.getFullYear()}`;
-  } catch {
-    return '';
-  }
-}
-
-/** Apply new dates to a templateData snapshot by overwriting every known date token.
- *  Returns a new object; does not mutate the input. End date is shifted by the same
- *  delta the start date moved by, preserving the original service term length. */
-function applyDatesToTemplateData(
-  snapshot: Record<string, string>,
-  newDates: ContractDates,
-  oldDates: ContractDates | null
-): Record<string, string> {
-  const out: Record<string, string> = { ...snapshot };
-
-  const newStart = newDates.projectStartDate || '';
-  const newEffective = newDates.effectiveDate || '';
-  const newExpiry = newDates.quoteExpiryDate || '';
-
-  // Derive new service_end_date by shifting old end by (new start - old start) so
-  // the contract term length stays the same. Falls back to snapshot value when
-  // we can't compute the delta.
-  let newServiceEnd = out['{{service_end_date}}'] || out['{{end_date}}'] || '';
-  if (newStart && oldDates?.projectStartDate) {
-    try {
-      const oldStartDate = new Date(oldDates.projectStartDate + 'T00:00:00');
-      const newStartDate = new Date(newStart + 'T00:00:00');
-      // Find any existing end date to shift.
-      const existingEnd = out['{{service_end_date}}'] || out['{{end_date}}'] || '';
-      if (existingEnd && existingEnd !== 'N/A') {
-        // existingEnd is in MM/DD/YYYY; parse it.
-        const parts = existingEnd.split('/');
-        if (parts.length === 3) {
-          const existingEndDate = new Date(Number(parts[2]), Number(parts[0]) - 1, Number(parts[1]));
-          if (!isNaN(existingEndDate.getTime()) && !isNaN(oldStartDate.getTime()) && !isNaN(newStartDate.getTime())) {
-            const deltaMs = newStartDate.getTime() - oldStartDate.getTime();
-            const newEndDate = new Date(existingEndDate.getTime() + deltaMs);
-            const mm = String(newEndDate.getMonth() + 1).padStart(2, '0');
-            const dd = String(newEndDate.getDate()).padStart(2, '0');
-            newServiceEnd = `${mm}/${dd}/${newEndDate.getFullYear()}`;
-          }
-        }
-      }
-    } catch {
-      /* leave newServiceEnd as-is */
-    }
-  }
-
-  // Effective date variations
-  if (newEffective) {
-    const effectiveFmt = formatDateMMDDYYYY(newEffective);
-    out['{{Effective Date}}'] = effectiveFmt;
-    out['{{effective_date}}'] = effectiveFmt;
-    out['{{effectiveDate}}'] = effectiveFmt;
-    out['{{Date}}'] = effectiveFmt;
-    out['{{date}}'] = effectiveFmt;
-    out['{{current_date}}'] = effectiveFmt;
-    out['{{today}}'] = effectiveFmt;
-  }
-
-  // Project start date variations
-  if (newStart) {
-    const startFmt = formatDateMMDDYYYY(newStart);
-    out['{{Start_date}}'] = startFmt;
-    out['{{start_date}}'] = startFmt;
-    out['{{startdate}}'] = startFmt;
-    out['{{project_start_date}}'] = startFmt;
-    out['{{project_start}}'] = startFmt;
-    out['{{service_start_date}}'] = startFmt;
-  }
-
-  // Service end date — derived from shift above (only if computed)
-  if (newServiceEnd) {
-    out['{{service_end_date}}'] = newServiceEnd;
-    out['{{End_date}}'] = newServiceEnd;
-    out['{{end_date}}'] = newServiceEnd;
-    out['{{enddate}}'] = newServiceEnd;
-    out['{{project_end_date}}'] = newServiceEnd;
-    out['{{project_end}}'] = newServiceEnd;
-    out['{{End date}}'] = newServiceEnd;
-    out['{{end date}}'] = newServiceEnd;
-  }
-
-  // Quote expiry — long ordinal format
-  if (newExpiry) {
-    const expiryLong = formatDateLongOrdinal(newExpiry);
-    out['{{quote_expiry_date_long}}'] = expiryLong;
-    out['{{quoteExpiryDateLong}}'] = expiryLong;
-    out['{{expiry_date_long}}'] = expiryLong;
-    out['{{quote_validity_line}}'] = expiryLong ? `This quote is valid till ${expiryLong}` : '';
-  }
-
-  return out;
-}
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 /** Convert a Blob to a base64-encoded string (no data: prefix). */
 function blobToBase64(blob: Blob): Promise<string> {
@@ -195,7 +64,104 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-const EditDatesModal: React.FC<EditDatesModalProps> = ({ documentId, actorEmail, onClose, onSaved, source = 'esign', canEdit = true }) => {
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function loadSavedDocx(documentId: string): Promise<Uint8Array> {
+  const res = await fetch(`${BACKEND_URL}/api/documents/${encodeURIComponent(documentId)}`, { headers: getAuthHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(authAwareError(res.status, data.error, `Could not load the saved agreement (${res.status}). Dates not updated.`));
+  }
+  const base64 = data.document?.docxFileData;
+  if (!base64) throw new Error('This agreement has no saved Word file, so the dates inside it cannot be changed. Dates not updated.');
+  return base64ToBytes(base64);
+}
+
+function metadataOnlyMessage(context: EditContext): string {
+  if (context.upload_source === 'manual') {
+    return 'This document was uploaded manually rather than generated from a template, so the dates inside the PDF cannot be updated automatically. Your changes will be saved to the audit log and shown in the change history below — the file itself will keep its original content.';
+  }
+  return 'This document has no saved Word file with its date details (it was uploaded or generated before date-editing was enabled), so the dates inside the file cannot be changed. Your changes will be saved to the audit log and shown in the change history below — the file itself will keep its original content.';
+}
+
+// Only text really swapped in the file is stored, so the next edit searches for what is printed
+function printedAfterSwap(current: Record<string, string>, applied: TextReplacement[]): Record<string, string> {
+  return Object.fromEntries(Object.entries(current).map(([key, value]) => [key, swapText(String(value ?? ''), applied)]));
+}
+
+function confirmDatesNotInFile(labels: string[]): boolean {
+  if (!labels.length) return true;
+  return window.confirm(
+    `The agreement file does not show this date, or showed it as blank or "N/A": ${labels.join(', ')}. ` +
+    'The file will not change for it, but the new date will still be saved to the change history. Continue?'
+  );
+}
+
+// Swaps dates inside the saved agreement instead of rebuilding from the template, which drops exhibits and redlines
+async function swapDatesInSavedFile(
+  context: EditContext,
+  newDates: ContractDates,
+  setProgress: (text: string) => void
+): Promise<Record<string, unknown> | null> {
+  setProgress('Loading saved agreement…');
+  const savedDocx = await loadSavedDocx(context.docxDocumentId as string);
+  const current = printedTemplateValues(context.templateData as Record<string, string>, context.dateHistory);
+  const plan = planTextReplacements(current, applyDatesToTemplateData(current, newDates, context.dates));
+  if (!plan.ok) {
+    throw new Error(`The text "${plan.sharedText}" is used for more than one date in this agreement, so it cannot be changed safely. Dates not updated.`);
+  }
+
+  setProgress('Changing dates in the agreement…');
+  const { docx, counts } = replaceTextInDocx(savedDocx, plan.replacements);
+  const applied = plan.replacements.filter((r) => counts[r.from]);
+  const swappedTexts = new Set(applied.map((r) => r.from));
+  if (!confirmDatesNotInFile(changedDatesNotInFile(current, swappedTexts, context.dates, newDates))) return null;
+  const templateData = printedAfterSwap(current, applied);
+  if (applied.length === 0) return { templateData };
+
+  setProgress('Converting to PDF…');
+  const docxBlob = new Blob([docx as BlobPart], { type: DOCX_MIME });
+  const { templateService } = await import('../utils/templateService');
+  const pdfBlob = await templateService.convertDocxToPdf(docxBlob);
+  return {
+    templateData,
+    docxFileData: await blobToBase64(docxBlob),
+    docxFileName: (context.file_name || 'agreement').replace(/\.pdf$/i, '') + '.docx',
+    pdfFileData: await blobToBase64(pdfBlob),
+    pdfFileName: context.file_name || 'agreement.pdf',
+  };
+}
+
+async function saveDates(endpointBase: string, body: Record<string, unknown>): Promise<string | undefined> {
+  const res = await fetch(`${endpointBase}/dates`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(authAwareError(res.status, data.error, `Save failed (${res.status})`));
+  }
+  return data.message;
+}
+
+// Without a toast the modal just closes, and users can't tell the save landed
+function showSavedToast(message: string) {
+  try {
+    const toast = document.createElement('div');
+    toast.className = 'fixed top-4 right-4 z-[60] bg-emerald-600 text-white px-4 py-3 rounded-lg shadow-lg max-w-sm';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+  } catch { /* non-fatal */ }
+}
+
+const EditDatesModal: React.FC<EditDatesModalProps> =({ documentId, onClose, onSaved, source = 'esign', canEdit = true }) => {
   // Endpoint base depends on which collection holds the document. Both endpoints
   // expose the same shape; only the lookup key differs (Mongo _id vs custom id).
   const endpointBase = source === 'document'
@@ -231,15 +197,15 @@ const EditDatesModal: React.FC<EditDatesModalProps> = ({ documentId, actorEmail,
       }
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || `Failed to load (${res.status})`);
+        throw new Error(authAwareError(res.status, data.error, `Failed to load (${res.status})`));
       }
       const ctx: EditContext = data.context;
       setContext(ctx);
       setStartDate(ctx.dates?.projectStartDate || '');
       setEffectiveDate(ctx.dates?.effectiveDate || '');
       setExpiryDate(ctx.dates?.quoteExpiryDate || '');
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load edit context');
+    } catch (err) {
+      setError((err instanceof Error && err.message) || 'Failed to load edit context');
     } finally {
       setLoading(false);
     }
@@ -278,106 +244,24 @@ const EditDatesModal: React.FC<EditDatesModalProps> = ({ documentId, actorEmail,
         effectiveDate: effectiveDate || null,
         quoteExpiryDate: expiryDate || null,
       };
+      const patchBody: Record<string, unknown> = { dates: newDates, reason: reason.trim() || null };
 
-      let pdfFileData: string | null = null;
-      let pdfFileName: string | null = null;
-      let docxFileData: string | null = null;
-      let docxFileName: string | null = null;
-
-      // If we have a templateData snapshot + templateId, re-render the document
-      // client-side so the new dates appear inside the actual file.
-      if (canRerender && context.templateData && context.templateId) {
-        setProgress('Fetching template…');
-        const tmplResp = await fetch(templateFileUrl(context.templateId), { headers: getAuthHeaders() });
-        if (!tmplResp.ok) {
-          throw new Error(`Could not fetch original template (${tmplResp.status}). Dates not updated.`);
-        }
-        const tmplBlob = await tmplResp.blob();
-        const tmplFile = new File([tmplBlob], 'template.docx', {
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        });
-
-        setProgress('Re-rendering document…');
-        const updatedTemplateData = applyDatesToTemplateData(context.templateData, newDates, context.dates);
-        const { DocxTemplateProcessor } = await import('../utils/docxTemplateProcessor');
-        const result = await DocxTemplateProcessor.processDocxTemplate(
-          tmplFile,
-          updatedTemplateData,
-          {
-            customLineItems: (context.customLineItems || []).map((it) => ({
-              name: it.name,
-              description: it.description,
-              price: `$${Number(it.price).toFixed(2)}`,
-            })),
-          }
-        );
-        if (!result.success || !result.processedDocx) {
-          throw new Error(result.error || 'Failed to re-render document with new dates');
-        }
-        const newDocxBlob = result.processedDocx;
-        docxFileData = await blobToBase64(newDocxBlob);
-        docxFileName = (context.file_name || 'agreement').replace(/\.pdf$/i, '') + '.docx';
-
-        setProgress('Converting to PDF…');
-        const { templateService } = await import('../utils/templateService');
-        const newPdfBlob = await templateService.convertDocxToPdf(newDocxBlob);
-        pdfFileData = await blobToBase64(newPdfBlob);
-        pdfFileName = context.file_name || 'agreement.pdf';
-      } else {
-        // No re-render snapshot available — manual upload, or doc generated before this
-        // feature shipped. Update dates + audit log only; file content stays as-is.
-        const isManual = context.upload_source === 'manual';
-        const ok = window.confirm(
-          (isManual
-            ? 'This document was uploaded manually, so the dates inside the PDF cannot be updated automatically. '
-            : 'This document was generated before date-editing was supported, so the dates inside the file cannot be updated automatically. ') +
-            'Your changes will be saved to the audit log and shown in the change history. The PDF/DOCX itself will keep its original content. Continue?'
-        );
-        if (!ok) {
-          setSaving(false);
-          setProgress('');
-          return;
-        }
+      if (canRerender && context.templateData && context.docxDocumentId) {
+        const fileFields = await swapDatesInSavedFile(context, newDates, setProgress);
+        if (!fileFields) return;
+        Object.assign(patchBody, fileFields);
+      } else if (!window.confirm(`${metadataOnlyMessage(context)}\n\nContinue?`)) {
+        return;
       }
 
       setProgress('Saving…');
-      const patchBody: any = {
-        dates: newDates,
-        reason: reason.trim() || null,
-        actorEmail,
-      };
-      if (pdfFileData) patchBody.pdfFileData = pdfFileData;
-      if (pdfFileName) patchBody.pdfFileName = pdfFileName;
-      if (docxFileData) patchBody.docxFileData = docxFileData;
-      if (docxFileName) patchBody.docxFileName = docxFileName;
-
-      const patchResp = await fetch(`${endpointBase}/dates`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify(patchBody),
-      });
-      const patchData = await patchResp.json();
-      if (!patchResp.ok || !patchData.success) {
-        throw new Error(authAwareError(patchResp.status, patchData.error, `Save failed (${patchResp.status})`));
-      }
-
+      const message = await saveDates(endpointBase, patchBody);
       setProgress('Done');
-
-      // Visible success toast so users know the save landed — without this, the modal
-      // just closes silently and they can't tell whether anything happened (especially
-      // important for legacy docs where the file content itself doesn't change).
-      try {
-        const toast = document.createElement('div');
-        toast.className = 'fixed top-4 right-4 z-[60] bg-emerald-600 text-white px-4 py-3 rounded-lg shadow-lg max-w-sm';
-        toast.textContent = patchData.message || 'Dates saved.';
-        document.body.appendChild(toast);
-        setTimeout(() => toast.remove(), 4000);
-      } catch { /* non-fatal */ }
-
+      showSavedToast(message || 'Dates saved.');
       onSaved?.();
       onClose();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to save');
+    } catch (err) {
+      setError((err instanceof Error && err.message) || 'Failed to save');
     } finally {
       setSaving(false);
       setProgress('');
@@ -445,11 +329,7 @@ const EditDatesModal: React.FC<EditDatesModalProps> = ({ documentId, actorEmail,
               {canEdit && !canRerender && (
                 <div className="flex gap-2 items-start text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3">
                   <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-                  <div>
-                    {context.upload_source === 'manual'
-                      ? 'This document was uploaded manually rather than generated from a template, so the dates inside the PDF cannot be updated automatically. Your changes will be saved to the audit log and shown in the change history below — the file itself will keep its original content.'
-                      : 'This document was generated before date-editing was enabled, so the dates inside the file cannot be re-rendered. Your changes will be saved to the audit log and shown in the change history below — the file itself will keep its original content.'}
-                  </div>
+                  <div>{metadataOnlyMessage(context)}</div>
                 </div>
               )}
 
@@ -600,7 +480,7 @@ const EditDatesModal: React.FC<EditDatesModalProps> = ({ documentId, actorEmail,
               className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md inline-flex items-center gap-2 disabled:opacity-50"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              Save{canRerender ? ' & Re-render' : ''}
+              Save{canRerender ? ' & Update File' : ''}
             </button>
           )}
         </div>
