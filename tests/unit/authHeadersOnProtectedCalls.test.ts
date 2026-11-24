@@ -25,7 +25,7 @@ const SITES: Site[] = [
   { label: 'DELETE /api/quotes/:id', file: 'src/App.tsx', opening: /fetch\(`\$\{BACKEND_URL\}\/api\/quotes\/\$\{quoteId\}`,\s*\{\s*method: 'DELETE'/ },
   { label: 'PUT /api/quotes/:id', file: 'src/App.tsx', opening: /fetch\(`\$\{BACKEND_URL\}\/api\/quotes\/\$\{quoteId\}`,\s*\{\s*method: 'PUT'/ },
   { label: 'POST /api/documents (save)', file: 'src/services/documentServiceMongoDB.ts', opening: /fetch\(this\.apiUrl,\s*\{\s*method: 'POST'/ },
-  { label: 'DELETE /api/documents/:id', file: 'src/services/documentServiceMongoDB.ts', opening: /fetch\(`\$\{this\.apiUrl\}\/\$\{id\}`,\s*\{\s*method: 'DELETE'/ },
+  { label: 'DELETE /api/documents/:id', file: 'src/services/documentServiceMongoDB.ts', opening: /fetch\(`\$\{this\.apiUrl\}\/\$\{(?:encodeURIComponent\(id\)|id)\}`,\s*\{\s*method: 'DELETE'/ },
   { label: 'POST /api/documents (manual approval)', file: 'src/components/ApprovalWorkflow.tsx', opening: /fetch\(`\$\{backendUrl\}\/api\/documents`/ },
   { label: 'PUT /api/team-approval-settings (ApprovalWorkflow)', file: 'src/components/ApprovalWorkflow.tsx', opening: /fetch\(`\$\{BACKEND_URL\}\/api\/team-approval-settings`,\s*\{/ },
   { label: 'PUT /api/team-approval-settings (QuoteGenerator)', file: 'src/components/QuoteGenerator.tsx', opening: /fetch\(`\$\{BACKEND_URL\}\/api\/team-approval-settings`,\s*\{/ },
