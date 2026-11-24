@@ -197,6 +197,7 @@ const {
 } = require('./esign-progress-utils.cjs');
 
 const { loadEsignAccessLinks, filterEsignDocsForCaller } = require('./esign-list-access.cjs');
+const { mergeEditedTemplateData } = require('./edit-dates-template-data.cjs');
 const { recipientsForCaller, callerMaySeeRecipientTokens } = require('./esign-recipient-access.cjs');
 
 const {
@@ -228,6 +229,15 @@ async function actorCanEditEsignDates(esignDoc, actorEmail) {
   if (!actorEmail) return false;
   if (esignActorIsDocumentCreator(esignDoc, actorEmail)) return true;
   return await hasApprovalAdminAccess({ email: actorEmail });
+}
+
+/** Same visibility as the e-sign lists, plus anyone allowed to edit its dates. */
+async function callerMayViewEsignDocument(esignDoc, user) {
+  const email = normalizeEmail(user && user.email);
+  if (!email) return false;
+  if (await actorCanEditEsignDates(esignDoc, email)) return true;
+  const links = await loadEsignAccessLinks(db, [esignDoc]);
+  return filterEsignDocsForCaller({ docs: [esignDoc], ...links, userEmail: email, isAdmin: false }).length > 0;
 }
 
 /** Authorization for Edit Dates on a documents-collection row. Creator OR Approval
@@ -9419,6 +9429,15 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
   }
 });
 
+// Checks for the saved Word file without loading it
+async function savedDocxDocumentId(documentId) {
+  const found = await db.collection('documents').countDocuments(
+    { id: String(documentId), docxFileData: { $exists: true, $ne: null } },
+    { limit: 1 }
+  );
+  return found ? String(documentId) : null;
+}
+
 // GET /api/documents/:id/edit-context
 // Same shape as the esign variant but targets the `documents` collection. Looked up
 // by the custom `id` field (e.g. "ContactCompanyInc_JohnSmith_37728"), not Mongo _id.
@@ -9427,8 +9446,15 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
 app.get('/api/documents/:id/edit-context', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
-    const doc = await db.collection('documents').findOne({ id: req.params.id });
-    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    // Exposes the client's name, email and pricing, so it needs the same access as opening the agreement
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+    res.set('Cache-Control', 'no-store');
+    const doc = await db.collection('documents').findOne({ id: String(req.params.id) }, { projection: { fileData: 0, docxFileData: 0 } });
+    if (!doc || !(await callerMayReadDocument(doc, authUser))) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+    const docxDocumentId = await savedDocxDocumentId(doc.id);
 
     res.json({
       success: true,
@@ -9440,6 +9466,7 @@ app.get('/api/documents/:id/edit-context', async (req, res) => {
         dates: doc.dates || null,
         templateData: doc.templateData || null,
         templateId: doc.templateId || null,
+        docxDocumentId,
         customLineItems: Array.isArray(doc.customLineItems) ? doc.customLineItems : [],
         dateHistory: Array.isArray(doc.dateHistory) ? doc.dateHistory : [],
         clientInfo: {
@@ -9447,7 +9474,7 @@ app.get('/api/documents/:id/edit-context', async (req, res) => {
           clientEmail: doc.clientEmail || null,
           company: doc.company || null,
         },
-        canRerender: !!(doc.templateData && doc.templateId),
+        canRerender: !!(doc.templateData && docxDocumentId),
       }
     });
   } catch (error) {
@@ -9474,6 +9501,7 @@ app.patch('/api/documents/:id/dates', async (req, res) => {
       pdfFileName,
       docxFileData,
       docxFileName,
+      templateData: editedTemplateData,
     } = req.body || {};
 
     if (!newDates || typeof newDates !== 'object') {
@@ -9497,6 +9525,7 @@ app.patch('/api/documents/:id/dates', async (req, res) => {
       quoteExpiryDate: newDates.quoteExpiryDate || null,
     };
 
+    const mergedTemplateData = mergeEditedTemplateData(doc.templateData, editedTemplateData);
     const historyEntry = {
       changedAt: new Date(),
       changedBy: (actorEmail && String(actorEmail).trim()) || 'unknown',
@@ -9504,6 +9533,7 @@ app.patch('/api/documents/:id/dates', async (req, res) => {
       newDates: normalizedNewDates,
       reason: (reason && String(reason).trim()) || null,
       reRendered: !!(pdfFileData || docxFileData),
+      templateDataUpdated: !!mergedTemplateData,
     };
 
     let newPdfBuffer = null;
@@ -9546,6 +9576,7 @@ app.patch('/api/documents/:id/dates', async (req, res) => {
       docUpdate.$set.docxFileData = newDocxBuffer;
       if (docxFileName) docUpdate.$set.docxFileName = docxFileName;
     }
+    if (mergedTemplateData) docUpdate.$set.templateData = mergedTemplateData;
 
     await db.collection('documents').updateOne({ id: req.params.id }, docUpdate);
 
@@ -9566,6 +9597,8 @@ app.patch('/api/documents/:id/dates', async (req, res) => {
             dateHistory: historyEntry,
           },
         };
+        // The e-sign Edit Dates screen prefers its own copy, so it must not keep the old date text
+        if (mergedTemplateData && esignDoc.templateData) esignUpdate.$set.templateData = mergedTemplateData;
         if (newPdfBuffer) {
           esignUpdate.$set.file_data = newPdfBuffer.toString('base64');
           if (pdfFileName) esignUpdate.$set.file_name = pdfFileName;
@@ -9613,8 +9646,13 @@ app.get('/api/esign/documents/:id/edit-context', async (req, res) => {
     } catch {
       return res.status(400).json({ success: false, error: 'Invalid document ID' });
     }
-    const doc = await db.collection('esign_documents').findOne({ _id: docId });
-    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const authUser = await getAuthenticatedUser(req, res);
+    if (!authUser) return;
+    res.set('Cache-Control', 'no-store');
+    const doc = await db.collection('esign_documents').findOne({ _id: docId }, { projection: { file_data: 0 } });
+    if (!doc || !(await callerMayViewEsignDocument(doc, authUser))) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
 
     // If esign doc doesn't have the snapshot (e.g. created before this feature shipped or
     // uploaded manually), try to backfill from the source document.
@@ -9624,10 +9662,21 @@ app.get('/api/esign/documents/:id/edit-context', async (req, res) => {
     let customLineItems = Array.isArray(doc.customLineItems) ? doc.customLineItems : [];
     let dateHistory = Array.isArray(doc.dateHistory) ? doc.dateHistory : [];
     let sourceClientInfo = null;
+    let docxDocumentId = null;
 
     if (doc.source_document_id) {
       try {
-        const sourceDoc = await db.collection('documents').findOne({ id: doc.source_document_id });
+        const sourceDoc = await db.collection('documents').findOne(
+          { id: String(doc.source_document_id) },
+          { projection: { fileData: 0, docxFileData: 0 } }
+        );
+        docxDocumentId = sourceDoc ? await savedDocxDocumentId(sourceDoc.id) : null;
+        // The Word file lives on the source row, and every date edit updates that row, so it is the record of what is printed
+        if (docxDocumentId) {
+          dates = sourceDoc.dates || dates;
+          templateData = sourceDoc.templateData || templateData;
+          dateHistory = Array.isArray(sourceDoc.dateHistory) ? sourceDoc.dateHistory : dateHistory;
+        }
         if (sourceDoc) {
           if (!dates && sourceDoc.dates) dates = sourceDoc.dates;
           if (!templateData && sourceDoc.templateData) templateData = sourceDoc.templateData;
@@ -9661,10 +9710,11 @@ app.get('/api/esign/documents/:id/edit-context', async (req, res) => {
         dates,
         templateData,
         templateId,
+        docxDocumentId,
         customLineItems,
         dateHistory,
         clientInfo: sourceClientInfo,
-        canRerender: !!(templateData && templateId),
+        canRerender: !!(templateData && docxDocumentId),
       }
     });
   } catch (error) {
@@ -9711,6 +9761,7 @@ app.patch('/api/esign/documents/:id/dates', async (req, res) => {
       pdfFileName,
       docxFileData,
       docxFileName,
+      templateData: editedTemplateData,
     } = req.body || {};
 
     if (!newDates || typeof newDates !== 'object') {
@@ -9733,6 +9784,17 @@ app.patch('/api/esign/documents/:id/dates', async (req, res) => {
       quoteExpiryDate: newDates.quoteExpiryDate || null,
     };
 
+    // Same order as edit-context: the source agreement's values (it holds the Word file), else the e-sign copy's
+    let storedTemplateData = doc.templateData || null;
+    if (doc.source_document_id && editedTemplateData) {
+      const sourceDoc = await db.collection('documents').findOne(
+        { id: String(doc.source_document_id) },
+        { projection: { templateData: 1 } }
+      );
+      storedTemplateData = (sourceDoc && sourceDoc.templateData) || storedTemplateData;
+    }
+    const mergedTemplateData = mergeEditedTemplateData(storedTemplateData, editedTemplateData);
+
     const historyEntry = {
       changedAt: new Date(),
       changedBy: (actorEmail && String(actorEmail).trim()) || doc.uploaded_by || 'unknown',
@@ -9740,6 +9802,7 @@ app.patch('/api/esign/documents/:id/dates', async (req, res) => {
       newDates: normalizedNewDates,
       reason: (reason && String(reason).trim()) || null,
       reRendered: !!(pdfFileData || docxFileData),
+      templateDataUpdated: !!mergedTemplateData,
     };
 
     // If client supplied a new PDF blob, write it to disk + update file_data.
@@ -9789,6 +9852,7 @@ app.patch('/api/esign/documents/:id/dates', async (req, res) => {
       esignUpdate.$set.file_data = newPdfBuffer.toString('base64');
       if (pdfFileName) esignUpdate.$set.file_name = pdfFileName;
     }
+    if (mergedTemplateData && doc.templateData) esignUpdate.$set.templateData = mergedTemplateData;
 
     await db.collection('esign_documents').updateOne({ _id: docId }, esignUpdate);
 
@@ -9820,6 +9884,7 @@ app.patch('/api/esign/documents/:id/dates', async (req, res) => {
           console.warn('PATCH dates: ignored invalid docxFileData base64', decodeErr?.message);
         }
       }
+      if (mergedTemplateData) sourceUpdate.$set.templateData = mergedTemplateData;
       try {
         await db.collection('documents').updateOne(
           { id: doc.source_document_id },
