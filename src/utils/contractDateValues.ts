@@ -47,6 +47,39 @@ export function changedDatesNotInFile(
     .map((f) => f.label);
 }
 
+// Loose match: the renderer fills a tag from any alias of it (Date <- {{date}})
+const tagName = (key: string) => key.replace(/^\{\{|\}\}$/g, '').replace(/[\s_]/g, '').toLowerCase();
+
+const DATE_KEY_GROUPS = [
+  EFFECTIVE_DATE_KEYS, START_DATE_KEYS, END_DATE_KEYS, EXPIRY_SHORT_KEYS, EXPIRY_LONG_KEYS,
+];
+
+// The validity line is never dropped: generation inserts it even without its tag
+export function keepPrintedDateKeys(
+  values: Record<string, string>,
+  templateTags: string[] | null | undefined
+): Record<string, string> {
+  if (!Array.isArray(templateTags)) return values;
+  const printed = new Set(templateTags.map(tagName));
+  const out = { ...values };
+  for (const group of DATE_KEY_GROUPS) {
+    if (group.some((key) => printed.has(tagName(key)))) continue;
+    for (const key of group) delete out[key];
+  }
+  return out;
+}
+
+// Dropped values take the new dates; printed ones keep what the file now shows
+export function mergeEditedValues(
+  current: Record<string, string>,
+  printed: Record<string, string>,
+  next: Record<string, string>,
+  printedNow: Record<string, string>
+): Record<string, string> {
+  const dropped = Object.keys(current).filter((key) => !(key in printed));
+  return { ...Object.fromEntries(dropped.map((key) => [key, next[key] ?? current[key]])), ...printedNow };
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function parseIsoDate(dateString: string): Date | null {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  applyDatesToTemplateData, changedDatesNotInFile, printedTemplateValues,
+  applyDatesToTemplateData, changedDatesNotInFile, keepPrintedDateKeys, mergeEditedValues, printedTemplateValues,
   EFFECTIVE_DATE_KEYS, START_DATE_KEYS, END_DATE_KEYS, EXPIRY_SHORT_KEYS, EXPIRY_LONG_KEYS, VALIDITY_LINE_KEY,
 } from '../../src/utils/contractDateValues';
 import { planTextReplacements } from '../../src/utils/docxTextSwap';
@@ -126,6 +126,69 @@ describe('changedDatesNotInFile', () => {
     const fromBlank = { ...savedDates, projectStartDate: null };
     expect(changedDatesNotInFile(values, new Set(), fromBlank, { ...savedDates, projectStartDate: '2026-12-15' }))
       .toEqual(['Project Start Date']);
+  });
+});
+
+describe('keepPrintedDateKeys', () => {
+  // The reported agreement: effective and expiry dates both saved as 12/25/2026
+  const sameText = { ...generated };
+  for (const key of [...EFFECTIVE_DATE_KEYS, ...EXPIRY_SHORT_KEYS]) sameText[key] = '12/25/2026';
+  sameText['{{quote_expiry_date_long}}'] = '25th of December, 2026';
+  sameText[VALIDITY_LINE_KEY] = 'This quote is valid till 25th of December, 2026';
+  const sameDates = { projectStartDate: '2026-12-01', effectiveDate: '2026-12-25', quoteExpiryDate: '2026-12-25' };
+  const newDates = { ...sameDates, quoteExpiryDate: '2026-12-28' };
+  const planFor = (tags: string[] | null) => {
+    const printed = keepPrintedDateKeys(sameText, tags);
+    return planTextReplacements(printed, applyDatesToTemplateData(printed, newDates, sameDates));
+  };
+
+  it('lets the expiry move when the template never printed the short expiry date', () => {
+    const plan = planFor(['Effective Date', 'service_start_date', 'service_end_date', 'Company Name']);
+    expect(plan.ok).toBe(true);
+    if (plan.ok) {
+      expect(plan.replacements).toEqual([
+        { from: 'This quote is valid till 25th of December, 2026', to: 'This quote is valid till 28th of December, 2026' },
+      ]);
+    }
+  });
+
+  it('still refuses when the template prints both dates as the same text', () => {
+    expect(planFor(['Effective Date', 'quote_expiry_date'])).toEqual({ ok: false, sharedText: '12/25/2026' });
+  });
+
+  it('keeps every value when the template is unknown', () => {
+    expect(keepPrintedDateKeys(sameText, null)).toEqual(sameText);
+    expect(planFor(null)).toEqual({ ok: false, sharedText: '12/25/2026' });
+  });
+
+  it('keeps a whole date group when the template uses any alias of it, matched loosely', () => {
+    const kept = keepPrintedDateKeys(generated, ['Date', ' start_date ', 'quote expiry date long']);
+    const keptGroups = [...EFFECTIVE_DATE_KEYS, ...START_DATE_KEYS, ...EXPIRY_LONG_KEYS].filter((k) => k in generated);
+    expect(Object.keys(kept)).toEqual(expect.arrayContaining(keptGroups));
+    for (const key of [...END_DATE_KEYS, ...EXPIRY_SHORT_KEYS]) expect(kept).not.toHaveProperty(key);
+  });
+
+  it('always keeps the validity line and the non-date values', () => {
+    const kept = keepPrintedDateKeys(generated, []);
+    expect(kept[VALIDITY_LINE_KEY]).toBe(generated[VALIDITY_LINE_KEY]);
+    expect(kept['{{company_name}}']).toBe('Acme');
+  });
+});
+
+describe('mergeEditedValues', () => {
+  const current = { '{{Effective Date}}': '12/25/2026', '{{quote_expiry_date}}': '12/25/2026', '{{company_name}}': 'Acme' };
+  const next = { ...current, '{{quote_expiry_date}}': '12/28/2026' };
+
+  it('is exactly what the file shows when nothing was dropped', () => {
+    const printedNow = { ...current, '{{company_name}}': 'Acme Ltd' };
+    expect(mergeEditedValues(current, current, next, printedNow)).toEqual(printedNow);
+  });
+
+  it('gives dropped values their new dates and keeps printed ones as the file shows them', () => {
+    const printed = { '{{Effective Date}}': '12/25/2026', '{{company_name}}': 'Acme' };
+    expect(mergeEditedValues(current, printed, next, printed)).toEqual({
+      '{{Effective Date}}': '12/25/2026', '{{quote_expiry_date}}': '12/28/2026', '{{company_name}}': 'Acme',
+    });
   });
 });
 

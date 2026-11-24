@@ -143,7 +143,11 @@ async function saveRedlineOverDocument(db, { documentId, editedPdf, editedDocx, 
 
   const result = await db.collection('documents').updateOne(
     { id: documentId },
-    { $set: { fileData: editedPdf, docxFileData: editedDocx, fileSize: editedPdf.length, updatedAt: new Date() } }
+    // Text typed in a redline isn't a template tag, so Edit Dates goes back to its strict check
+    {
+      $set: { fileData: editedPdf, docxFileData: editedDocx, fileSize: editedPdf.length, updatedAt: new Date() },
+      $unset: { templateTags: '' },
+    }
   );
   if (result.matchedCount === 0) return { ok: false, httpStatus: 404, error: 'Document not found' };
 

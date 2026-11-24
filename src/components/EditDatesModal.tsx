@@ -3,7 +3,10 @@ import { Calendar, Loader2, AlertTriangle, History, X, Check } from 'lucide-reac
 import { BACKEND_URL } from '../config/api';
 import { authAwareError, getAuthHeaders, hasUsableAuthToken } from '../utils/authUtils';
 import { SUPPRESS_PII } from '../analytics/privacy';
-import { applyDatesToTemplateData, changedDatesNotInFile, printedTemplateValues, type ContractDates } from '../utils/contractDateValues';
+import {
+  applyDatesToTemplateData, changedDatesNotInFile, keepPrintedDateKeys, mergeEditedValues, printedTemplateValues,
+  type ContractDates,
+} from '../utils/contractDateValues';
 import { planTextReplacements, replaceTextInDocx, swapText, type TextReplacement } from '../utils/docxTextSwap';
 
 interface DateHistoryEntry {
@@ -25,6 +28,8 @@ interface EditContext {
   dates: ContractDates | null;
   templateData: Record<string, string> | null;
   templateId: string | null;
+  // Tags of the template the agreement was rendered from; null keeps the strict check
+  templateTags?: string[] | null;
   // The `documents` row holding the saved Word file; null when there is none
   docxDocumentId?: string | null;
   customLineItems: Array<{ name: string; description: string; price: number }>;
@@ -111,7 +116,8 @@ async function swapDatesInSavedFile(
   setProgress('Loading saved agreement…');
   const savedDocx = await loadSavedDocx(context.docxDocumentId as string);
   const current = printedTemplateValues(context.templateData as Record<string, string>, context.dateHistory);
-  const plan = planTextReplacements(current, applyDatesToTemplateData(current, newDates, context.dates));
+  const printed = keepPrintedDateKeys(current, context.templateTags);
+  const plan = planTextReplacements(printed, applyDatesToTemplateData(printed, newDates, context.dates));
   if (!plan.ok) {
     throw new Error(`The text "${plan.sharedText}" is used for more than one date in this agreement, so it cannot be changed safely. Dates not updated.`);
   }
@@ -120,8 +126,9 @@ async function swapDatesInSavedFile(
   const { docx, counts } = replaceTextInDocx(savedDocx, plan.replacements);
   const applied = plan.replacements.filter((r) => counts[r.from]);
   const swappedTexts = new Set(applied.map((r) => r.from));
-  if (!confirmDatesNotInFile(changedDatesNotInFile(current, swappedTexts, context.dates, newDates))) return null;
-  const templateData = printedAfterSwap(current, applied);
+  if (!confirmDatesNotInFile(changedDatesNotInFile(printed, swappedTexts, context.dates, newDates))) return null;
+  const next = applyDatesToTemplateData(current, newDates, context.dates);
+  const templateData = mergeEditedValues(current, printed, next, printedAfterSwap(printed, applied));
   if (applied.length === 0) return { templateData };
 
   setProgress('Converting to PDF…');

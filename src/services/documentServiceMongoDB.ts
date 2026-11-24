@@ -39,6 +39,7 @@ export interface SavedDocument {
   } | null;
   templateData?: Record<string, string> | null;
   templateId?: string | null;
+  templateTags?: string[] | null;
   customLineItems?: Array<{ name: string; description: string; price: number }>;
 }
 

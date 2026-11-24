@@ -169,6 +169,7 @@ const {
 } = require('./onlyoffice-redline.cjs');
 const { parseCombinationInput, combinationRowHtml } = require('./approval-combination.cjs');
 const { createAdminEmailList } = require('./admin-email-lists.cjs');
+const { sanitizeTemplateTags } = require('./template-tags.cjs');
 const {
   documentListOwnerMatch,
   combineMatches,
@@ -4106,7 +4107,7 @@ app.post('/api/documents', async (req, res) => {
       fileName, fileData, fileSize, clientName, clientEmail, company,
       templateName, quoteId, metadata, docxFileData, docxFileName,
       // New fields for date editing post-generation
-      dates, templateData, templateId, customLineItems
+      dates, templateData, templateId, templateTags, customLineItems
     } = req.body;
 
     if (!fileName || !fileData) {
@@ -4193,6 +4194,8 @@ app.post('/api/documents', async (req, res) => {
       } : null,
       templateData: templateData && typeof templateData === 'object' ? templateData : null,
       templateId: templateId || null,
+      // Lets Edit Dates ignore saved values the template never printed
+      templateTags: sanitizeTemplateTags(templateTags),
       customLineItems: Array.isArray(customLineItems) ? customLineItems : [],
       dateHistory: [],
       ...creatorStampFromLogin(authUser),
@@ -9455,6 +9458,7 @@ app.get('/api/documents/:id/edit-context', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Document not found' });
     }
     const docxDocumentId = await savedDocxDocumentId(doc.id);
+    const templateTags = docxDocumentId ? sanitizeTemplateTags(doc.templateTags) : null;
 
     res.json({
       success: true,
@@ -9466,6 +9470,7 @@ app.get('/api/documents/:id/edit-context', async (req, res) => {
         dates: doc.dates || null,
         templateData: doc.templateData || null,
         templateId: doc.templateId || null,
+        templateTags,
         docxDocumentId,
         customLineItems: Array.isArray(doc.customLineItems) ? doc.customLineItems : [],
         dateHistory: Array.isArray(doc.dateHistory) ? doc.dateHistory : [],
@@ -9663,6 +9668,7 @@ app.get('/api/esign/documents/:id/edit-context', async (req, res) => {
     let dateHistory = Array.isArray(doc.dateHistory) ? doc.dateHistory : [];
     let sourceClientInfo = null;
     let docxDocumentId = null;
+    let templateTags = null;
 
     if (doc.source_document_id) {
       try {
@@ -9676,6 +9682,7 @@ app.get('/api/esign/documents/:id/edit-context', async (req, res) => {
           dates = sourceDoc.dates || dates;
           templateData = sourceDoc.templateData || templateData;
           dateHistory = Array.isArray(sourceDoc.dateHistory) ? sourceDoc.dateHistory : dateHistory;
+          templateTags = sanitizeTemplateTags(sourceDoc.templateTags);
         }
         if (sourceDoc) {
           if (!dates && sourceDoc.dates) dates = sourceDoc.dates;
@@ -9710,6 +9717,7 @@ app.get('/api/esign/documents/:id/edit-context', async (req, res) => {
         dates,
         templateData,
         templateId,
+        templateTags,
         docxDocumentId,
         customLineItems,
         dateHistory,

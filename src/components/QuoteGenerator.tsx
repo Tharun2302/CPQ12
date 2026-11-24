@@ -57,6 +57,7 @@ import { DiscountLimitNotes } from './DiscountInputField';
 import { useDiscountPolicy } from '../hooks/useDiscountPolicy';
 import { discountPolicyErrorMessage } from '../services/discountPolicyService';
 import { SUPPRESS_PII } from '../analytics/privacy';
+import { templateTagsOfFile } from '../utils/templatePlaceholders';
 
 // Job Requirement of the main agreement's own pricing rows (Multi-Combination, Data Sprawl).
 const MAIN_AGREEMENT_JOBS = ['CloudFuze Migrate', 'CloudFuze Data Sprawl'];
@@ -756,6 +757,8 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   /** Snapshot of the last token map sent to the DOCX processor — enables date editing
    *  post-generation. Saved alongside the document so EditDatesModal can re-render. */
   const [lastTemplateDataSnapshot, setLastTemplateDataSnapshot] = useState<Record<string, string> | null>(null);
+  // Keyed by the exact Word file, so an edited or re-rendered file never inherits another file's tags
+  const templateTagsByDocx = useRef(new WeakMap<Blob, string[]>());
 
   /** Customer scope document appended verbatim after the agreement body. */
   const [scopeAttachment, setScopeAttachment] = useState<File | null>(null);
@@ -870,6 +873,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     dates: { projectStartDate: string | null; effectiveDate: string | null; quoteExpiryDate: string | null };
     templateData: Record<string, string> | null;
     templateId: string | null;
+    templateTags: string[] | null;
     customLineItems: Array<{ name: string; description: string; price: number }>;
   } => ({
     dates: {
@@ -880,6 +884,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     },
     templateData: lastTemplateDataSnapshot,
     templateId: selectedTemplate?.id ? String(selectedTemplate.id) : null,
+    templateTags: (originalDocxAgreement && templateTagsByDocx.current.get(originalDocxAgreement)) || null,
     customLineItems: customLineItems.map((it) => ({
       name: it.name,
       description: it.description,
@@ -4974,6 +4979,7 @@ Total Price: {{total price}}`;
       });
 
       let processedDocument: Blob | null = null;
+      let renderedTemplateTags: string[] | null = null;
 
       // Always try to fetch the latest template file from backend (cache-bust) so
       // edits in Mongo/disk are reflected even if the template was previously loaded.
@@ -8821,6 +8827,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         // Snapshot the full token map so we can re-render this agreement later with
         // different dates (EditDatesModal uses this).
         setLastTemplateDataSnapshot({ ...templateData });
+        renderedTemplateTags = await templateTagsOfFile(templateFileForAgreement);
 
         const result = await DocxTemplateProcessor.processDocxTemplate(
           templateFileForAgreement,
@@ -9738,7 +9745,12 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
       // Appended for every agreement type, independently of the Multi-combination exhibit gate
       if (processedDocument) {
+        const rendered = processedDocument;
         processedDocument = await mergeScopeAttachment(processedDocument);
+        // A scope document's own dates aren't template tags, so an appended file gets none
+        if (renderedTemplateTags && processedDocument === rendered) {
+          templateTagsByDocx.current.set(processedDocument, renderedTemplateTags);
+        }
       }
 
       // Show preview of the processed agreement

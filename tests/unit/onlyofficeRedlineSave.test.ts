@@ -180,8 +180,18 @@ describe('saveRedlineOverDocument keeps the creator', () => {
       activeWorkflows: [], actor: { email: OTHER }, backupVersionId: 'v-9',
     });
     const overwrite = calls.find(c => c.collection === 'documents' && c.op === 'updateOne')!.args[1];
-    expect(Object.keys(overwrite)).toEqual(['$set']);
+    expect(Object.keys(overwrite)).toEqual(['$set', '$unset']);
     expect(Object.keys(overwrite.$set).some(k => k.startsWith('createdBy'))).toBe(false);
+  });
+
+  it('drops the template tags, so Edit Dates is strict about text typed in the redline', async () => {
+    const { db, calls } = fakeDb({ document: { ...ORIGINAL, templateTags: ['Effective Date'] } });
+    await saveRedlineOverDocument(db, {
+      documentId: 'doc-1', editedPdf: EDITED_PDF, editedDocx: EDITED_DOCX,
+      activeWorkflows: [], actor: { email: OTHER }, backupVersionId: 'v-9',
+    });
+    const overwrite = calls.find(c => c.collection === 'documents' && c.op === 'updateOne')!.args[1];
+    expect(overwrite.$unset).toEqual({ templateTags: '' });
   });
 });
 
