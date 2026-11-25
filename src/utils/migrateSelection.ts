@@ -89,22 +89,3 @@ export function durationToCarry(config: ConfigurationData, oldPrimary: MigrateKi
   }
   return oldPrimary ? sharedMigrateDuration(config) : 0;
 }
-
-// Multi combination with Data Sprawl or Overage ticked: one Duration for every row of the quote.
-export function isCombinedMulti(config: ConfigurationData | undefined | null): boolean {
-  if (!config || config.migrationType !== 'Multi combination' || config.servicePlan === 'Manage') return false;
-  return isMultiWithSprawl(config) || hasOverageAddOn(config);
-}
-
-// Sets that one Duration on every Multi row; each row still prices on its own months, now all equal.
-export function withCommonDuration(config: ConfigurationData, months: number): ConfigurationData {
-  const n = Math.max(0, Math.floor(Number(months) || 0));
-  const set = <T extends { duration: number }>(rows: T[] | undefined): T[] => (rows || []).map(r => ({ ...r, duration: n }));
-  return {
-    ...config,
-    duration: n,
-    messagingConfigs: set(config.messagingConfigs),
-    contentConfigs: set(config.contentConfigs),
-    emailConfigs: set(config.emailConfigs)
-  };
-}

@@ -22,8 +22,6 @@ import {
   EMPTY_OVERAGE_ADD_ON,
   overageAddOnIssue,
   durationToCarry,
-  isCombinedMulti,
-  withCommonDuration,
   primaryMigrateKind,
   selectedMigrateKinds,
   withOverageAddOn,
@@ -45,6 +43,7 @@ import {
   withDefaultStandaloneTerm,
 } from '../utils/manageStandaloneOption';
 import { persistConfig } from '../utils/sessionConfig';
+import { longestRowDuration, parseRowDurationMonths, withRowDuration, type MultiRowKey } from '../utils/rowDuration';
 import { useSprawlGroups } from '../hooks/useSprawlGroups';
 import SprawlGroupCard from './SprawlGroupCard';
 import { getContentTimelineByServerType, formatServerTypeLabel, type SourceEnvironment, type ContentMigrationType } from '../utils/timelineProjection';
@@ -375,10 +374,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
     if (newPrimary === 'multi' || newPrimary === 'sprawl') {
       next = withOverageAddOn(next, overage ? keptOverage : undefined);
-    }
-    // Rows that had their own durations now share one: the longest, which the service term already used.
-    if (isCombinedMulti(next) && !isCombinedMulti(config)) {
-      next = withCommonDuration(next, durationToCarry(config, oldPrimary) || sharedMigrateDuration(next));
     }
 
     if (primaryChanged) {
@@ -736,9 +731,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             mergeGroupsBySameLabel(emailCombinationMap);
 
             // Convert maps to config arrays (one config per combination, not per exhibit)
-            // A combined quote has one Duration, so a new row starts at it rather than at 1.
-            const newRowDuration = (isMultiWithSprawl(config) || hasOverageAddOn(config)) && Number(config.duration) >= 1
-              ? Number(config.duration)
+            // Sprawl and Overage run on the longest row, so a new row starts there rather than at 1.
+            const longestRowDuration = sharedMigrateDuration(config);
+            const newRowDuration = (isMultiWithSprawl(config) || hasOverageAddOn(config)) && longestRowDuration >= 1
+              ? longestRowDuration
               : 1;
             const newMessagingConfigs: ConfigurationData['messagingConfigs'] = [];
             const newContentConfigs: ConfigurationData['contentConfigs'] = [];
@@ -922,9 +918,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   useEffect(() => {
     if (config.migrationType !== 'Multi combination') return;
 
-    // Use shared helper (Multi combination = summed duration across categories)
-    const effective = getEffectiveDurationMonths(config);
-    if (effective > 0 && config.duration !== effective) {
+    const rowCount = (config.messagingConfigs?.length || 0) + (config.contentConfigs?.length || 0) + (config.emailConfigs?.length || 0);
+    // With rows present they alone set the duration, even 0, so a cleared quote never keeps an old value.
+    const effective = rowCount > 0 ? longestRowDuration(config) : getEffectiveDurationMonths(config);
+    if ((rowCount > 0 || effective > 0) && config.duration !== effective) {
       setConfig(prev => ({ ...prev, duration: effective }));
     }
   }, [config.migrationType, config.messagingConfigs, config.contentConfigs, config.emailConfigs, config.messagingConfig?.duration, config.contentConfig?.duration, config.duration]);
@@ -1569,6 +1566,36 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
   };
 
+  const renderRowDurationField = (key: MultiRowKey, index: number, months: number) => (
+    <div className="group">
+      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+        <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+          <Clock className="w-4 h-4 text-white" />
+        </div>
+        Duration (Months)
+      </label>
+      <input
+        type="number"
+        min="1"
+        max={SERVICE_TERM_MAX_MONTHS}
+        step="1"
+        value={months || ''}
+        onChange={(e) => {
+          const value = parseRowDurationMonths(e.target.value);
+          setConfig(prev => {
+            const newConfig = withRowDuration(prev, key, index, value);
+            persistConfig(newConfig);
+            onConfigurationChange(newConfig);
+            return newConfig;
+          });
+        }}
+        className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+        placeholder="Enter duration"
+        autoComplete="off"
+      />
+    </div>
+  );
+
   const renderCustomerLocationField = (id: string) => (
     <div className="group">
       <label htmlFor={id} className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
@@ -1838,9 +1865,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       </div>
     );
   };
-
-  // Multi combination ticked with Data Sprawl or Overage runs on one Duration, set in its own card.
-  const combinedMulti = isCombinedMulti(config);
 
   // Overage rides on another agreement; it shows these shared fields only where that one does not.
   const isMultiConfig = config.migrationType === 'Multi combination' && !!config.combination;
@@ -3169,9 +3193,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
-          {/* Customer Location + Common Instance Type (+ Duration on a combined quote) — side-by-side on lg, stacked on smaller screens */}
+          {/* Customer Location + Common Instance Type — side-by-side on lg, stacked on smaller screens */}
           {config.migrationType === 'Multi combination' && config.combination && Array.isArray(selectedExhibits) && selectedExhibits.length > 0 && (
-            <div className={`grid grid-cols-1 ${combinedMulti ? 'lg:grid-cols-3' : 'lg:grid-cols-2'} gap-4 mb-6`}>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
               {/* Common Customer Location (Region) — Multi combination shared field */}
               <div className="bg-gradient-to-r from-sky-50 to-blue-50 rounded-xl shadow-md border-2 border-sky-200 p-6">
                 <div className="flex items-center">
@@ -3271,37 +3295,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </div>
             );
           })()}
-
-              {combinedMulti && (
-                <div data-testid="common-duration" className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl shadow-md border-2 border-orange-200 p-6">
-                  <label htmlFor="common-duration-months" className="block text-base font-bold text-gray-900 mb-1">
-                    Duration (Months)
-                  </label>
-                  <p className="text-sm text-gray-600 mb-3">
-                    One duration for the whole quote: every combination, Data Sprawl, Overage and the service term.
-                  </p>
-                  <input
-                    id="common-duration-months"
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={sharedMigrateDuration(config) || ''}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      const numValue = value === '' ? 0 : parseInt(value) || 0;
-                      setConfig(prev => {
-                        const newConfig = withCommonDuration(prev, numValue);
-                        persistConfig(newConfig);
-                        onConfigurationChange(newConfig);
-                        return newConfig;
-                      });
-                    }}
-                    className="w-full px-4 py-3 border-2 border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-base font-medium shadow-sm hover:border-orange-400"
-                    placeholder="Enter duration"
-                    autoComplete="off"
-                  />
-                </div>
-              )}
             </div>
           )}
 
@@ -3510,7 +3503,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         </div>
 
                         {/* Messaging: Messages (required) */}
-                        {!combinedMulti && messagingThirdField}
+                        {messagingThirdField}
                       </div>
 
                       {/* Right Column of Inputs */}
@@ -3553,47 +3546,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           </select>
                         </div>
 
-                        {/* Messaging: Duration — a combined quote uses the common Duration card instead */}
-                        {!combinedMulti && (
-                          <div className="group">
-                            <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                              <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-                                <Clock className="w-4 h-4 text-white" />
-                              </div>
-                              Duration (Months)
-                            </label>
-                            <input
-                              type="number"
-                              min="1"
-                              step="1"
-                              value={messagingCfg.duration || ''}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                const numValue = value === '' ? 0 : parseInt(value) || 0;
-                                setConfig(prev => {
-                                  const newConfig = {
-                                    ...prev,
-                                    messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
-                                      i === messagingIndex ? { ...cfg, duration: numValue } : cfg
-                                    ),
-                                  };
-                                  // Explicitly save to sessionStorage
-                                  try {
-                                    sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                                  } catch (e) {
-                                    console.warn('Could not save config:', e);
-                                  }
-                                  onConfigurationChange(newConfig);
-                                  return newConfig;
-                                });
-                              }}
-                              className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
-                              placeholder="Enter duration"
-                              autoComplete="off"
-                            />
-                          </div>
-                        )}
-                        {combinedMulti && messagingThirdField}
+                        {/* Messaging: Duration */}
+                        {renderRowDurationField('messagingConfigs', messagingIndex, messagingCfg.duration)}
                       </div>
                     </div>
 
@@ -3850,7 +3804,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         </div>
 
                         {/* Content: Data Size (required) */}
-                        {!combinedMulti && contentThirdField}
+                        {contentThirdField}
                       </div>
 
                       {/* Right Column of Inputs */}
@@ -3893,47 +3847,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           </select>
                         </div>
 
-                        {/* Content: Duration — a combined quote uses the common Duration card instead */}
-                        {!combinedMulti && (
-                          <div className="group">
-                            <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                              <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-                                <Clock className="w-4 h-4 text-white" />
-                              </div>
-                              Duration (Months)
-                            </label>
-                            <input
-                              type="number"
-                              min="1"
-                              step="1"
-                              value={contentCfg.duration || ''}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                const numValue = value === '' ? 0 : parseInt(value) || 0;
-                                setConfig(prev => {
-                                  const newConfig = {
-                                    ...prev,
-                                    contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
-                                      i === contentIndex ? { ...cfg, duration: numValue } : cfg
-                                    ),
-                                  };
-                                  // Explicitly save to sessionStorage
-                                  try {
-                                    sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                                  } catch (e) {
-                                    console.warn('Could not save config:', e);
-                                  }
-                                  onConfigurationChange(newConfig);
-                                  return newConfig;
-                                });
-                              }}
-                              className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
-                              placeholder="Enter duration"
-                              autoComplete="off"
-                            />
-                          </div>
-                        )}
-                        {combinedMulti && contentThirdField}
+                        {/* Content: Duration */}
+                        {renderRowDurationField('contentConfigs', contentIndex, contentCfg.duration)}
                       </div>
                     </div>
 
@@ -4182,7 +4097,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         </div>
 
                         {/* Email: Data Size (GB) */}
-                        {!combinedMulti && emailThirdField}
+                        {emailThirdField}
                       </div>
 
                       {/* Right Column of Inputs */}
@@ -4225,47 +4140,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           </select>
                         </div>
 
-                        {/* Email: Duration — a combined quote uses the common Duration card instead */}
-                        {!combinedMulti && (
-                          <div className="group">
-                            <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                              <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-                                <Clock className="w-4 h-4 text-white" />
-                              </div>
-                              Duration (Months)
-                            </label>
-                            <input
-                              type="number"
-                              min="1"
-                              step="1"
-                              value={emailCfg.duration || ''}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                const numValue = value === '' ? 0 : parseInt(value) || 0;
-                                setConfig(prev => {
-                                  const newConfig = {
-                                    ...prev,
-                                    emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
-                                      i === emailIndex ? { ...cfg, duration: numValue } : cfg
-                                    ),
-                                  };
-                                  // Explicitly save to sessionStorage
-                                  try {
-                                    sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                                  } catch (e) {
-                                    console.warn('Could not save config:', e);
-                                  }
-                                  onConfigurationChange(newConfig);
-                                  return newConfig;
-                                });
-                              }}
-                              className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
-                              placeholder="Enter duration"
-                              autoComplete="off"
-                            />
-                          </div>
-                        )}
-                        {combinedMulti && emailThirdField}
+                        {/* Email: Duration */}
+                        {renderRowDurationField('emailConfigs', emailIndex, emailCfg.duration)}
                       </div>
                     </div>
 

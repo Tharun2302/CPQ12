@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 
 import ConfigurationForm from '../../src/components/ConfigurationForm';
 import PricingComparison from '../../src/components/PricingComparison';
-import { PRICING_TIERS, calculateAllTiers, multiSprawlTotal, formatCurrency } from '../../src/utils/pricing';
+import { PRICING_TIERS, calculateAllTiers, multiSprawlTotal, formatCurrency, sharedMigrateDuration } from '../../src/utils/pricing';
 import type { ConfigurationData } from '../../src/types/pricing';
 import { chooseMigrateOnly, migrateSelectedValues, toggleMigrateOption } from './helpers/migratePicker';
 
@@ -165,40 +165,71 @@ describe('Migrate list: tick several options', () => {
       return el;
     });
     expect(within(section).queryByLabelText('Duration (Months)')).toBeNull();
-    expect(within(section).getByTestId('overage-add-on-duration').textContent).toMatch(/Duration \(Months\) entered above/);
+    expect(within(section).getByTestId('overage-add-on-duration').textContent).toMatch(/longest Duration \(Months\) of the selected combinations/);
   });
 
-  it('a combined quote shows one common Duration card, not one per combination panel', async () => {
-    EXHIBITS.push({ _id: 'pair', name: 'Box to SharePoint Standard Plan Included', category: 'content', combinations: ['box-to-sharepoint'], isRequired: false, displayOrder: 5 });
-    try {
-      const { user, onConfigurationChange } = renderForm(['pair']);
-      await toggleMigrateOption(user, 'multi-combination');
-      await waitFor(() => expect((lastConfig(onConfigurationChange).contentConfigs || []).length).toBe(1));
-      expect(screen.queryByTestId('common-duration')).toBeNull();
-      expect(screen.getAllByText('Duration (Months)')).toHaveLength(1);
-      const columnOf = (label: string) => screen.getByText(label).closest('.space-y-6') as HTMLElement;
-      expect(within(columnOf('Data Size (GB)')).getByText('Number of Users')).toBeTruthy();
-
-      await toggleMigrateOption(user, 'overage-agreement');
-      const card = await screen.findByTestId('common-duration');
-      expect(screen.getAllByText('Duration (Months)')).toHaveLength(1);
-      expect(within(card).getByText('Duration (Months)')).toBeTruthy();
-      // Data Size takes the right-hand slot the panel Duration left empty.
-      expect(within(columnOf('Data Size (GB)')).getByText('Instance Type')).toBeTruthy();
-
-      const input = within(card).getByLabelText('Duration (Months)');
+  describe('per-combination Duration on a combined quote', () => {
+    const PAIRS = [
+      { _id: 'pair', name: 'Box to SharePoint Standard Plan Included', category: 'content', combinations: ['box-to-sharepoint'], isRequired: false, displayOrder: 5 },
+      { _id: 'pair2', name: 'Dropbox to OneDrive Standard Plan Included', category: 'content', combinations: ['dropbox-to-onedrive'], isRequired: false, displayOrder: 6 },
+    ];
+    const durationInputs = () => screen.getAllByText('Duration (Months)')
+      .map(label => label.closest('.group')?.querySelector('input') as HTMLInputElement);
+    const setDuration = async (user: ReturnType<typeof userEvent.setup>, input: HTMLInputElement, months: string) => {
       await user.clear(input);
-      await user.type(input, '4');
-      await waitFor(() => expect(lastConfig(onConfigurationChange).contentConfigs?.[0].duration).toBe(4));
-      expect(lastConfig(onConfigurationChange).duration).toBe(4);
-      expect(screen.getByTestId('overage-add-on-duration').textContent).toContain('Valid for 4 Months');
+      await user.type(input, months);
+    };
 
+    beforeEach(() => { EXHIBITS.push(...PAIRS); });
+    afterEach(() => { EXHIBITS.splice(EXHIBITS.length - PAIRS.length, PAIRS.length); });
+
+    it('Multi + Data Sprawl shows a Duration input in each combination panel and no common card', async () => {
+      const { user, onConfigurationChange } = renderForm(['pair', 'pair2']);
+      await toggleMigrateOption(user, 'multi-combination');
+      await waitFor(() => expect((lastConfig(onConfigurationChange).contentConfigs || []).length).toBe(2));
+      expect(durationInputs()).toHaveLength(2);
+
+      await toggleMigrateOption(user, 'data-sprawl');
+      await waitFor(() => expect(lastConfig(onConfigurationChange).includeDataSprawl).toBe(true));
+      expect(screen.queryByTestId('common-duration')).toBeNull();
+      expect(durationInputs()).toHaveLength(2);
+      const columnOf = (label: string) => screen.getAllByText(label)[0].closest('.space-y-6') as HTMLElement;
+      expect(within(columnOf('Data Size (GB)')).getByText('Number of Users')).toBeTruthy();
+    });
+
+    it('keeps 3 and 6 months apart, and Overage runs on the longest (6)', async () => {
+      const { user, onConfigurationChange } = renderForm(['pair', 'pair2']);
+      await toggleMigrateOption(user, 'multi-combination');
       await toggleMigrateOption(user, 'overage-agreement');
-      await waitFor(() => expect(screen.queryByTestId('common-duration')).toBeNull());
-      expect(screen.getAllByText('Duration (Months)')).toHaveLength(1);
-    } finally {
-      EXHIBITS.pop();
-    }
+      await waitFor(() => expect((lastConfig(onConfigurationChange).contentConfigs || []).length).toBe(2));
+      await user.type(await screen.findByLabelText('Number of Instances'), '2');
+
+      const [first, second] = durationInputs();
+      await setDuration(user, first, '3');
+      await setDuration(user, second, '6');
+
+      await waitFor(() => expect(lastConfig(onConfigurationChange).contentConfigs?.map(c => c.duration)).toEqual([3, 6]));
+      expect(durationInputs().map(i => i.value)).toEqual(['3', '6']);
+      expect(sharedMigrateDuration(lastConfig(onConfigurationChange))).toBe(6);
+      expect(screen.getByTestId('overage-add-on-duration').textContent).toContain('Valid for 6 Months');
+      // 500 (Small) x 6 months x 2 instances
+      expect(screen.getByTestId('overage-add-on-total').textContent).toBe(formatCurrency(6000));
+    });
+
+    it('ticking Data Sprawl after typing different durations leaves each one as typed', async () => {
+      const { user, onConfigurationChange } = renderForm(['pair', 'pair2']);
+      await toggleMigrateOption(user, 'multi-combination');
+      await waitFor(() => expect((lastConfig(onConfigurationChange).contentConfigs || []).length).toBe(2));
+      const [first, second] = durationInputs();
+      await setDuration(user, first, '3');
+      await setDuration(user, second, '6');
+      await waitFor(() => expect(lastConfig(onConfigurationChange).contentConfigs?.map(c => c.duration)).toEqual([3, 6]));
+
+      await toggleMigrateOption(user, 'data-sprawl');
+      await waitFor(() => expect(lastConfig(onConfigurationChange).includeDataSprawl).toBe(true));
+      expect(lastConfig(onConfigurationChange).contentConfigs?.map(c => c.duration)).toEqual([3, 6]);
+      expect(durationInputs().map(i => i.value)).toEqual(['3', '6']);
+    });
   });
 
   it('the Duration typed for Data Sprawl carries over when Multi-Combination is ticked', async () => {

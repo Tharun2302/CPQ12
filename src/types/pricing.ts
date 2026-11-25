@@ -187,7 +187,7 @@ export interface ConfigurationData {
   // Slug of the Data Sprawl agreement whose exhibits are offered and merged.
   dataSprawlCombination?: string;
   // Overage ticked alongside Multi combination or Data Sprawl: billed instances added to that quote.
-  // No months of its own: it runs for the quote's shared Duration (sharedMigrateDuration).
+  // No months of its own: it runs for sharedMigrateDuration (on Multi, the longest combination Duration).
   overageAddOn?: {
     instanceType: 'Small' | 'Standard' | 'Large' | 'Extra Large';
     numberOfInstances: number;

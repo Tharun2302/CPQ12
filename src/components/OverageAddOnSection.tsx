@@ -10,7 +10,7 @@ interface OverageAddOnSectionProps {
   // Shared quote fields, passed only when no other section on the page already shows them.
   customerLocationField?: ReactNode;
   discountField?: ReactNode;
-  // The quote's one Duration (Months), when no other section on the page shows it yet.
+  // The Data Sprawl service term, when no other section on the page shows it yet.
   durationField?: ReactNode;
 }
 
@@ -20,12 +20,15 @@ const INPUT_CLASS = 'w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:
 const parseCount = (v: string): number => (v === '' ? 0 : Math.max(0, parseInt(v, 10) || 0));
 
 // Overage ticked alongside Multi-Combination or Data Sprawl: the instances it bills.
-// Its months are the quote's shared Duration, so it has no duration input of its own.
+// Its months are the quote's shared Duration (the longest combination on Multi), so it has no input of its own.
 function OverageAddOnSection({ config, onChange, customerLocationField, discountField, durationField }: OverageAddOnSectionProps) {
   const addOn = config.overageAddOn;
   if (!addOn) return null;
   const update = (patch: Partial<OverageAddOn>) => onChange({ ...addOn, ...patch });
   const months = sharedMigrateDuration(config);
+  const monthsSource = config.migrationType === 'Multi combination'
+    ? 'the longest Duration (Months) of the selected combinations'
+    : 'the Duration (Months) entered above';
 
   return (
     <div data-section="overage-add-on" className="bg-gradient-to-br from-white via-purple-50/30 to-violet-50/50 rounded-2xl shadow-lg border border-purple-100 p-6 mb-6">
@@ -75,8 +78,8 @@ function OverageAddOnSection({ config, onChange, customerLocationField, discount
         <p data-testid="overage-add-on-duration" className="mt-4 flex items-center gap-2 text-sm text-gray-600">
           <Clock className="w-4 h-4 text-purple-600" aria-hidden="true" />
           {months > 0
-            ? `Valid for ${months} Month${months === 1 ? '' : 's'}, the Duration (Months) entered above.`
-            : 'Uses the Duration (Months) entered above.'}
+            ? `Valid for ${months} Month${months === 1 ? '' : 's'}, ${monthsSource}.`
+            : `Uses ${monthsSource}.`}
         </p>
       )}
       {discountField && <div className="mt-6">{discountField}</div>}

@@ -13,8 +13,8 @@ export interface MultiSprawlLineItem {
   price: string;
 }
 
-// Submit-only check for Data Sprawl ticked with Multi combination. No term check: it shares the
-// migration's Duration (Months), which the Multi rows already require.
+// Submit-only check for Data Sprawl ticked with Multi combination. No term check: it uses the
+// longest combination Duration (Months), and the Multi rows already require each one.
 export function multiSprawlIssue(config: ConfigurationData | undefined | null): string | null {
   if (!config || !isMultiWithSprawl(config)) return null;
   if (!hasSprawlConfigs(config)) return 'Please select at least one Data Sprawl exhibit';

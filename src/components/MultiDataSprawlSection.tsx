@@ -14,7 +14,7 @@ interface MultiDataSprawlSectionProps {
 const EMPTY: string[] = [];
 
 // Data Sprawl ticked alongside Multi-Combination: its own exhibits and inputs. Its term is the
-// migration's Duration (Months), so it has no duration field of its own.
+// longest Duration (Months) of the selected combinations, so it has no duration field of its own.
 function MultiDataSprawlSection({ config, label, onExhibitsChange, onGroupChange }: MultiDataSprawlSectionProps) {
   if (!isMultiWithSprawl(config)) return null;
   const groups = normalizeSprawlConfigs(config);
@@ -28,7 +28,7 @@ function MultiDataSprawlSection({ config, label, onExhibitsChange, onGroupChange
         <h3 className="text-lg font-bold text-gray-900">{label}</h3>
       </div>
       <p className="mt-2 text-sm text-gray-600">
-        Pick the {label} exhibits for this agreement. It uses the Duration (Months) entered for the migration above, and one discount applies to the combined total.
+        Pick the {label} exhibits for this agreement. It uses the longest Duration (Months) of the selected combinations above, and one discount applies to the combined total.
       </p>
 
       <div className="mt-6">
